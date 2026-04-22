@@ -721,8 +721,7 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
                 if (right.ival == 0) return eval_raise_class(ev, node, "ZeroDivisionError", "divided by 0");
                 return val_int(left.ival / right.ival);
             }
-            if (rf == 0.0) return eval_raise_class(ev, node, "ZeroDivisionError", "divided by 0");
-            return val_float(lf / rf);
+            return val_float(lf / rf);  /* IEEE 754: x/0.0 = Inf or NaN, not an error */
         }
         if (strcmp(op, "%") == 0) {
             if (both_int) {

@@ -5,6 +5,27 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Integer to string in an arbitrary base (2-36). */
+static void int_to_s_base(int64_t n, int base, char *buf) {
+    static const char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+    if (n == 0) { buf[0] = '0'; buf[1] = '\0'; return; }
+    int neg = n < 0;
+    uint64_t un = neg ? (uint64_t)(-(n + 1)) + 1 : (uint64_t)n;
+    char tmp[128]; size_t i = 0;
+    while (un > 0) { tmp[i++] = digits[(size_t)(un % (uint64_t)base)]; un /= (uint64_t)base; }
+    if (neg) tmp[i++] = '-';
+    size_t j = 0;
+    while (i > 0) buf[j++] = tmp[--i];
+    buf[j] = '\0';
+}
+
+/* Euclidean GCD (always non-negative). */
+static int64_t int_gcd(int64_t a, int64_t b) {
+    a = a < 0 ? -a : a; b = b < 0 ? -b : b;
+    while (b) { int64_t t = b; b = a % b; a = t; }
+    return a;
+}
+
 /* Expand a tr-style pattern (e.g. "a-z", "^aeiou") into a 256-entry bool set.
    Returns 1 if the pattern was negated (^). */
 static int tr_expand_set(const char *pat, int set[256]) {
@@ -51,17 +72,112 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
                      Value *blk, Node *site, Value *out) {
     (void)env;
     if (recv.kind != VAL_INT) return 0;
-    if (strcmp(name, "to_s") == 0) { *out = val_string(ev->arena, val_to_s(ev->arena, recv)); return 1; }
-    if (strcmp(name, "to_f") == 0) { *out = val_float((double)recv.ival); return 1; }
-    if (strcmp(name, "to_i") == 0) { *out = recv; return 1; }
-    if (strcmp(name, "abs") == 0) { *out = val_int(recv.ival < 0 ? -recv.ival : recv.ival); return 1; }
-    if (strcmp(name, "even?") == 0) { *out = val_bool(recv.ival % 2 == 0); return 1; }
-    if (strcmp(name, "odd?") == 0) { *out = val_bool(recv.ival % 2 != 0); return 1; }
-    if (strcmp(name, "zero?") == 0) { *out = val_bool(recv.ival == 0); return 1; }
+    int64_t n = recv.ival;
+    if (strcmp(name, "to_s") == 0) {
+        if (argc >= 1 && args[0].kind == VAL_INT) {
+            int base = (int)args[0].ival;
+            if (base < 2 || base > 36) { *out = eval_raise_class(ev, site, "ArgumentError", "invalid radix %d", base); return 1; }
+            char buf[128]; int_to_s_base(n, base, buf);
+            *out = val_string(ev->arena, buf);
+        } else {
+            *out = val_string(ev->arena, val_to_s(ev->arena, recv));
+        }
+        return 1;
+    }
+    if (strcmp(name, "to_f") == 0) { *out = val_float((double)n); return 1; }
+    if (strcmp(name, "to_i") == 0 || strcmp(name, "to_int") == 0) { *out = recv; return 1; }
+    if (strcmp(name, "to_r") == 0) { *out = recv; return 1; } /* simplification: n/1 */
+    if (strcmp(name, "abs") == 0)      { *out = val_int(n < 0 ? -n : n); return 1; }
+    if (strcmp(name, "abs2") == 0)     { *out = val_int(n * n); return 1; }
+    if (strcmp(name, "even?") == 0)    { *out = val_bool(n % 2 == 0); return 1; }
+    if (strcmp(name, "odd?") == 0)     { *out = val_bool(n % 2 != 0); return 1; }
+    if (strcmp(name, "zero?") == 0)    { *out = val_bool(n == 0); return 1; }
+    if (strcmp(name, "nonzero?") == 0) { *out = n == 0 ? val_nil() : recv; return 1; }
+    if (strcmp(name, "positive?") == 0){ *out = val_bool(n > 0); return 1; }
+    if (strcmp(name, "negative?") == 0){ *out = val_bool(n < 0); return 1; }
+    if (strcmp(name, "integer?") == 0) { *out = val_true(); return 1; }
+    if (strcmp(name, "ceil") == 0 || strcmp(name, "floor") == 0 ||
+        strcmp(name, "round") == 0 || strcmp(name, "truncate") == 0) { *out = recv; return 1; }
+    if (strcmp(name, "succ") == 0 || strcmp(name, "next") == 0) { *out = val_int(n + 1); return 1; }
+    if (strcmp(name, "pred") == 0) { *out = val_int(n - 1); return 1; }
+    if (strcmp(name, "chr") == 0) {
+        if (n < 0 || n > 127) { *out = eval_raise_class(ev, site, "RangeError", "%lld out of char range", (long long)n); return 1; }
+        char buf[2] = { (char)n, '\0' };
+        *out = val_string(ev->arena, buf);
+        return 1;
+    }
+    if (strcmp(name, "gcd") == 0) {
+        if (argc < 1 || args[0].kind != VAL_INT) { *out = eval_raise_class(ev, site, "TypeError", "Integer#gcd requires an Integer"); return 1; }
+        *out = val_int(int_gcd(n, args[0].ival));
+        return 1;
+    }
+    if (strcmp(name, "lcm") == 0) {
+        if (argc < 1 || args[0].kind != VAL_INT) { *out = eval_raise_class(ev, site, "TypeError", "Integer#lcm requires an Integer"); return 1; }
+        int64_t b = args[0].ival;
+        int64_t g = int_gcd(n, b);
+        *out = val_int(g == 0 ? 0 : (n < 0 ? -n : n) / g * (b < 0 ? -b : b));
+        return 1;
+    }
+    if (strcmp(name, "pow") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Integer#pow requires an argument"); return 1; }
+        int64_t exp = args[0].kind == VAL_INT ? args[0].ival : (int64_t)args[0].fval;
+        if (argc >= 2 && args[1].kind == VAL_INT) {
+            int64_t mod = args[1].ival;
+            if (mod == 0) { *out = eval_raise_class(ev, site, "ZeroDivisionError", "divided by 0"); return 1; }
+            int64_t result = 1, base = ((n % mod) + mod) % mod;
+            for (int64_t e = exp; e > 0; e >>= 1) {
+                if (e & 1) result = result * base % mod;
+                base = base * base % mod;
+            }
+            *out = val_int(result);
+        } else {
+            if (exp < 0) { *out = val_float(pow((double)n, (double)exp)); return 1; }
+            int64_t result = 1;
+            for (int64_t e = exp; e > 0; e--) result *= n;
+            *out = val_int(result);
+        }
+        return 1;
+    }
+    if (strcmp(name, "divmod") == 0) {
+        if (argc < 1 || args[0].kind != VAL_INT) { *out = eval_raise_class(ev, site, "TypeError", "Integer#divmod requires an Integer"); return 1; }
+        int64_t b = args[0].ival;
+        if (b == 0) { *out = eval_raise_class(ev, site, "ZeroDivisionError", "divided by 0"); return 1; }
+        int64_t q = n / b, r = n % b;
+        if (r != 0 && ((r ^ b) < 0)) { q--; r += b; }
+        Value arr = val_array_new();
+        val_array_push(&arr, val_int(q));
+        val_array_push(&arr, val_int(r));
+        *out = arr;
+        return 1;
+    }
+    if (strcmp(name, "digits") == 0) {
+        int64_t base = argc >= 1 && args[0].kind == VAL_INT ? args[0].ival : 10;
+        if (base < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "invalid radix %lld", (long long)base); return 1; }
+        Value arr = val_array_new();
+        int64_t un = n < 0 ? -n : n;
+        if (un == 0) { val_array_push(&arr, val_int(0)); }
+        else { while (un > 0) { val_array_push(&arr, val_int(un % base)); un /= base; } }
+        *out = arr;
+        return 1;
+    }
+    if (strcmp(name, "between?") == 0) {
+        if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        double lo = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
+        double hi = args[1].kind == VAL_INT ? (double)args[1].ival : args[1].fval;
+        *out = val_bool((double)n >= lo && (double)n <= hi);
+        return 1;
+    }
+    if (strcmp(name, "clamp") == 0) {
+        if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        int64_t lo = args[0].kind == VAL_INT ? args[0].ival : (int64_t)args[0].fval;
+        int64_t hi = args[1].kind == VAL_INT ? args[1].ival : (int64_t)args[1].fval;
+        *out = val_int(n < lo ? lo : n > hi ? hi : n);
+        return 1;
+    }
     if (strcmp(name, "times") == 0) {
         if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Integer#times requires a block");
         else {
-            for (int64_t i = 0; i < recv.ival; i++) {
+            for (int64_t i = 0; i < n; i++) {
                 Value arg = val_int(i);
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
@@ -75,7 +191,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Integer#upto requires an argument");
         else if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Integer#upto requires a block");
         else {
-            for (int64_t i = recv.ival; i <= args[0].ival; i++) {
+            for (int64_t i = n; i <= args[0].ival; i++) {
                 Value arg = val_int(i);
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
@@ -89,7 +205,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Integer#downto requires an argument");
         else if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Integer#downto requires a block");
         else {
-            for (int64_t i = recv.ival; i >= args[0].ival; i--) {
+            for (int64_t i = n; i >= args[0].ival; i--) {
                 Value arg = val_int(i);
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
@@ -99,21 +215,113 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         }
         return 1;
     }
+    if (strcmp(name, "step") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Integer#step requires a limit"); return 1; }
+        if (!blk)     { *out = eval_raise_class(ev, site, "LocalJumpError", "Integer#step requires a block"); return 1; }
+        double limit = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
+        double step  = argc >= 2 ? (args[1].kind == VAL_INT ? (double)args[1].ival : args[1].fval) : 1.0;
+        if (step == 0.0) { *out = eval_raise_class(ev, site, "ArgumentError", "step cannot be 0"); return 1; }
+        for (double i = (double)n; step > 0 ? i <= limit : i >= limit; i += step) {
+            Value arg = val_int((int64_t)i);
+            Value r = call_block(ev, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+        }
+        *out = recv;
+        return 1;
+    }
     return 0;
 }
 
 int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out) {
-    (void)env; (void)args; (void)argc; (void)blk; (void)site;
+    (void)env; (void)blk;
     if (recv.kind != VAL_FLOAT) return 0;
-    if (strcmp(name, "to_s") == 0) { *out = val_string(ev->arena, val_to_s(ev->arena, recv)); return 1; }
-    if (strcmp(name, "to_f") == 0) { *out = recv; return 1; }
-    if (strcmp(name, "to_i") == 0) { *out = val_int((int64_t)recv.fval); return 1; }
-    if (strcmp(name, "abs") == 0) { *out = val_float(recv.fval < 0 ? -recv.fval : recv.fval); return 1; }
-    if (strcmp(name, "ceil") == 0) { *out = val_int((int64_t)ceil(recv.fval)); return 1; }
-    if (strcmp(name, "floor") == 0) { *out = val_int((int64_t)floor(recv.fval)); return 1; }
-    if (strcmp(name, "round") == 0) { *out = val_int((int64_t)round(recv.fval)); return 1; }
-    if (strcmp(name, "zero?") == 0) { *out = val_bool(recv.fval == 0.0); return 1; }
+    double f = recv.fval;
+    if (strcmp(name, "to_s") == 0)   { *out = val_string(ev->arena, val_to_s(ev->arena, recv)); return 1; }
+    if (strcmp(name, "to_f") == 0)   { *out = recv; return 1; }
+    if (strcmp(name, "to_i") == 0 || strcmp(name, "truncate") == 0) {
+        int ndigits = (argc >= 1 && args[0].kind == VAL_INT) ? (int)args[0].ival : 0;
+        if (ndigits == 0) { *out = val_int((int64_t)f); return 1; }
+        double factor = pow(10.0, (double)ndigits);
+        *out = val_float(trunc(f * factor) / factor);
+        return 1;
+    }
+    if (strcmp(name, "to_r") == 0)   { *out = recv; return 1; } /* simplification */
+    if (strcmp(name, "abs") == 0)    { *out = val_float(f < 0 ? -f : f); return 1; }
+    if (strcmp(name, "abs2") == 0)   { *out = val_float(f * f); return 1; }
+    if (strcmp(name, "zero?") == 0)  { *out = val_bool(f == 0.0); return 1; }
+    if (strcmp(name, "nonzero?") == 0) { *out = f == 0.0 ? val_nil() : recv; return 1; }
+    if (strcmp(name, "positive?") == 0) { *out = val_bool(f > 0.0); return 1; }
+    if (strcmp(name, "negative?") == 0) { *out = val_bool(f < 0.0); return 1; }
+    if (strcmp(name, "integer?") == 0)  { *out = val_false(); return 1; }
+    if (strcmp(name, "nan?") == 0)      { *out = val_bool(isnan(f)); return 1; }
+    if (strcmp(name, "finite?") == 0)   { *out = val_bool(isfinite(f)); return 1; }
+    if (strcmp(name, "infinite?") == 0) {
+        *out = isinf(f) ? val_int(f > 0 ? 1 : -1) : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "ceil") == 0) {
+        int ndigits = (argc >= 1 && args[0].kind == VAL_INT) ? (int)args[0].ival : 0;
+        if (ndigits == 0) { *out = val_int((int64_t)ceil(f)); return 1; }
+        double factor = pow(10.0, (double)ndigits);
+        *out = val_float(ceil(f * factor) / factor);
+        return 1;
+    }
+    if (strcmp(name, "floor") == 0) {
+        int ndigits = (argc >= 1 && args[0].kind == VAL_INT) ? (int)args[0].ival : 0;
+        if (ndigits == 0) { *out = val_int((int64_t)floor(f)); return 1; }
+        double factor = pow(10.0, (double)ndigits);
+        *out = val_float(floor(f * factor) / factor);
+        return 1;
+    }
+    if (strcmp(name, "round") == 0) {
+        int ndigits = (argc >= 1 && args[0].kind == VAL_INT) ? (int)args[0].ival : 0;
+        if (ndigits == 0) { *out = val_int((int64_t)round(f)); return 1; }
+        double factor = pow(10.0, (double)ndigits);
+        *out = val_float(round(f * factor) / factor);
+        return 1;
+    }
+    if (strcmp(name, "divmod") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Float#divmod requires an argument"); return 1; }
+        double b = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
+        if (b == 0.0) { *out = eval_raise_class(ev, site, "ZeroDivisionError", "divided by 0"); return 1; }
+        double q = floor(f / b);
+        Value arr = val_array_new();
+        val_array_push(&arr, val_int((int64_t)q));
+        val_array_push(&arr, val_float(f - q * b));
+        *out = arr;
+        return 1;
+    }
+    if (strcmp(name, "between?") == 0) {
+        if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        double lo = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
+        double hi = args[1].kind == VAL_INT ? (double)args[1].ival : args[1].fval;
+        *out = val_bool(f >= lo && f <= hi);
+        return 1;
+    }
+    if (strcmp(name, "clamp") == 0) {
+        if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        double lo = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
+        double hi = args[1].kind == VAL_INT ? (double)args[1].ival : args[1].fval;
+        *out = val_float(f < lo ? lo : f > hi ? hi : f);
+        return 1;
+    }
+    if (strcmp(name, "step") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Float#step requires a limit"); return 1; }
+        if (!blk)     { *out = eval_raise_class(ev, site, "LocalJumpError", "Float#step requires a block"); return 1; }
+        double limit = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
+        double step  = argc >= 2 ? (args[1].kind == VAL_INT ? (double)args[1].ival : args[1].fval) : 1.0;
+        if (step == 0.0) { *out = eval_raise_class(ev, site, "ArgumentError", "step cannot be 0"); return 1; }
+        for (double i = f; step > 0 ? i <= limit : i >= limit; i += step) {
+            Value arg = val_float(i);
+            Value r = call_block(ev, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+        }
+        *out = recv;
+        return 1;
+    }
     return 0;
 }
 

@@ -74,10 +74,12 @@ The core exception path now exists, but it still needs:
 ### Frozen objects and string mutability
 `freeze`, `frozen?`, `dup`, `clone`. Strings in Ruby are mutable by default; frozen strings raise `FrozenError` on mutation. Requires a `frozen` flag on string/object values.
 
-### Numeric completeness
-`Integer`: `gcd`, `lcm`, `digits`, `pow`, `divmod`, `to_r`, `chr`.  
-`Float`: `nan?`, `infinite?`, `finite?`, `divmod`.  
-`Numeric`: `between?`, `clamp`, `abs2`.
+### Numeric polish
+Core numeric surface is now complete. Remaining gaps:
+
+- `Integer#to_r` / `Float#to_r` return self (no Rational type yet)
+- `Integer#next` / `String#next` are keywords and can't be dispatched via `.next` syntax (parser gap)
+- `Float` arithmetic edge cases around negative-zero, subnormals
 
 ### I/O polish
 The core IO path has landed. Remaining gaps:
@@ -116,4 +118,5 @@ These were previously roadmap items and are now implemented in the current tree:
 - `File.read`, `File.write`, `File.open` (block and non-block forms), `File.delete`, `File.exist?`
 - file objects: `read`, `write`, `print`, `puts`, `path`, `mode`, `close`, `closed?`; modes `r` / `w` / `a` enforced; `w` truncates on open
 - `IO` class with `$stdout`, `$stderr`, `$stdin` / `STDOUT`, `STDERR`, `STDIN`; instance methods `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `tty?`; `$stdin.gets` / `$stdin.read`
+- Numeric completeness: Integer `gcd`, `lcm`, `pow`+modulus, `divmod`, `digits`, `chr`, `succ`/`pred`, rounding methods, `positive?`/`negative?`/`nonzero?`/`integer?`, `abs2`, `between?`, `clamp`, `step`, `to_s(base)`; Float `nan?`, `infinite?`, `finite?`, `divmod`, precision rounding, same Numeric methods; `0.0/0.0` now IEEE 754 NaN; float `to_s` always includes decimal point
 - String non-regex completeness: `chomp`, `chop`, `lstrip`, `rstrip`, `capitalize`, `swapcase`, `ljust`, `rjust`, `center`, `ord`, `hex`, `oct`, `bytes`, `<<`, `index`, `rindex`, `[]`/`slice`, `lines`, `each_line`, `tr` (with range expansion), `count`, `delete`, `squeeze`, `scan`, `sub`, `gsub` (string and block forms), `inspect`
