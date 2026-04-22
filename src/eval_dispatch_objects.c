@@ -1,11 +1,85 @@
 #include "eval_internal.h"
 
+#include <stdio.h>
 #include <string.h>
 
 int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
-    (void)env;
     if (recv.kind != VAL_CLASS) return 0;
+    if (strcmp(recv.klass->name, "File") == 0) {
+        if (strcmp(name, "read") == 0) {
+            if (argc < 1) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "File.read requires a path");
+            } else if (args[0].kind != VAL_STRING) {
+                *out = eval_raise_class(ev, site, "TypeError", "File.read path must be a String");
+            } else {
+                *out = eval_file_read(ev, args[0].sval, site);
+            }
+            return 1;
+        }
+        if (strcmp(name, "write") == 0) {
+            if (argc < 2) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "File.write requires a path and content");
+            } else if (args[0].kind != VAL_STRING) {
+                *out = eval_raise_class(ev, site, "TypeError", "File.write path must be a String");
+            } else if (args[1].kind != VAL_STRING) {
+                *out = eval_raise_class(ev, site, "TypeError", "File.write content must be a String");
+            } else {
+                *out = eval_file_write(ev, args[0].sval, args[1].sval, site);
+            }
+            return 1;
+        }
+        if (strcmp(name, "delete") == 0) {
+            if (argc < 1) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "File.delete requires a path");
+            } else if (args[0].kind != VAL_STRING) {
+                *out = eval_raise_class(ev, site, "TypeError", "File.delete path must be a String");
+            } else {
+                *out = eval_file_delete(ev, args[0].sval, site);
+            }
+            return 1;
+        }
+        if (strcmp(name, "exist?") == 0) {
+            if (argc < 1) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "File.exist? requires a path");
+            } else if (args[0].kind != VAL_STRING) {
+                *out = eval_raise_class(ev, site, "TypeError", "File.exist? path must be a String");
+            } else {
+                *out = eval_file_exist(ev, args[0].sval);
+            }
+            return 1;
+        }
+        if (strcmp(name, "open") == 0) {
+            if (argc < 1) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "File.open requires a path");
+            } else if (args[0].kind != VAL_STRING) {
+                *out = eval_raise_class(ev, site, "TypeError", "File.open path must be a String");
+            } else {
+                Value mode = argc >= 2 ? args[1] : val_string(ev->arena, "r");
+                if (mode.kind != VAL_STRING) {
+                    *out = eval_raise_class(ev, site, "TypeError", "File.open mode must be a String");
+                    return 1;
+                }
+                Value touched = eval_file_touch_mode(ev, args[0].sval, mode.sval, site);
+                if (val_is_signal(touched)) {
+                    *out = touched;
+                    return 1;
+                }
+                Value file_obj = val_object(ev->arena, recv);
+                val_object_set_ivar(ev->arena, file_obj, "path", args[0]);
+                val_object_set_ivar(ev->arena, file_obj, "mode", mode);
+                val_object_set_ivar(ev->arena, file_obj, "closed", val_false());
+                if (blk) {
+                    Value result = call_block(ev, *blk, &file_obj, 1, site);
+                    val_object_set_ivar(ev->arena, file_obj, "closed", val_true());
+                    *out = result;
+                } else {
+                    *out = file_obj;
+                }
+            }
+            return 1;
+        }
+    }
     if (strcmp(recv.klass->name, "Proc") == 0 && strcmp(name, "new") == 0) {
         if (!blk) {
             *out = eval_raise_class(ev, site, "ArgumentError", "Proc.new requires a block");
@@ -66,6 +140,210 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
 int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                     Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     if (recv.kind != VAL_OBJECT) return 0;
+    if (recv.obj->klass.kind == VAL_CLASS && strcmp(recv.obj->klass.klass->name, "IO") == 0) {
+        Value fd_val;
+        if (!val_object_get_ivar(recv, "__fd__", &fd_val) || fd_val.kind != VAL_STRING) {
+            *out = eval_raise_class(ev, site, "IOError", "invalid IO object");
+            return 1;
+        }
+        int is_stdin = strcmp(fd_val.sval, "stdin") == 0;
+        FILE *stream = is_stdin ? stdin
+                     : strcmp(fd_val.sval, "stderr") == 0 ? stderr
+                     : ev->out;
+
+        if (strcmp(name, "puts") == 0) {
+            if (argc == 0) {
+                fprintf(stream, "\n");
+            } else {
+                for (int i = 0; i < argc; i++) {
+                    if (args[i].kind == VAL_ARRAY) {
+                        for (size_t j = 0; j < args[i].array->len; j++)
+                            fprintf(stream, "%s\n", val_to_s(ev->arena, args[i].array->elems[j]));
+                    } else {
+                        fprintf(stream, "%s\n", val_to_s(ev->arena, args[i]));
+                    }
+                }
+            }
+            *out = val_nil();
+            return 1;
+        }
+        if (strcmp(name, "print") == 0) {
+            for (int i = 0; i < argc; i++)
+                fprintf(stream, "%s", val_to_s(ev->arena, args[i]));
+            *out = val_nil();
+            return 1;
+        }
+        if (strcmp(name, "write") == 0) {
+            if (argc < 1 || args[0].kind != VAL_STRING) {
+                *out = eval_raise_class(ev, site, "TypeError", "IO#write requires a String");
+                return 1;
+            }
+            size_t len = strlen(args[0].sval);
+            fwrite(args[0].sval, 1, len, stream);
+            *out = val_int((int64_t)len);
+            return 1;
+        }
+        if (strcmp(name, "<<") == 0) {
+            if (argc >= 1)
+                fprintf(stream, "%s", val_to_s(ev->arena, args[0]));
+            *out = recv;
+            return 1;
+        }
+        if (strcmp(name, "flush") == 0) {
+            fflush(stream);
+            *out = recv;
+            return 1;
+        }
+        if (strcmp(name, "sync") == 0) {
+            *out = val_true();
+            return 1;
+        }
+        if (strcmp(name, "sync=") == 0) {
+            *out = argc > 0 ? args[0] : val_nil();
+            return 1;
+        }
+        if (strcmp(name, "fileno") == 0) {
+            *out = val_int(is_stdin ? 0 : strcmp(fd_val.sval, "stderr") == 0 ? 2 : 1);
+            return 1;
+        }
+        if (strcmp(name, "isatty") == 0 || strcmp(name, "tty?") == 0) {
+            *out = val_false();
+            return 1;
+        }
+        if (is_stdin && strcmp(name, "gets") == 0) {
+            char buf[4096];
+            if (!fgets(buf, sizeof(buf), stdin)) {
+                *out = val_nil();
+                return 1;
+            }
+            *out = val_string(ev->arena, buf);
+            return 1;
+        }
+        if (is_stdin && strcmp(name, "read") == 0) {
+            size_t cap = 65536, len = 0;
+            char *buf = arena_alloc(ev->arena, cap);
+            int c;
+            while ((c = fgetc(stdin)) != EOF) {
+                if (len + 2 >= cap) {
+                    char *nb = arena_alloc(ev->arena, cap * 2);
+                    memcpy(nb, buf, len);
+                    buf = nb;
+                    cap *= 2;
+                }
+                buf[len++] = (char)c;
+            }
+            buf[len] = '\0';
+            *out = val_string(ev->arena, buf);
+            return 1;
+        }
+        return 0;
+    }
+    if (recv.obj->klass.kind == VAL_CLASS && strcmp(recv.obj->klass.klass->name, "File") == 0) {
+        Value path, mode, closed;
+        if (!val_object_get_ivar(recv, "path", &path) || path.kind != VAL_STRING) {
+            *out = eval_raise_class(ev, site, "LoadError", "invalid File object");
+            return 1;
+        }
+        if (!val_object_get_ivar(recv, "mode", &mode) || mode.kind != VAL_STRING) {
+            *out = eval_raise_class(ev, site, "LoadError", "invalid File object");
+            return 1;
+        }
+        if (val_object_get_ivar(recv, "closed", &closed) && val_truthy(closed) &&
+            strcmp(name, "closed?") != 0 && strcmp(name, "close") != 0) {
+            *out = eval_raise_class(ev, site, "LoadError", "closed file");
+            return 1;
+        }
+        if (strcmp(name, "path") == 0) {
+            *out = path;
+            return 1;
+        }
+        if (strcmp(name, "mode") == 0) {
+            *out = mode;
+            return 1;
+        }
+        if (strcmp(name, "close") == 0) {
+            val_object_set_ivar(ev->arena, recv, "closed", val_true());
+            *out = val_nil();
+            return 1;
+        }
+        if (strcmp(name, "closed?") == 0) {
+            Value closed;
+            if (val_object_get_ivar(recv, "closed", &closed)) {
+                *out = closed;
+            } else {
+                *out = val_false();
+            }
+            return 1;
+        }
+        if (strcmp(name, "read") == 0) {
+            if (argc != 0) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "File#read takes no arguments");
+            } else if (strcmp(mode.sval, "w") == 0 || strcmp(mode.sval, "a") == 0) {
+                *out = eval_raise_class(ev, site, "LoadError", "not opened for reading");
+            } else {
+                *out = eval_file_read(ev, path.sval, site);
+            }
+            return 1;
+        }
+        if (strcmp(name, "write") == 0) {
+            if (argc < 1) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "File#write requires content");
+            } else if (args[0].kind != VAL_STRING) {
+                *out = eval_raise_class(ev, site, "TypeError", "File#write content must be a String");
+            } else if (strcmp(mode.sval, "r") == 0) {
+                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
+            } else {
+                *out = eval_file_append(ev, path.sval, args[0].sval, site);
+            }
+            return 1;
+        }
+        if (strcmp(name, "print") == 0) {
+            if (strcmp(mode.sval, "r") == 0) {
+                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
+                return 1;
+            }
+            size_t total = 1;
+            for (int i = 0; i < argc; i++)
+                total += strlen(val_to_s(ev->arena, args[i]));
+            char *buf = arena_alloc(ev->arena, total);
+            buf[0] = '\0';
+            for (int i = 0; i < argc; i++)
+                strcat(buf, val_to_s(ev->arena, args[i]));
+            *out = eval_file_append(ev, path.sval, buf, site);
+            return 1;
+        }
+        if (strcmp(name, "puts") == 0) {
+            if (strcmp(mode.sval, "r") == 0) {
+                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
+                return 1;
+            }
+            if (argc == 0) {
+                *out = eval_file_append(ev, path.sval, "\n", site);
+                return 1;
+            }
+            FILE *scratch = tmpfile();
+            if (!scratch) {
+                *out = eval_raise_class(ev, site, "LoadError", "cannot write file -- %s", path.sval);
+                return 1;
+            }
+            for (int i = 0; i < argc; i++) {
+                if (args[i].kind == VAL_ARRAY) {
+                    for (size_t j = 0; j < args[i].array->len; j++)
+                        fprintf(scratch, "%s\n", val_to_s(ev->arena, args[i].array->elems[j]));
+                } else {
+                    fprintf(scratch, "%s\n", val_to_s(ev->arena, args[i]));
+                }
+            }
+            long len = ftell(scratch);
+            rewind(scratch);
+            char *buf = arena_alloc(ev->arena, (size_t)len + 1);
+            fread(buf, 1, (size_t)len, scratch);
+            buf[len] = '\0';
+            fclose(scratch);
+            *out = eval_file_append(ev, path.sval, buf, site);
+            return 1;
+        }
+    }
     if (value_is_a_named_class(ev, recv, "Exception")) {
         if (strcmp(name, "message") == 0 || strcmp(name, "to_s") == 0) {
             *out = val_string(ev->arena, exception_value_message(ev, recv));

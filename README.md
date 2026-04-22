@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `63 passed, 0 failed, 63 total`.
+Current coverage in the tree: `71 passed, 0 failed, 71 total`.
 
 What is working today:
 
@@ -67,16 +67,18 @@ What is working today:
 - Assignment: parallel assignment, swap, splat capture, nested destructuring, destructured method and block params
 - Proc/lambda: `Proc.new {}`, `lambda {}`, `-> (...) {}`, `call`, `[]`, `lambda?`, `arity`, lambda `return`, proc non-local `return`
 - Kernel: `puts`, `print`, `p`, `raise`, `lambda`, `rand`, `exit`
+- IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`; `$stdin.gets` / `$stdin.read`
+- File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`; file objects with `read`, `write`, `print`, `puts`, `path`, `mode`, `close`, `closed?`; modes `r`, `w`, `a` enforced
 - Globals and constants
 
 Known limitations:
 
 - This is not Ruby-compatible enough for real-world code yet
-- IO is still missing, and file loading is still not Ruby-complete
+- File/IO coverage is path-backed and stream-mode basic; no socket IO, no binary mode, no seek/tell
 - Exceptions work, but they still need broader standard exception coverage and more Ruby-complete rescue syntax
 - Proc/lambda semantics exist, but there are still edge cases around control flow and argument handling that are not Ruby-complete
 - Compatibility around edge-case parsing and method semantics is still being tightened
-- file loading still needs stronger path canonicalization and more Ruby-complete search behavior
+- File loading still needs stronger path canonicalization and more Ruby-complete search behavior
 
 ## Architecture
 

@@ -501,7 +501,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     static const char *builtins[] = {
         "Object", "BasicObject", "Numeric",
         "Integer", "Float", "String", "Symbol",
-        "Array", "Hash", "NilClass", "TrueClass", "FalseClass",
+        "Array", "Hash", "NilClass", "TrueClass", "FalseClass", "IO", "File",
         "Class", "Module", "Method", "Proc", "Comparable", "Enumerable",
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NoMethodError",
@@ -537,6 +537,18 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         local_jump_error.klass->superclass = standard_error;
         key_error.klass->superclass = standard_error;
         load_error.klass->superclass = standard_error;
+    }
+
+    Value io_class;
+    if (env_get(ev->top_env, "IO", &io_class) && io_class.kind == VAL_CLASS) {
+        static const char *fds[] = { "stdout", "stderr", "stdin", NULL };
+        static const char *consts[] = { "STDOUT", "STDERR", "STDIN", NULL };
+        for (int i = 0; fds[i]; i++) {
+            Value obj = val_object(arena, io_class);
+            val_object_set_ivar(arena, obj, "__fd__", val_string(arena, fds[i]));
+            global_set(arena, &ev->globals, fds[i], obj);
+            env_define(arena, ev->top_env, consts[i], obj);
+        }
     }
 
     static const char *prelude =

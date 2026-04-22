@@ -1,0 +1,2 @@
+ArgumentError
+unsupported File.open mode -- q

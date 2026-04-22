@@ -3,6 +3,7 @@
 #include "sema.h"
 
 #include <stdarg.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,6 +24,22 @@ static char *read_file_bytes(const char *path, size_t *out_len) {
     buf[len] = '\0';
     *out_len = len;
     return buf;
+}
+
+static int write_file_bytes(const char *path, const char *content, size_t len) {
+    FILE *f = fopen(path, "wb");
+    if (!f) return 0;
+    size_t written = fwrite(content, 1, len, f);
+    fclose(f);
+    return written == len;
+}
+
+static int append_file_bytes(const char *path, const char *content, size_t len) {
+    FILE *f = fopen(path, "ab");
+    if (!f) return 0;
+    size_t written = fwrite(content, 1, len, f);
+    fclose(f);
+    return written == len;
 }
 
 static const char *normalize_path(Arena *a, const char *path) {
@@ -715,6 +732,61 @@ Value eval_require_relative(Eval *ev, Env *env, const char *path, Node *site) {
     if (!resolved)
         return eval_raise_class(ev, site, "LoadError", "cannot resolve require_relative path '%s'", path);
     return eval_require_path(ev, resolved, site);
+}
+
+Value eval_file_read(Eval *ev, const char *path, Node *site) {
+    size_t len = 0;
+    char *src = read_file_bytes(path, &len);
+    if (!src)
+        return eval_raise_class(ev, site, "LoadError", "cannot read file -- %s", path);
+
+    Value out = val_string_n(ev->arena, src, len);
+    free(src);
+    return out;
+}
+
+Value eval_file_write(Eval *ev, const char *path, const char *content, Node *site) {
+    size_t len = strlen(content);
+    if (!write_file_bytes(path, content, len))
+        return eval_raise_class(ev, site, "LoadError", "cannot write file -- %s", path);
+    return val_int((int64_t)len);
+}
+
+Value eval_file_append(Eval *ev, const char *path, const char *content, Node *site) {
+    size_t len = strlen(content);
+    if (!append_file_bytes(path, content, len))
+        return eval_raise_class(ev, site, "LoadError", "cannot write file -- %s", path);
+    return val_int((int64_t)len);
+}
+
+Value eval_file_exist(Eval *ev, const char *path) {
+    struct stat st;
+    (void)ev;
+    return val_bool(stat(path, &st) == 0);
+}
+
+Value eval_file_delete(Eval *ev, const char *path, Node *site) {
+    if (remove(path) != 0)
+        return eval_raise_class(ev, site, "LoadError", "cannot delete file -- %s", path);
+    return val_int(1);
+}
+
+Value eval_file_touch_mode(Eval *ev, const char *path, const char *mode, Node *site) {
+    const char *fmode = NULL;
+    if (strcmp(mode, "r") == 0) {
+        if (!val_truthy(eval_file_exist(ev, path)))
+            return eval_raise_class(ev, site, "LoadError", "cannot read file -- %s", path);
+        return val_nil();
+    }
+    if (strcmp(mode, "w") == 0) fmode = "wb";
+    else if (strcmp(mode, "a") == 0) fmode = "ab";
+    else return eval_raise_class(ev, site, "ArgumentError", "unsupported File.open mode -- %s", mode);
+
+    FILE *f = fopen(path, fmode);
+    if (!f)
+        return eval_raise_class(ev, site, "LoadError", "cannot open file -- %s", path);
+    fclose(f);
+    return val_nil();
 }
 
 Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {

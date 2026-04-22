@@ -79,8 +79,13 @@ The core exception path now exists, but it still needs:
 `Float`: `nan?`, `infinite?`, `finite?`, `divmod`.  
 `Numeric`: `between?`, `clamp`, `abs2`.
 
-### I/O
-`File.read`, `File.write`, `File.open`, `IO` basics. Required for any non-trivial program.
+### I/O polish
+The core IO path has landed. Remaining gaps:
+
+- no seek/tell/rewind on file objects
+- no binary mode or encoding flags
+- `$stdin.gets` reads from C stdin only; no line-separator configuration
+- `IO.new` with a raw file descriptor not yet supported
 
 ## Already landed
 
@@ -108,3 +113,6 @@ These were previously roadmap items and are now implemented in the current tree:
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files
+- `File.read`, `File.write`, `File.open` (block and non-block forms), `File.delete`, `File.exist?`
+- file objects: `read`, `write`, `print`, `puts`, `path`, `mode`, `close`, `closed?`; modes `r` / `w` / `a` enforced; `w` truncates on open
+- `IO` class with `$stdout`, `$stderr`, `$stdin` / `STDOUT`, `STDERR`, `STDIN`; instance methods `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `tty?`; `$stdin.gets` / `$stdin.read`
