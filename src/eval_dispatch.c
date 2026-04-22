@@ -8,6 +8,8 @@
 
 #define CHECK(v) do { if (ev->errored || val_is_signal(v)) return (v); } while(0)
 
+static int val_responds_to(Eval *ev, Value recv, const char *name, int include_private);
+
 static void copy_module_methods(Eval *ev, Env *target, RubyClass *mod, int singleton_prefix) {
     if (!mod || !target) return;
     for (EnvEntry *entry = mod->class_env ? mod->class_env->vars : NULL; entry; entry = entry->next) {
@@ -157,6 +159,8 @@ static Value dispatch_dynamic_send(Eval *ev, Env *env, Value recv, const char *d
                         ? args[0].sval : NULL;
     if (!mname)
         return eval_raise_class(ev, site, "TypeError", "%s: method name must be a symbol or string", dispatch_name);
+    if (public_only && !val_responds_to(ev, recv, mname, 0) && val_responds_to(ev, recv, mname, 1))
+        return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", mname, val_kind_name(recv.kind));
     int explicit_receiver = public_only ? 0 : -1;
     return dispatch_method(ev, env, recv, mname, args + 1, argc - 1, blk, site, public_only, explicit_receiver);
 }
@@ -312,6 +316,22 @@ static int val_responds_to(Eval *ev, Value recv, const char *name, int include_p
 Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass *owner,
                         const char *name, Value *args, int argc, Value *blk, Node *site) {
     (void)env;
+    NodeList *params = method.method.def_node->def.params;
+    int required = count_required_params(params);
+    int has_splat = has_splat_param(params);
+    int total = 0;
+    for (NodeList *pl = params; pl; pl = pl->next) {
+        Node *p = pl->node;
+        if (!p) continue;
+        if (p->kind == NODE_PARAM) {
+            if (!p->param.splat && !p->param.block_param) total++;
+        } else if (p->kind == NODE_ARRAY) {
+            total++;
+        }
+    }
+    if ((argc < required) || (!has_splat && argc > total))
+        return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+
     Env *method_env = env_new(ev->arena, method.method.closure, 1);
     env_set(ev->arena, method_env, "self", recv);
     env_set(ev->arena, method_env, "__method__", val_symbol(name));
@@ -322,7 +342,7 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     }
     env_set(ev->arena, method_env, "__class__", owner_val);
     if (blk) method_env->block_arg = blk;
-    bind_params(ev, method_env, method.method.def_node->def.params, args, argc);
+    bind_params(ev, method_env, params, args, argc);
     ev->call_depth++;
     eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
     Value result = eval_node(ev, method_env, method.method.def_node->def.body);
