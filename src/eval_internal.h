@@ -14,6 +14,9 @@ const char *exception_value_class_name(Value exc);
 const char *exception_value_message(Eval *ev, Value exc);
 uint32_t exception_value_line(Value exc);
 uint32_t exception_value_col(Value exc);
+Value exception_value_backtrace(Value exc);
+void eval_push_frame(Eval *ev, uint32_t line, uint32_t col, const char *label);
+void eval_pop_frame(Eval *ev);
 const char *eval_rope(Eval *ev, Env *env, RopeNode *r);
 Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site);
 Value dispatch_method(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
@@ -35,7 +38,7 @@ int dispatch_bool(Eval *ev, Value recv, const char *name, Node *site, Value *out
 int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out);
 int dispatch_object(Eval *ev, Value recv, const char *name, Value *args, int argc,
-                    Value *blk, Value *out);
+                    Value *blk, Node *site, Value *out);
 
 static inline int flow_signal_out(Value v, Value *out) {
     if (v.kind == VAL_BREAK) {

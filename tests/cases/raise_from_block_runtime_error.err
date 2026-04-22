@@ -1,1 +1,2 @@
 error: 2:3: RuntimeError: boom
+  from 1:1:in `block`

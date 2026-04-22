@@ -1,1 +1,2 @@
 error: 2:3: RuntimeError: boom
+  from 5:1:in `fail_now`

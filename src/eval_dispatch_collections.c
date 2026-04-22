@@ -58,7 +58,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = val_string(ev->arena, buf); return 1;
     }
     if (strcmp(name, "include?") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "Array#include? requires an argument");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Array#include? requires an argument");
         else {
             *out = val_false();
             for (size_t i = 0; i < recv.array->len; i++) if (val_equal(recv.array->elems[i], args[0])) { *out = val_true(); break; }
@@ -72,7 +72,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         /* Keep iteration-heavy behavior centralized in this file. */
     }
     if (strcmp(name, "each") == 0) {
-        if (!blk) *out = eval_error(ev, site, "Array#each requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#each requires a block");
         else {
             for (size_t i = 0; i < recv.array->len; i++) {
                 Value arg = recv.array->elems[i];
@@ -85,7 +85,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "each_with_index") == 0) {
-        if (!blk) *out = eval_error(ev, site, "Array#each_with_index requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#each_with_index requires a block");
         else {
             for (size_t i = 0; i < recv.array->len; i++) {
                 Value bargs[2] = { recv.array->elems[i], val_int((int64_t)i) };
@@ -98,7 +98,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
-        if (!blk) *out = eval_error(ev, site, "Array#map requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#map requires a block");
         else {
             Value result = val_array_new();
             for (size_t i = 0; i < recv.array->len; i++) {
@@ -113,7 +113,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "select") == 0 || strcmp(name, "filter") == 0) {
-        if (!blk) *out = eval_error(ev, site, "Array#select requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#select requires a block");
         else {
             Value result = val_array_new();
             for (size_t i = 0; i < recv.array->len; i++) {
@@ -128,7 +128,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "reject") == 0) {
-        if (!blk) *out = eval_error(ev, site, "Array#reject requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#reject requires a block");
         else {
             Value result = val_array_new();
             for (size_t i = 0; i < recv.array->len; i++) {
@@ -143,7 +143,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "reduce") == 0 || strcmp(name, "inject") == 0) {
-        if (!blk) *out = eval_error(ev, site, "Array#reduce requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#reduce requires a block");
         else if (recv.array->len == 0) *out = argc > 0 ? args[0] : val_nil();
         else {
             size_t start = 0;
@@ -160,9 +160,10 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "any?") == 0 || strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) {
-        if (!blk) *out = eval_error(ev, site, strcmp(name, "any?") == 0 ? "Array#any? requires a block" :
-                                              strcmp(name, "all?") == 0 ? "Array#all? requires a block" :
-                                                                           "Array#none? requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError",
+                                          strcmp(name, "any?") == 0 ? "Array#any? requires a block" :
+                                          strcmp(name, "all?") == 0 ? "Array#all? requires a block" :
+                                                                       "Array#none? requires a block");
         else {
             *out = strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0 ? val_true() : val_false();
             for (size_t i = 0; i < recv.array->len; i++) {
@@ -289,7 +290,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     if (recv.kind != VAL_HASH) return 0;
     RubyHash *h = recv.hash;
     if (strcmp(name, "[]") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "Hash#[] requires a key");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#[] requires a key");
         else {
             Value found;
             *out = val_hash_get(h, args[0], &found) ? found : val_nil();
@@ -297,23 +298,23 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "[]=") == 0) {
-        if (argc < 2) *out = eval_error(ev, site, "Hash#[]= requires key and value");
+        if (argc < 2) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#[]= requires key and value");
         else { val_hash_set(h, args[0], args[1]); *out = args[1]; }
         return 1;
     }
     if (strcmp(name, "fetch") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "Hash#fetch requires a key");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#fetch requires a key");
         else {
             Value found;
             if (val_hash_get(h, args[0], &found)) *out = found;
             else if (argc > 1) *out = args[1];
             else if (blk) *out = call_block(ev, *blk, &args[0], 1, site);
-            else *out = eval_error(ev, site, "Hash#fetch: key not found");
+            else *out = eval_raise_class(ev, site, "KeyError", "Hash#fetch: key not found");
         }
         return 1;
     }
     if (strcmp(name, "has_key?") == 0 || strcmp(name, "key?") == 0 || strcmp(name, "include?") == 0 || strcmp(name, "member?") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "Hash#has_key? requires a key");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#has_key? requires a key");
         else {
             Value found;
             *out = val_bool(val_hash_get(h, args[0], &found));
@@ -321,7 +322,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "has_value?") == 0 || strcmp(name, "value?") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "Hash#has_value? requires a value");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#has_value? requires a value");
         else {
             *out = val_false();
             for (size_t i = 0; i < h->len; i++) if (val_equal(h->vals[i], args[0])) { *out = val_true(); break; }
@@ -329,7 +330,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "delete") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "Hash#delete requires a key");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#delete requires a key");
         else {
             Value found;
             int ok = val_hash_get(h, args[0], &found);
@@ -364,7 +365,8 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = arr; return 1;
     }
     if (strcmp(name, "merge") == 0) {
-        if (argc < 1 || args[0].kind != VAL_HASH) *out = eval_error(ev, site, "Hash#merge requires a Hash");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#merge requires a Hash");
+        else if (args[0].kind != VAL_HASH) *out = eval_raise_class(ev, site, "TypeError", "Hash#merge requires a Hash");
         else {
             Value result = val_hash_new(ev->arena);
             for (size_t i = 0; i < h->len; i++) val_hash_set(result.hash, h->keys[i], h->vals[i]);
@@ -375,7 +377,8 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "merge!") == 0 || strcmp(name, "update") == 0) {
-        if (argc < 1 || args[0].kind != VAL_HASH) *out = eval_error(ev, site, "Hash#merge! requires a Hash");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#merge! requires a Hash");
+        else if (args[0].kind != VAL_HASH) *out = eval_raise_class(ev, site, "TypeError", "Hash#merge! requires a Hash");
         else {
             RubyHash *other = args[0].hash;
             for (size_t i = 0; i < other->len; i++) val_hash_set(h, other->keys[i], other->vals[i]);
@@ -384,7 +387,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "each") == 0 || strcmp(name, "each_pair") == 0) {
-        if (!blk) *out = eval_error(ev, site, "Hash#each requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#each requires a block");
         else {
             for (size_t i = 0; i < h->len; i++) {
                 Value bargs[2] = { h->keys[i], h->vals[i] };
@@ -397,7 +400,8 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "each_key") == 0 || strcmp(name, "each_value") == 0) {
-        if (!blk) *out = eval_error(ev, site, strcmp(name, "each_key") == 0 ? "Hash#each_key requires a block" : "Hash#each_value requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError",
+                                          strcmp(name, "each_key") == 0 ? "Hash#each_key requires a block" : "Hash#each_value requires a block");
         else {
             for (size_t i = 0; i < h->len; i++) {
                 Value arg = strcmp(name, "each_key") == 0 ? h->keys[i] : h->vals[i];
@@ -410,7 +414,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
-        if (!blk) *out = eval_error(ev, site, "Hash#map requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#map requires a block");
         else {
             Value result = val_array_new();
             for (size_t i = 0; i < h->len; i++) {
@@ -425,7 +429,8 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "select") == 0 || strcmp(name, "filter") == 0 || strcmp(name, "reject") == 0) {
-        if (!blk) *out = eval_error(ev, site, strcmp(name, "reject") == 0 ? "Hash#reject requires a block" : "Hash#select requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError",
+                                          strcmp(name, "reject") == 0 ? "Hash#reject requires a block" : "Hash#select requires a block");
         else {
             Value result = val_hash_new(ev->arena);
             for (size_t i = 0; i < h->len; i++) {
@@ -441,7 +446,8 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "any?") == 0 || strcmp(name, "all?") == 0) {
-        if (!blk) *out = eval_error(ev, site, strcmp(name, "any?") == 0 ? "Hash#any? requires a block" : "Hash#all? requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError",
+                                          strcmp(name, "any?") == 0 ? "Hash#any? requires a block" : "Hash#all? requires a block");
         else {
             *out = strcmp(name, "all?") == 0 ? val_true() : val_false();
             for (size_t i = 0; i < h->len; i++) {
@@ -467,7 +473,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "flat_map") == 0) {
-        if (!blk) *out = eval_error(ev, site, "Hash#flat_map requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#flat_map requires a block");
         else {
             Value result = val_array_new();
             for (size_t i = 0; i < h->len; i++) {
@@ -483,7 +489,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "reduce") == 0 || strcmp(name, "inject") == 0) {
-        if (!blk) *out = eval_error(ev, site, "Hash#reduce requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#reduce requires a block");
         else if (h->len == 0) *out = argc > 0 ? args[0] : val_nil();
         else {
             size_t start = 0;
@@ -511,7 +517,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "store") == 0) {
-        if (argc < 2) *out = eval_error(ev, site, "Hash#store requires key and value");
+        if (argc < 2) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#store requires key and value");
         else { val_hash_set(h, args[0], args[1]); *out = args[1]; }
         return 1;
     }
@@ -523,6 +529,6 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "nil?") == 0) { *out = val_false(); return 1; }
-    *out = eval_error(ev, site, "undefined method '%s' for Hash", name);
+    *out = eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for Hash", name);
     return 1;
 }

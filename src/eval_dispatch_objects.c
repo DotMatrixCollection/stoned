@@ -4,7 +4,7 @@
 
 int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out) {
-    (void)env; (void)site;
+    (void)env;
     if (recv.kind != VAL_CLASS) return 0;
     if (strcmp(name, "new") == 0) {
         Value obj = val_object(ev->arena, recv);
@@ -22,7 +22,9 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 for (int i = 0; i < argc && params; i++, params = params->next)
                     env_set(ev->arena, method_env, params->node->param.name, args[i]);
                 ev->call_depth++;
+                eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, "initialize");
                 Value result = eval_node(ev, method_env, init_method.method.def_node->def.body);
+                eval_pop_frame(ev);
                 ev->call_depth--;
                 if (result.kind == VAL_EXCEPTION) { *out = result; return 1; }
                 (void)result;
@@ -51,7 +53,9 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             for (int i = 0; i < argc && params; i++, params = params->next)
                 env_set(ev->arena, method_env, params->node->param.name, args[i]);
             ev->call_depth++;
+            eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
             Value result = eval_node(ev, method_env, cm.method.def_node->def.body);
+            eval_pop_frame(ev);
             ev->call_depth--;
             if (result.kind == VAL_RETURN) result = *result.wrapped;
             else if (val_is_signal(result)) { *out = result; return 1; }
@@ -64,11 +68,15 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
 }
 
 int dispatch_object(Eval *ev, Value recv, const char *name, Value *args, int argc,
-                    Value *blk, Value *out) {
+                    Value *blk, Node *site, Value *out) {
     if (recv.kind != VAL_OBJECT) return 0;
     if (value_is_a_named_class(ev, recv, "Exception")) {
         if (strcmp(name, "message") == 0 || strcmp(name, "to_s") == 0) {
             *out = val_string(ev->arena, exception_value_message(ev, recv));
+            return 1;
+        }
+        if (strcmp(name, "backtrace") == 0) {
+            *out = exception_value_backtrace(recv);
             return 1;
         }
         if (strcmp(name, "inspect") == 0) {
@@ -95,7 +103,9 @@ int dispatch_object(Eval *ev, Value recv, const char *name, Value *args, int arg
             for (int i = 0; i < argc && params; i++, params = params->next)
                 env_set(ev->arena, method_env, params->node->param.name, args[i]);
             ev->call_depth++;
+            eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
             Value result = eval_node(ev, method_env, method.method.def_node->def.body);
+            eval_pop_frame(ev);
             ev->call_depth--;
             if (result.kind == VAL_RETURN) result = *result.wrapped;
             else if (val_is_signal(result)) { *out = result; return 1; }

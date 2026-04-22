@@ -4,7 +4,7 @@
 #include "arena.h"
 #include "parser.h"
 #include "sema.h"
-#include "eval.h"
+#include "eval_internal.h"
 
 static char *read_file(const char *path, size_t *out_len) {
     FILE *f = fopen(path, "rb");
@@ -91,6 +91,12 @@ int main(int argc, char **argv) {
     if (result.kind == VAL_EXCEPTION) {
         fprintf(stderr, "error: %u:%u: %s\n",
                 eval.exception_line, eval.exception_col, eval.exception_msg);
+        Value backtrace = exception_value_backtrace(eval.current_exception);
+        if (backtrace.kind == VAL_ARRAY) {
+            for (size_t i = 0; i < backtrace.array->len; i++) {
+                fprintf(stderr, "  from %s\n", val_to_s(&arena, backtrace.array->elems[i]));
+            }
+        }
         arena_free(&arena);
         free(file_buf);
         return 1;

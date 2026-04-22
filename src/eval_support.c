@@ -12,6 +12,18 @@ static void format_exception_summary(Eval *ev, const char *class_name, const cha
              class_name, (int)max_msg, msg);
 }
 
+void eval_push_frame(Eval *ev, uint32_t line, uint32_t col, const char *label) {
+    if (ev->frame_count >= EVAL_MAX_DEPTH) return;
+    ev->frames[ev->frame_count].line = line;
+    ev->frames[ev->frame_count].col = col;
+    ev->frames[ev->frame_count].label = label;
+    ev->frame_count++;
+}
+
+void eval_pop_frame(Eval *ev) {
+    if (ev->frame_count > 0) ev->frame_count--;
+}
+
 int value_is_a_named_class(Eval *ev, Value v, const char *class_name) {
     if (v.kind != VAL_OBJECT) return 0;
     Value klass;
@@ -46,6 +58,14 @@ static Value build_exception(Eval *ev, const char *class_name, const char *msg) 
     }
     Value exc = val_object(ev->arena, klass);
     val_object_set_ivar(ev->arena, exc, "message", val_string(ev->arena, msg ? msg : class_name));
+    Value backtrace = val_array_new();
+    for (int i = ev->frame_count - 1; i >= 0; i--) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "%u:%u:in `%s`",
+                 ev->frames[i].line, ev->frames[i].col, ev->frames[i].label);
+        val_array_push(&backtrace, val_string(ev->arena, buf));
+    }
+    val_object_set_ivar(ev->arena, exc, "backtrace", backtrace);
     return exc;
 }
 
@@ -67,6 +87,13 @@ uint32_t exception_value_col(Value exc) {
     if (exc.kind == VAL_OBJECT && val_object_get_ivar(exc, "col", &col) && col.kind == VAL_INT)
         return (uint32_t)col.ival;
     return 0;
+}
+
+Value exception_value_backtrace(Value exc) {
+    Value backtrace;
+    if (exc.kind == VAL_OBJECT && val_object_get_ivar(exc, "backtrace", &backtrace))
+        return backtrace;
+    return val_array_new();
 }
 
 Value eval_error(Eval *ev, Node *n, const char *fmt, ...) {
@@ -197,7 +224,7 @@ const char *eval_rope(Eval *ev, Env *env, RopeNode *r) {
 
 Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site) {
     if (blk.kind != VAL_BLOCK)
-        return eval_error(ev, call_site, "no block given");
+        return eval_raise_class(ev, call_site, "LocalJumpError", "no block given");
 
     Node *bn      = blk.block.block_node;
     Env *closure  = blk.block.closure;
@@ -210,7 +237,10 @@ Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site) {
             env_set(ev->arena, frame, p->param.name, args[i]);
     }
 
+    eval_push_frame(ev, call_site ? call_site->span.line : 0,
+                    call_site ? call_site->span.col : 0, "block");
     Value result = eval_node(ev, frame, bn->block.body);
+    eval_pop_frame(ev);
     if (result.kind == VAL_NEXT) return *result.wrapped;
     return result;
 }

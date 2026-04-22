@@ -9,6 +9,12 @@
 #define EVAL_MAX_DEPTH 512
 
 typedef struct {
+    uint32_t line;
+    uint32_t col;
+    const char *label;
+} EvalFrame;
+
+typedef struct {
     Arena       *arena;
     GlobalTable  globals;
     Env         *top_env;   /* top-level environment */
@@ -22,6 +28,8 @@ typedef struct {
     uint32_t     exception_col;
     const char  *exception_class;
     char         exception_msg[512];
+    EvalFrame    frames[EVAL_MAX_DEPTH];
+    int          frame_count;
 } Eval;
 
 void  eval_init(Eval *ev, Arena *arena, FILE *out);

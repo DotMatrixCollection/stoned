@@ -1,0 +1,2 @@
+ArgumentError
+String#include? requires an argument

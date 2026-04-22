@@ -16,7 +16,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     if (strcmp(name, "odd?") == 0) { *out = val_bool(recv.ival % 2 != 0); return 1; }
     if (strcmp(name, "zero?") == 0) { *out = val_bool(recv.ival == 0); return 1; }
     if (strcmp(name, "times") == 0) {
-        if (!blk) *out = eval_error(ev, site, "Integer#times requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Integer#times requires a block");
         else {
             for (int64_t i = 0; i < recv.ival; i++) {
                 Value arg = val_int(i);
@@ -29,8 +29,8 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         return 1;
     }
     if (strcmp(name, "upto") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "Integer#upto requires an argument");
-        else if (!blk) *out = eval_error(ev, site, "Integer#upto requires a block");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Integer#upto requires an argument");
+        else if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Integer#upto requires a block");
         else {
             for (int64_t i = recv.ival; i <= args[0].ival; i++) {
                 Value arg = val_int(i);
@@ -43,8 +43,8 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         return 1;
     }
     if (strcmp(name, "downto") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "Integer#downto requires an argument");
-        else if (!blk) *out = eval_error(ev, site, "Integer#downto requires a block");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Integer#downto requires an argument");
+        else if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Integer#downto requires a block");
         else {
             for (int64_t i = recv.ival; i >= args[0].ival; i--) {
                 Value arg = val_int(i);
@@ -113,12 +113,12 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "include?") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "String#include? requires an argument");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "String#include? requires an argument");
         else *out = val_bool(strstr(s, val_to_s(ev->arena, args[0])) != NULL);
         return 1;
     }
     if (strcmp(name, "start_with?") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "String#start_with? requires an argument");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "String#start_with? requires an argument");
         else {
             const char *needle = val_to_s(ev->arena, args[0]);
             *out = val_bool(strncmp(s, needle, strlen(needle)) == 0);
@@ -126,7 +126,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "end_with?") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "String#end_with? requires an argument");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "String#end_with? requires an argument");
         else {
             const char *needle = val_to_s(ev->arena, args[0]);
             size_t slen = strlen(s), nlen = strlen(needle);
@@ -152,7 +152,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "each_char") == 0) {
-        if (!blk) *out = eval_error(ev, site, "String#each_char requires a block");
+        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "String#each_char requires a block");
         else {
             for (size_t i = 0; s[i]; i++) {
                 Value ch = val_string_n(ev->arena, s + i, 1);
@@ -173,12 +173,12 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "replace") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "String#replace requires an argument");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "String#replace requires an argument");
         else *out = val_string(ev->arena, val_to_s(ev->arena, args[0]));
         return 1;
     }
     if (strcmp(name, "*") == 0) {
-        if (argc < 1) *out = eval_error(ev, site, "String#* requires an argument");
+        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "String#* requires an argument");
         else {
             int64_t n = args[0].ival;
             if (n <= 0) *out = val_string(ev->arena, "");
@@ -199,7 +199,7 @@ int dispatch_nil(Eval *ev, Value recv, const char *name, Node *site, Value *out)
     (void)recv;
     if (strcmp(name, "nil?") == 0 || strcmp(name, "to_s") == 0) { *out = val_nil(); return 1; }
     if (strcmp(name, "inspect") == 0) { *out = val_string(ev->arena, "nil"); return 1; }
-    *out = eval_error(ev, site, "undefined method '%s' for nil", name);
+    *out = eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for nil", name);
     return 1;
 }
 

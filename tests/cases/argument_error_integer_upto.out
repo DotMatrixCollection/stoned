@@ -1,0 +1,2 @@
+ArgumentError
+Integer#upto requires an argument

@@ -295,11 +295,11 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (strcmp(name, "nil?") == 0)
         return val_bool(recv.kind == VAL_NIL);
     if (strcmp(name, "is_a?") == 0 || strcmp(name, "kind_of?") == 0) {
-        if (argc < 1) return eval_error(ev, site, "%s requires a class argument", name);
+        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "%s requires a class argument", name);
         return val_bool(val_is_a(recv, args[0]));
     }
     if (strcmp(name, "instance_of?") == 0) {
-        if (argc < 1) return eval_error(ev, site, "instance_of? requires a class argument");
+        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "instance_of? requires a class argument");
         if (args[0].kind != VAL_CLASS) return val_false();
         if (recv.kind == VAL_OBJECT)
             return val_bool(recv.obj->klass.klass == args[0].klass);
@@ -308,7 +308,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (strcmp(name, "class") == 0)
         return val_class_of(ev, recv);
     if (strcmp(name, "respond_to?") == 0) {
-        if (argc < 1) return eval_error(ev, site, "respond_to? requires an argument");
+        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "respond_to? requires an argument");
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING)
                             ? args[0].sval : NULL;
         if (!mname) return val_false();
@@ -336,10 +336,10 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         return val_bool(!val_equal(recv, args[0]));
     }
     if (strcmp(name, "send") == 0 || strcmp(name, "__send__") == 0) {
-        if (argc < 1) return eval_error(ev, site, "send requires a method name");
+        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "send requires a method name");
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING)
                             ? args[0].sval : NULL;
-        if (!mname) return eval_error(ev, site, "send: method name must be a symbol or string");
+        if (!mname) return eval_raise_class(ev, site, "TypeError", "send: method name must be a symbol or string");
         return dispatch_method(ev, env, recv, mname, args + 1, argc - 1, blk, site);
     }
 
@@ -351,9 +351,9 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (recv.kind == VAL_NIL && dispatch_nil(ev, recv, name, site, &out)) return out;
     if (dispatch_bool(ev, recv, name, site, &out)) return out;
     if (dispatch_class(ev, env, recv, name, args, argc, blk, site, &out)) return out;
-    if (dispatch_object(ev, recv, name, args, argc, blk, &out)) return out;
+    if (dispatch_object(ev, recv, name, args, argc, blk, site, &out)) return out;
 
-    return eval_error(ev, site, "undefined method '%s' for %s", name, val_kind_name(recv.kind));
+    return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", name, val_kind_name(recv.kind));
 }
 
 Value eval_binop(Eval *ev, Env *env, Node *node) {
@@ -377,9 +377,9 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
     Value right = eval_node(ev, env, node->binop.right);
     CHECK(right);
 
-    if (strcmp(op, "+") == 0 && left.kind == VAL_STRING) {
+        if (strcmp(op, "+") == 0 && left.kind == VAL_STRING) {
         if (right.kind != VAL_STRING)
-            return eval_error(ev, node, "String can only be concatenated with String");
+            return eval_raise_class(ev, node, "TypeError", "String can only be concatenated with String");
         size_t la = strlen(left.sval), lb = strlen(right.sval);
         char *buf = arena_alloc(ev->arena, la + lb + 1);
         memcpy(buf, left.sval, la);
@@ -419,15 +419,15 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
         }
         if (strcmp(op, "/") == 0) {
             if (both_int) {
-                if (right.ival == 0) return eval_error(ev, node, "divided by 0");
+                if (right.ival == 0) return eval_raise_class(ev, node, "ZeroDivisionError", "divided by 0");
                 return val_int(left.ival / right.ival);
             }
-            if (rf == 0.0) return eval_error(ev, node, "divided by 0");
+            if (rf == 0.0) return eval_raise_class(ev, node, "ZeroDivisionError", "divided by 0");
             return val_float(lf / rf);
         }
         if (strcmp(op, "%") == 0) {
             if (both_int) {
-                if (right.ival == 0) return eval_error(ev, node, "divided by 0");
+                if (right.ival == 0) return eval_raise_class(ev, node, "ZeroDivisionError", "divided by 0");
                 return val_int(left.ival % right.ival);
             }
             return val_float(fmod(lf, rf));
@@ -494,7 +494,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                 if (sc->block_arg) { block_arg = sc->block_arg; break; }
                 if (sc->is_def) break;
             }
-            if (!block_arg) return eval_error(ev, node, "no block given (yield)");
+            if (!block_arg) return eval_raise_class(ev, node, "LocalJumpError", "no block given (yield)");
             return call_block(ev, *block_arg, args, argc, node);
         }
 
@@ -526,7 +526,9 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                     for (int i = 0; i < argc && params; i++, params = params->next)
                         env_set(ev->arena, method_env, params->node->param.name, args[i]);
                     ev->call_depth++;
+                    eval_push_frame(ev, node->span.line, node->span.col, name);
                     Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
+                    eval_pop_frame(ev);
                     ev->call_depth--;
                     if (result.kind == VAL_RETURN) result = *result.wrapped;
                     else if (val_is_signal(result)) return result;
@@ -554,7 +556,9 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                     for (int i = 0; i < argc && params; i++, params = params->next)
                         env_set(ev->arena, method_env, params->node->param.name, args[i]);
                     ev->call_depth++;
+                    eval_push_frame(ev, node->span.line, node->span.col, name);
                     Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
+                    eval_pop_frame(ev);
                     ev->call_depth--;
                     if (result.kind == VAL_RETURN) result = *result.wrapped;
                     else if (val_is_signal(result)) return result;
@@ -571,7 +575,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
 
 call_method:
         if (!env_get(env, name, &fn))
-            return eval_error(ev, node, "undefined method '%s'", name);
+            return eval_raise_class(ev, node, "NoMethodError", "undefined method '%s'", name);
         Node *def = fn.method.def_node;
         Env *closure = fn.method.closure;
         Env *frame = env_new(ev->arena, closure, 1);
@@ -597,7 +601,9 @@ call_method:
         }
 
         ev->call_depth++;
+        eval_push_frame(ev, node->span.line, node->span.col, name);
         Value result = eval_node(ev, frame, def->def.body);
+        eval_pop_frame(ev);
         ev->call_depth--;
         if (result.kind == VAL_RETURN) return *result.wrapped;
         if (val_is_signal(result)) return result;
@@ -609,14 +615,14 @@ call_method:
 
     if (recv.kind == VAL_ARRAY) {
         if (strcmp(node->call.method, "[]") == 0) {
-            if (argc < 1) return eval_error(ev, node, "wrong number of args for []");
+            if (argc < 1) return eval_raise_class(ev, node, "ArgumentError", "wrong number of args for []");
             int64_t idx = args[0].ival;
             if (idx < 0) idx = (int64_t)recv.array->len + idx;
             if (idx < 0 || (size_t)idx >= recv.array->len) return val_nil();
             return recv.array->elems[idx];
         }
         if (strcmp(node->call.method, "[]=") == 0) {
-            if (argc < 2) return eval_error(ev, node, "wrong number of args for []=");
+            if (argc < 2) return eval_raise_class(ev, node, "ArgumentError", "wrong number of args for []=");
             int64_t idx = args[0].ival;
             if (idx < 0) idx = (int64_t)recv.array->len + idx;
             if (idx >= 0 && (size_t)idx < recv.array->len)
