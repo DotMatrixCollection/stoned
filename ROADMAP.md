@@ -39,6 +39,11 @@ The core visibility model now exists, but it still needs:
 - fuller Ruby compatibility around visibility edge cases
 - any remaining `respond_to?` / dispatch inconsistencies as more metaprogramming features land
 
+### `super` polish
+The core `super` path now exists, but it still needs:
+
+- closer Ruby compatibility on the remaining forwarding and visibility edge cases
+
 ## Longer term
 
 ### `Comparable` and `Enumerable` polish

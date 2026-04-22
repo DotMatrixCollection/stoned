@@ -350,26 +350,14 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             RubyClass *owner = NULL;
             if (ruby_class_find_super_method(self.obj->klass.klass, cur_class_val.klass,
                                              method_name, &method, &owner)) {
-                Env *method_env = env_new(ev->arena, method.method.closure, 1);
-                env_set(ev->arena, method_env, "self", self);
-                env_set(ev->arena, method_env, "__method__", val_symbol(method_name));
-                Value sc_val; sc_val.kind = VAL_CLASS; sc_val.klass = owner;
-                env_set(ev->arena, method_env, "__class__", sc_val);
-
                 Value *blk = NULL;
                 for (Env *sc = env; sc; sc = sc->parent) {
                     if (sc->block_arg) { blk = sc->block_arg; break; }
                     if (sc->is_def) break;
                 }
-                if (blk) method_env->block_arg = blk;
-
-                bind_params(ev, method_env, method.method.def_node->def.params, super_args, super_argc);
-
-                ev->call_depth++;
-                Value result = eval_node(ev, method_env, method.method.def_node->def.body);
-                ev->call_depth--;
-                if (result.kind == VAL_RETURN) result = *result.wrapped;
-                else if (val_is_signal(result)) return result;
+                Value result = call_method_value(ev, env, self, method, owner, method_name,
+                                                 super_args, super_argc, blk, node);
+                if (val_is_signal(result)) return result;
                 return result;
             }
             return eval_raise_class(ev, node, "NoMethodError", "super: no superclass method '%s'", method_name);
