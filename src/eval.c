@@ -238,18 +238,26 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             return result;
         }
 
+        case NODE_RETRY:
+            return val_retry();
+
         case NODE_BEGIN: {
-            Value result = eval_node(ev, env, node->begin_stmt.body);
+            Value result;
+            retry_begin:
+            result = eval_node(ev, env, node->begin_stmt.body);
 
             if (result.kind == VAL_EXCEPTION && node->begin_stmt.rescues) {
                 for (NodeList *l = node->begin_stmt.rescues; l; l = l->next) {
                     Node *rescue_clause = l->node;
                     if (!rescue_clause || rescue_clause->kind != NODE_RESCUE) continue;
-                    if (rescue_clause->rescue_clause.exception_class) {
-                        Value rescue_class = eval_node(ev, env, rescue_clause->rescue_clause.exception_class);
-                        CHECK(rescue_class);
-                    if (!exception_is_a(ev, rescue_class))
-                            continue;
+                    if (rescue_clause->rescue_clause.exception_classes) {
+                        int matched = 0;
+                        for (NodeList *cl = rescue_clause->rescue_clause.exception_classes; cl; cl = cl->next) {
+                            Value rescue_class = eval_node(ev, env, cl->node);
+                            CHECK(rescue_class);
+                            if (exception_is_a(ev, rescue_class)) { matched = 1; break; }
+                        }
+                        if (!matched) continue;
                     }
                     Value rescued_exc = ev->current_exception;
                     Value previous_rescue = ev->rescue_context;
@@ -262,6 +270,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     }
                     result = eval_node(ev, rescue_env, rescue_clause->rescue_clause.body);
                     ev->rescue_context = previous_rescue;
+                    if (result.kind == VAL_RETRY) goto retry_begin;
                     break;
                 }
             }

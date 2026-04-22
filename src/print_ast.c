@@ -118,9 +118,10 @@ void print_ast(FILE *out, Node *node, int indent) {
 
         case NODE_RESCUE:
             fprintf(out, "RESCUE\n");
-            if (node->rescue_clause.exception_class) {
-                indent_print(out, indent+1); fprintf(out, "class:\n");
-                print_ast(out, node->rescue_clause.exception_class, indent+2);
+            if (node->rescue_clause.exception_classes) {
+                indent_print(out, indent+1); fprintf(out, "classes:\n");
+                for (NodeList *l = node->rescue_clause.exception_classes; l; l = l->next)
+                    print_ast(out, l->node, indent+2);
             }
             if (node->rescue_clause.exception_var) {
                 indent_print(out, indent+1); fprintf(out, "var: %s\n", node->rescue_clause.exception_var);
@@ -164,6 +165,9 @@ void print_ast(FILE *out, Node *node, int indent) {
         case NODE_NEXT:
             fprintf(out, "NEXT\n");
             if (node->jump.value) print_ast(out, node->jump.value, indent+1);
+            break;
+        case NODE_RETRY:
+            fprintf(out, "RETRY\n");
             break;
 
         case NODE_ARRAY:

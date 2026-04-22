@@ -53,6 +53,7 @@ static struct { const char *word; TokenKind kind; } KEYWORDS[] = {
     {"begin",   TOK_BEGIN},
     {"yield",   TOK_YIELD},
     {"super",   TOK_SUPER},
+    {"retry",   TOK_RETRY},
     {NULL, 0}
 };
 

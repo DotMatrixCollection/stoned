@@ -67,7 +67,7 @@ The core hook path now exists, but it still needs:
 The core exception path now exists, but it still needs:
 
 - richer exception objects beyond class/message/origin
-- more rescue syntax (`rescue => e` is in; typed lists and fuller Ruby forms are not)
+- fuller Ruby rescue syntax beyond the current `rescue => e`, typed clauses, typed lists, and `retry`
 - better typed runtime errors throughout the evaluator
 - `StopIteration` and broader standard exception coverage
 
@@ -101,6 +101,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - exception signal plumbing
 - `begin` / `rescue` / `ensure`
 - typed rescue clauses and rescue variable binding
+- typed rescue lists and `retry`
 - re-raise and exception object basics
 - uncaught exception backtraces
 - broader typed runtime errors (`ArgumentError`, `TypeError`, `NoMethodError`, `ZeroDivisionError`, `LocalJumpError`, `KeyError`)

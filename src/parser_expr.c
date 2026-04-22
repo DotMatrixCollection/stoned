@@ -173,7 +173,7 @@ Node *parse_expr(Parser *p, int min_bp) {
                     case TOK_IF: case TOK_UNLESS: case TOK_THEN: case TOK_ELSIF:
                     case TOK_ELSE: case TOK_END: case TOK_WHILE: case TOK_UNTIL:
                     case TOK_DO: case TOK_DEF: case TOK_CLASS: case TOK_MODULE:
-                    case TOK_RETURN: case TOK_BREAK: case TOK_NEXT:
+                    case TOK_RETURN: case TOK_BREAK: case TOK_NEXT: case TOK_RETRY:
                     case TOK_AND: case TOK_OR: case TOK_NOT:
                     case TOK_IN: case TOK_RESCUE: case TOK_ENSURE:
                     case TOK_BEGIN: case TOK_YIELD: case TOK_SUPER:
@@ -542,6 +542,10 @@ Node *parse_primary(Parser *p) {
             if (!check(p, TOK_NEWLINE) && !check(p, TOK_SEMICOLON) && !check(p, TOK_EOF) && !check(p, TOK_END))
                 n->jump.value = parse_expr(p, 0);
             return n;
+        }
+        case TOK_RETRY: {
+            advance(p);
+            return node_new(p->arena, NODE_RETRY, s);
         }
         case TOK_SUPER: {
             advance(p);

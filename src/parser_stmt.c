@@ -153,7 +153,11 @@ Node *parse_stmt(Parser *p) {
             Node *rescue_clause = node_new(p->arena, NODE_RESCUE, s);
             if (!check(p, TOK_ARROW) && !check(p, TOK_NEWLINE) && !check(p, TOK_SEMICOLON) &&
                 !check(p, TOK_END) && !check(p, TOK_ENSURE)) {
-                rescue_clause->rescue_clause.exception_class = parse_expr(p, 0);
+                do {
+                    Node *exc = parse_expr(p, 0);
+                    rescue_clause->rescue_clause.exception_classes =
+                        nodelist_append(p->arena, rescue_clause->rescue_clause.exception_classes, exc);
+                } while (match(p, TOK_COMMA));
             }
             if (match(p, TOK_ARROW)) {
                 Token var_tok = advance(p);

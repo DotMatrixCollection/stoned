@@ -169,6 +169,9 @@ Value val_break(Arena *a, Value inner) {
 Value val_next(Arena *a, Value inner) {
     Value v; v.kind = VAL_NEXT; v.wrapped = alloc_val(a, inner); return v;
 }
+Value val_retry(void) {
+    Value v; v.kind = VAL_RETRY; v.wrapped = NULL; return v;
+}
 Value val_exception(void) {
     Value v; v.kind = VAL_EXCEPTION; v.wrapped = NULL; return v;
 }

@@ -54,9 +54,11 @@ Current coverage:
 
 - bare `rescue`
 - typed `rescue ArgumentError`
+- typed rescue lists like `rescue TypeError, ArgumentError`
 - non-matching typed rescue
 - multiple rescue arms
 - rescuing `NoMethodError`
+- `retry` within rescue
 
 ## Phase 4: ensure semantics
 

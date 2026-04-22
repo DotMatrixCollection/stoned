@@ -60,6 +60,7 @@ typedef enum {
     NODE_RETURN,
     NODE_BREAK,
     NODE_NEXT,
+    NODE_RETRY,
 
     /* Definition */
     NODE_DEF,
@@ -162,7 +163,7 @@ struct Node {
 
         /* NODE_RESCUE */
         struct {
-            Node *exception_class;
+            NodeList *exception_classes; /* one or more; NULL = bare rescue */
             const char *exception_var;
             Node *body;
         } rescue_clause;

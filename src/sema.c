@@ -152,7 +152,8 @@ static void collect(Sema *s, Node *node, NodeList *excl) {
             break;
 
         case NODE_RESCUE:
-            collect(s, node->rescue_clause.exception_class, excl);
+            for (NodeList *l = node->rescue_clause.exception_classes; l; l = l->next)
+                collect(s, l->node, excl);
             collect(s, node->rescue_clause.body, excl);
             break;
 
@@ -300,12 +301,14 @@ static void resolve(Sema *s, Node *node) {
             break;
 
         case NODE_RESCUE:
-            resolve(s, node->rescue_clause.exception_class);
+            resolve_list(s, node->rescue_clause.exception_classes);
             scope_push(s, 0);
             if (node->rescue_clause.exception_var)
                 scope_add(s, node->rescue_clause.exception_var);
             collect(s, node->rescue_clause.body, NULL);
+            s->rescue_depth++;
             resolve(s, node->rescue_clause.body);
+            s->rescue_depth--;
             scope_pop(s);
             break;
 
@@ -341,6 +344,11 @@ static void resolve(Sema *s, Node *node) {
             if (s->loop_depth == 0 && s->block_depth == 0)
                 sema_error(s, "'next' outside of loop or block", node->span.line, node->span.col);
             resolve(s, node->jump.value);
+            break;
+
+        case NODE_RETRY:
+            if (s->rescue_depth == 0)
+                sema_error(s, "'retry' outside of rescue", node->span.line, node->span.col);
             break;
 
         case NODE_SUPER:
