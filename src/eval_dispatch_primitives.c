@@ -423,6 +423,37 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = val_string(ev->arena, buf);
         return 1;
     }
+    if (strcmp(name, "next") == 0 || strcmp(name, "succ") == 0) {
+        size_t len = strlen(s);
+        if (len == 0) { *out = val_string(ev->arena, ""); return 1; }
+        int has_alnum = 0;
+        for (size_t i = 0; i < len && !has_alnum; i++) has_alnum = isalnum((unsigned char)s[i]);
+        char *buf = arena_alloc(ev->arena, len + 2);
+        memcpy(buf, s, len + 1);
+        if (!has_alnum) {
+            buf[len - 1]++;
+            *out = val_string(ev->arena, buf);
+            return 1;
+        }
+        char prepend = '\0';
+        for (int i = (int)len - 1; i >= 0; i--) {
+            unsigned char c = (unsigned char)buf[i];
+            if (!isalnum(c)) continue;
+            if      (c == 'z') { buf[i] = 'a'; prepend = 'a'; }
+            else if (c == 'Z') { buf[i] = 'A'; prepend = 'A'; }
+            else if (c == '9') { buf[i] = '0'; prepend = '1'; }
+            else               { buf[i] = (char)(c + 1); prepend = '\0'; break; }
+        }
+        if (!prepend) { *out = val_string(ev->arena, buf); return 1; }
+        size_t ins = 0;
+        while (ins < len && !isalnum((unsigned char)buf[ins])) ins++;
+        char *result = arena_alloc(ev->arena, len + 2);
+        memcpy(result, buf, ins);
+        result[ins] = prepend;
+        memcpy(result + ins + 1, buf + ins, len - ins + 1);
+        *out = val_string(ev->arena, result);
+        return 1;
+    }
     if (strcmp(name, "replace") == 0) {
         if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "String#replace requires an argument");
         else *out = val_string(ev->arena, val_to_s(ev->arena, args[0]));

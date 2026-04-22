@@ -76,6 +76,19 @@ puts "hello hello".gsub("hello", "hi")
 puts "hello".sub("l") { |m| m.upcase }
 puts "hello".gsub("l") { |m| m.upcase }
 
+# next / succ
+puts "a".next
+puts "z".next
+puts "Z".next
+puts "9".next
+puts "az".next
+puts "zz".next
+puts "Zz9".next
+puts "a9z".next
+puts "--z".next
+puts "---".next
+puts "Hello".succ
+
 # inspect
 puts "hello\nworld".inspect
 puts "say \"hi\"".inspect
