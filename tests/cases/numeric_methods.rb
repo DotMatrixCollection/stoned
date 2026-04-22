@@ -17,6 +17,7 @@ puts 5.odd?
 
 # Integer: arithmetic helpers
 puts 5.succ
+puts 5.next
 puts 5.pred
 puts 5.abs
 neg = -5

@@ -78,7 +78,7 @@ The core exception path now exists, but it still needs:
 Core numeric surface is now complete. Remaining gaps:
 
 - `Integer#to_r` / `Float#to_r` return self (no Rational type yet)
-- `Integer#next` / `String#next` are keywords and can't be dispatched via `.next` syntax (parser gap)
+- `String#next`/`succ` not yet implemented
 - `Float` arithmetic edge cases around negative-zero, subnormals
 
 ### I/O polish

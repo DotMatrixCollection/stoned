@@ -167,18 +167,18 @@ Node *parse_expr(Parser *p, int min_bp) {
             if (name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) {
                 method_name = name_tok.sval;
             } else {
+                /* All keyword tokens carry their string in sval — allow any as method name */
                 switch (name_tok.kind) {
-                    case TOK_CLASS: method_name = "class"; break;
-                    case TOK_NIL: method_name = "nil"; break;
-                    case TOK_TRUE: method_name = "true"; break;
-                    case TOK_FALSE: method_name = "false"; break;
-                    case TOK_SELF: method_name = "self"; break;
-                    case TOK_DEF: method_name = "def"; break;
-                    case TOK_MODULE: method_name = "module"; break;
-                    case TOK_AND: method_name = "and"; break;
-                    case TOK_OR: method_name = "or"; break;
-                    case TOK_NOT: method_name = "not"; break;
-                    case TOK_RETURN: method_name = "return"; break;
+                    case TOK_NIL: case TOK_TRUE: case TOK_FALSE: case TOK_SELF:
+                    case TOK_IF: case TOK_UNLESS: case TOK_THEN: case TOK_ELSIF:
+                    case TOK_ELSE: case TOK_END: case TOK_WHILE: case TOK_UNTIL:
+                    case TOK_DO: case TOK_DEF: case TOK_CLASS: case TOK_MODULE:
+                    case TOK_RETURN: case TOK_BREAK: case TOK_NEXT:
+                    case TOK_AND: case TOK_OR: case TOK_NOT:
+                    case TOK_IN: case TOK_RESCUE: case TOK_ENSURE:
+                    case TOK_BEGIN: case TOK_YIELD: case TOK_SUPER:
+                        method_name = name_tok.sval;
+                        break;
                     default:
                         error(p, "expected method name after '.'", name_tok.line, name_tok.col);
                         break;
