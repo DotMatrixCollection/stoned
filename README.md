@@ -46,14 +46,14 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `76 passed, 0 failed, 76 total`.
+Current coverage in the tree: `80 passed, 0 failed, 80 total`.
 
 What is working today:
 
 - Core values: `nil`, booleans, integers, floats, strings with interpolation, symbols, arrays, hashes
 - Operators: arithmetic, comparison, bitwise, string/array `+`, array `<<`, `**`, `<=>`, `&&`, `||`
 - Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return`
-- Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, typed rescue lists, rescue variable binding, `retry`, re-raise, uncaught backtraces
+- Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, typed rescue lists, rescue variable binding, `retry`, re-raise, uncaught backtraces, typed runtime failures including `NameError`, `NoMethodError`, `TypeError`, `SystemStackError`, and existing core error classes
 - Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls, `send`, `__send__`, `public_send`
 - Classes: instance methods, `def self.foo`, inheritance, `initialize`, instance variables, `super`, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
 - Visibility: `public`, `private`, `protected`, `private_class_method`/`public_class_method`/`protected_class_method`, public-only `respond_to?`, explicit receiver restrictions, protected same-family receiver calls
@@ -78,7 +78,7 @@ Known limitations:
 
 - This is not Ruby-compatible enough for real-world code yet
 - File/IO coverage is path-backed and stream-mode basic; no socket IO, no binary mode, no seek/tell
-- Exceptions work, but they still need broader standard exception coverage and fuller Ruby rescue semantics beyond the current typed clauses, lists, variable binding, and `retry`
+- Exceptions work, but they still need broader standard exception coverage, richer exception objects, and fuller Ruby rescue semantics beyond the current typed clauses, lists, variable binding, and `retry`
 - Proc/lambda semantics exist, but there are still edge cases around control flow and argument handling that are not Ruby-complete
 - Compatibility around edge-case parsing and method semantics is still being tightened
 - File loading still needs stronger path canonicalization and more Ruby-complete search behavior

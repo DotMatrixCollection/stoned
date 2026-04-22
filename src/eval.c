@@ -118,7 +118,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         case NODE_LVAR: {
             Value v;
             if (!env_get(env, node->sval, &v))
-                return eval_error(ev, node, "undefined local variable '%s'", node->sval);
+                return eval_raise_class(ev, node, "NameError", "undefined local variable '%s'", node->sval);
             return v;
         }
         case NODE_IVAR: {
@@ -140,7 +140,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         case NODE_CONST: {
             Value v;
             if (!env_get(ev->top_env, node->sval, &v))
-                return eval_error(ev, node, "uninitialized constant '%s'", node->sval);
+                return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", node->sval);
             return v;
         }
 
@@ -202,7 +202,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             if (strcmp(op, "+") == 0) return operand;
             if (strcmp(op, "~") == 0 && operand.kind == VAL_INT)
                 return val_int(~operand.ival);
-            return eval_error(ev, node, "undefined unary operator '%s'", op);
+            return eval_raise_class(ev, node, "NoMethodError", "undefined unary operator '%s'", op);
         }
 
         case NODE_CALL:
@@ -311,15 +311,15 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         case NODE_SUPER: {
             Value self;
             if (!env_get(env, "self", &self) || self.kind != VAL_OBJECT)
-                return eval_error(ev, node, "super called outside of instance method");
+                return eval_raise_class(ev, node, "NoMethodError", "super called outside of instance method");
 
             Value cur_class_val;
             if (!env_get(env, "__class__", &cur_class_val) || cur_class_val.kind != VAL_CLASS)
-                return eval_error(ev, node, "super called outside of instance method");
+                return eval_raise_class(ev, node, "NoMethodError", "super called outside of instance method");
 
             Value method_name_val;
             if (!env_get(env, "__method__", &method_name_val))
-                return eval_error(ev, node, "super called outside of instance method");
+                return eval_raise_class(ev, node, "NoMethodError", "super called outside of instance method");
             const char *method_name = method_name_val.sval;
 
             Value super_args[64];
@@ -372,7 +372,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 else if (val_is_signal(result)) return result;
                 return result;
             }
-            return eval_error(ev, node, "super: no superclass method '%s'", method_name);
+            return eval_raise_class(ev, node, "NoMethodError", "super: no superclass method '%s'", method_name);
         }
 
         case NODE_DEF:
@@ -380,7 +380,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 Value recv = eval_node(ev, env, node->def.recv);
                 CHECK(recv);
                 if (recv.kind != VAL_CLASS)
-                    return eval_error(ev, node, "can only define singleton methods on a class");
+                    return eval_raise_class(ev, node, "TypeError", "can only define singleton methods on a class");
                 size_t nlen = strlen(node->def.name);
                 char *key = arena_alloc(ev->arena, nlen + 6);
                 memcpy(key, "self.", 5);
@@ -406,7 +406,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     superclass = eval_node(ev, env, node->klass.superclass);
                     CHECK(superclass);
                     if (superclass.kind != VAL_CLASS && superclass.kind != VAL_NIL)
-                        return eval_error(ev, node, "superclass must be a class");
+                        return eval_raise_class(ev, node, "TypeError", "superclass must be a class");
                 }
                 klass = val_class(ev->arena, node->klass.name, superclass);
                 klass.klass->class_env = env_new(ev->arena, ev->top_env, 1);
@@ -513,8 +513,9 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         "Array", "Hash", "NilClass", "TrueClass", "FalseClass", "IO", "File",
         "Class", "Module", "Method", "Proc", "Comparable", "Enumerable",
         "Exception", "StandardError", "RuntimeError",
-        "ArgumentError", "TypeError", "NoMethodError",
+        "ArgumentError", "TypeError", "NameError", "NoMethodError",
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError",
+        "SystemStackError", "IOError",
         NULL
     };
     for (int i = 0; builtins[i]; i++) {
@@ -525,27 +526,33 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         env_define(arena, ev->top_env, builtins[i], klass);
     }
 
-    Value exception, standard_error, runtime_error, argument_error, type_error, no_method_error;
-    Value zero_division_error, local_jump_error, key_error, load_error;
+    Value exception, standard_error, runtime_error, argument_error, type_error, name_error, no_method_error;
+    Value zero_division_error, local_jump_error, key_error, load_error, system_stack_error, io_error;
     if (env_get(ev->top_env, "Exception", &exception) && exception.kind == VAL_CLASS &&
         env_get(ev->top_env, "StandardError", &standard_error) && standard_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "RuntimeError", &runtime_error) && runtime_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "ArgumentError", &argument_error) && argument_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "TypeError", &type_error) && type_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "NameError", &name_error) && name_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "NoMethodError", &no_method_error) && no_method_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "ZeroDivisionError", &zero_division_error) && zero_division_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "LocalJumpError", &local_jump_error) && local_jump_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "KeyError", &key_error) && key_error.kind == VAL_CLASS &&
-        env_get(ev->top_env, "LoadError", &load_error) && load_error.kind == VAL_CLASS) {
+        env_get(ev->top_env, "LoadError", &load_error) && load_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "SystemStackError", &system_stack_error) && system_stack_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "IOError", &io_error) && io_error.kind == VAL_CLASS) {
         standard_error.klass->superclass = exception;
         runtime_error.klass->superclass = standard_error;
         argument_error.klass->superclass = standard_error;
         type_error.klass->superclass = standard_error;
+        name_error.klass->superclass = standard_error;
         no_method_error.klass->superclass = standard_error;
         zero_division_error.klass->superclass = standard_error;
         local_jump_error.klass->superclass = standard_error;
         key_error.klass->superclass = standard_error;
         load_error.klass->superclass = standard_error;
+        system_stack_error.klass->superclass = standard_error;
+        io_error.klass->superclass = standard_error;
     }
 
     Value io_class;

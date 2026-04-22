@@ -76,7 +76,7 @@ Planned cases:
 
 Target: runtime failures become real exception classes instead of just formatted strings.
 
-Planned cases:
+Current coverage:
 
 - `raise RuntimeError`
 - `raise ArgumentError, "bad arg"`
@@ -84,6 +84,9 @@ Planned cases:
 - wrong arity produces `ArgumentError`
 - obvious type misuse produces `TypeError`
 - `rescue ArgumentError` only catches matching exception classes
+- uninitialized constant produces `NameError`
+- missing superclass method for `super` produces `NoMethodError`
+- stack overflow produces `SystemStackError`
 
 ## Phase 6: polish
 

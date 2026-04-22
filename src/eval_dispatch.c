@@ -440,7 +440,7 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         strcmp(name, "attr_accessor") == 0) {
         Value self;
         if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
-            return eval_error(ev, site, "%s must be called in a class body", name);
+            return eval_raise_class(ev, site, "TypeError", "%s must be called in a class body", name);
         for (int i = 0; i < argc; i++) {
             const char *attr = (args[i].kind == VAL_SYMBOL || args[i].kind == VAL_STRING)
                                ? args[i].sval : NULL;
@@ -455,7 +455,7 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     if (strcmp(name, "include") == 0) {
         Value self;
         if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
-            return eval_error(ev, site, "include must be called in a class or module body");
+            return eval_raise_class(ev, site, "TypeError", "include must be called in a class or module body");
         for (int i = 0; i < argc; i++) {
             if (args[i].kind != VAL_CLASS || !args[i].klass->is_module)
                 return eval_raise_class(ev, site, "TypeError", "include requires a Module");
@@ -469,7 +469,7 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     if (strcmp(name, "prepend") == 0) {
         Value self;
         if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
-            return eval_error(ev, site, "prepend must be called in a class or module body");
+            return eval_raise_class(ev, site, "TypeError", "prepend must be called in a class or module body");
         for (int i = 0; i < argc; i++) {
             if (args[i].kind != VAL_CLASS || !args[i].klass->is_module)
                 return eval_raise_class(ev, site, "TypeError", "prepend requires a Module");
@@ -505,7 +505,7 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     if (strcmp(name, "public") == 0 || strcmp(name, "private") == 0 || strcmp(name, "protected") == 0) {
         Value self;
         if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
-            return eval_error(ev, site, "%s must be called in a class or module body", name);
+            return eval_raise_class(ev, site, "TypeError", "%s must be called in a class or module body", name);
         MethodVisibility visibility = METHOD_PUBLIC;
         if (strcmp(name, "private") == 0) visibility = METHOD_PRIVATE;
         if (strcmp(name, "protected") == 0) visibility = METHOD_PROTECTED;
@@ -530,7 +530,7 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         strcmp(name, "protected_class_method") == 0) {
         Value self;
         if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
-            return eval_error(ev, site, "%s must be called in a class or module body", name);
+            return eval_raise_class(ev, site, "TypeError", "%s must be called in a class or module body", name);
         if (argc < 1)
             return eval_raise_class(ev, site, "ArgumentError", "%s requires at least one method name", name);
 
@@ -766,14 +766,14 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
         return op_result;
     if (ev->errored) {
         ev->errored = 0;
-        return eval_error(ev, node, "undefined operator '%s' for %s", op, val_kind_name(left.kind));
+        return eval_raise_class(ev, node, "NoMethodError", "undefined operator '%s' for %s", op, val_kind_name(left.kind));
     }
     return op_result;
 }
 
 Value eval_call(Eval *ev, Env *env, Node *node) {
     if (ev->call_depth > EVAL_MAX_DEPTH)
-        return eval_error(ev, node, "stack level too deep");
+        return eval_raise_class(ev, node, "SystemStackError", "stack level too deep");
 
     Value blk_val;
     Value *blk = NULL;
@@ -895,7 +895,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         if (!env_get(env, name, &fn))
             return eval_raise_class(ev, node, "NoMethodError", "undefined method '%s'", name);
         if (fn.kind != VAL_METHOD)
-            return eval_error(ev, node, "'%s' is not a method", name);
+            return eval_raise_class(ev, node, "TypeError", "'%s' is not a method", name);
 
 call_method:
         if (!env_get(env, name, &fn))
