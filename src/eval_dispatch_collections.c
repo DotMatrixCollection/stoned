@@ -469,7 +469,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             val_array_push(&pair, h->vals[i]);
             val_array_push(&as_arr, pair);
         }
-        *out = dispatch_method(ev, env, as_arr, name, args, argc, blk, site);
+        *out = dispatch_method(ev, env, as_arr, name, args, argc, blk, site, 0, 1);
         return 1;
     }
     if (strcmp(name, "flat_map") == 0) {

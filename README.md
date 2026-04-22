@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `51 passed, 0 failed, 51 total`.
+Current coverage in the tree: `54 passed, 0 failed, 54 total`.
 
 What is working today:
 
@@ -54,8 +54,9 @@ What is working today:
 - Operators: arithmetic, comparison, bitwise, string/array `+`, array `<<`, `**`, `<=>`, `&&`, `||`
 - Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return`
 - Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, rescue variable binding, re-raise, uncaught backtraces
-- Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls
+- Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls, `send`, `__send__`, `public_send`
 - Classes: instance methods, `def self.foo`, inheritance, `initialize`, instance variables, `super`, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
+- Visibility: `public`, `private`, `protected`, public-only `respond_to?`, explicit receiver restrictions, protected same-family receiver calls
 - Modules: `module Foo ... end`, `include`, `prepend`, `extend`, instance method lookup through included and prepended modules, `super` through module ancestors
 - Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`
 - Hash syntax: both `{:a => 1}` and modern label syntax like `{a: 1}`
@@ -71,6 +72,7 @@ Known limitations:
 - Exceptions work, but they still need broader standard exception coverage and more Ruby-complete rescue syntax
 - Proc/lambda semantics exist, but there are still edge cases around control flow and argument handling that are not Ruby-complete
 - Compatibility around edge-case parsing and method semantics is still being tightened
+- Class-method visibility helpers like `private_class_method` are not implemented yet
 
 ## Architecture
 

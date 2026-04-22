@@ -33,8 +33,12 @@ The core module path now exists, but the next semantic gaps are:
 - tighter ancestor ordering compatibility
 - class-side mixins beyond the current `extend` behavior
 
-### `send` / `public_send`
-Dynamic method dispatch by name. Needed for metaprogramming and for closing a lot of Ruby surface-area gaps cleanly now that method lookup is more centralized.
+### Method visibility polish
+The core visibility model now exists, but it still needs:
+
+- `private_class_method`, `public_class_method`, `protected_class_method`
+- fuller Ruby compatibility around visibility edge cases
+- any remaining `respond_to?` / dispatch inconsistencies as more metaprogramming features land
 
 ## Longer term
 
@@ -87,6 +91,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - multiple assignment, splat capture, and destructuring
 - `Proc.new`, `lambda`, and `->` literals with callable proc/lambda values
 - `module`, `include`, `prepend`, `extend`, and `super` through module ancestors
+- `send`, `__send__`, `public_send`, and method visibility (`public`, `private`, `protected`)
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files

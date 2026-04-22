@@ -374,9 +374,10 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 char *key = arena_alloc(ev->arena, nlen + 6);
                 memcpy(key, "self.", 5);
                 memcpy(key + 5, node->def.name, nlen + 1);
-                env_define(ev->arena, recv.klass->class_env, key, val_method(node, ev->top_env));
+                env_define(ev->arena, recv.klass->class_env, key, val_method(node, ev->top_env, METHOD_PUBLIC));
             } else {
-                env_define(ev->arena, env, node->def.name, val_method(node, ev->top_env));
+                env_define(ev->arena, env, node->def.name,
+                           val_method(node, ev->top_env, current_method_visibility(env)));
             }
             return val_nil();
 
@@ -401,6 +402,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             }
 
             env_set(ev->arena, klass.klass->class_env, "self", klass);
+            set_current_method_visibility(ev->arena, klass.klass->class_env, METHOD_PUBLIC);
             if (node->klass.body) {
                 Value body_result = eval_node(ev, klass.klass->class_env, node->klass.body);
                 if (val_is_signal(body_result)) return body_result;
@@ -426,6 +428,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             }
 
             env_set(ev->arena, mod.klass->class_env, "self", mod);
+            set_current_method_visibility(ev->arena, mod.klass->class_env, METHOD_PUBLIC);
             if (node->klass.body) {
                 Value body_result = eval_node(ev, mod.klass->class_env, node->klass.body);
                 if (val_is_signal(body_result)) return body_result;

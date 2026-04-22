@@ -74,7 +74,7 @@ static void define_attr_reader(Eval *ev, Value klass, const char *attr) {
     def->def.name = attr;
     def->def.body = body;
 
-    env_define(a, klass.klass->class_env, attr, val_method(def, ev->top_env));
+    env_define(a, klass.klass->class_env, attr, val_method(def, ev->top_env, METHOD_PUBLIC));
 }
 
 static void define_attr_writer(Eval *ev, Value klass, const char *attr) {
@@ -128,7 +128,7 @@ static void define_attr_writer(Eval *ev, Value klass, const char *attr) {
     def->def.params = params;
     def->def.body = body;
 
-    env_define(a, klass.klass->class_env, method_name, val_method(def, ev->top_env));
+    env_define(a, klass.klass->class_env, method_name, val_method(def, ev->top_env, METHOD_PUBLIC));
 }
 
 static const char *prim_class_name(Value v) {
@@ -147,6 +147,18 @@ static const char *prim_class_name(Value v) {
         case VAL_OBJECT: return v.obj->klass.klass ? v.obj->klass.klass->name : "Object";
         default:         return "Object";
     }
+}
+
+static Value dispatch_dynamic_send(Eval *ev, Env *env, Value recv, const char *dispatch_name,
+                                   Value *args, int argc, Value *blk, Node *site, int public_only) {
+    if (argc < 1)
+        return eval_raise_class(ev, site, "ArgumentError", "%s requires a method name", dispatch_name);
+    const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING)
+                        ? args[0].sval : NULL;
+    if (!mname)
+        return eval_raise_class(ev, site, "TypeError", "%s: method name must be a symbol or string", dispatch_name);
+    int explicit_receiver = public_only ? 0 : -1;
+    return dispatch_method(ev, env, recv, mname, args + 1, argc - 1, blk, site, public_only, explicit_receiver);
 }
 
 static int val_is_a(Value v, Value klass_arg) {
@@ -180,6 +192,8 @@ static int val_responds_to(Eval *ev, Value recv, const char *name) {
     if (strcmp(name, "is_a?") == 0 || strcmp(name, "kind_of?") == 0 ||
         strcmp(name, "instance_of?") == 0 || strcmp(name, "class") == 0 ||
         strcmp(name, "nil?") == 0 || strcmp(name, "respond_to?") == 0 ||
+        strcmp(name, "send") == 0 || strcmp(name, "__send__") == 0 ||
+        strcmp(name, "public_send") == 0 ||
         strcmp(name, "freeze") == 0 || strcmp(name, "frozen?") == 0 ||
         strcmp(name, "object_id") == 0 || strcmp(name, "to_s") == 0 ||
         strcmp(name, "inspect") == 0 || strcmp(name, "==") == 0 ||
@@ -188,9 +202,12 @@ static int val_responds_to(Eval *ev, Value recv, const char *name) {
 
     if (recv.kind == VAL_OBJECT) {
         Value m;
-        if (recv.obj->singleton_env && env_get(recv.obj->singleton_env, name, &m) && m.kind == VAL_METHOD)
+        if (recv.obj->singleton_env && env_get(recv.obj->singleton_env, name, &m) && m.kind == VAL_METHOD &&
+            m.method.visibility == METHOD_PUBLIC)
             return 1;
-        return ruby_class_find_instance_method(recv.obj->klass.klass, name, &m, NULL);
+        if (ruby_class_find_instance_method(recv.obj->klass.klass, name, &m, NULL))
+            return m.kind == VAL_METHOD && m.method.visibility == METHOD_PUBLIC;
+        return 0;
     }
 
     if (recv.kind == VAL_CLASS) {
@@ -202,7 +219,8 @@ static int val_responds_to(Eval *ev, Value recv, const char *name) {
         RubyClass *k = recv.klass;
         while (k) {
             Value m;
-            if (env_get(k->class_env, key, &m) && m.kind == VAL_METHOD) return 1;
+            if (env_get(k->class_env, key, &m) && m.kind == VAL_METHOD && m.method.visibility == METHOD_PUBLIC)
+                return 1;
             k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL;
         }
         return 0;
@@ -360,17 +378,40 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
             return eval_raise_class(ev, site, "TypeError", "extend requires an object");
         return builtin_extend(ev, self, args, argc, site);
     }
+    if (strcmp(name, "public") == 0 || strcmp(name, "private") == 0 || strcmp(name, "protected") == 0) {
+        Value self;
+        if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
+            return eval_error(ev, site, "%s must be called in a class or module body", name);
+        MethodVisibility visibility = METHOD_PUBLIC;
+        if (strcmp(name, "private") == 0) visibility = METHOD_PRIVATE;
+        if (strcmp(name, "protected") == 0) visibility = METHOD_PROTECTED;
+        if (argc == 0) {
+            set_current_method_visibility(ev->arena, env, visibility);
+            return val_nil();
+        }
+        for (int i = 0; i < argc; i++) {
+            const char *mname = (args[i].kind == VAL_SYMBOL || args[i].kind == VAL_STRING) ? args[i].sval : NULL;
+            if (!mname) continue;
+            update_method_visibility(env, mname, visibility, 0);
+            size_t nlen = strlen(mname);
+            char *key = arena_alloc(ev->arena, nlen + 6);
+            memcpy(key, "self.", 5);
+            memcpy(key + 5, mname, nlen + 1);
+            update_method_visibility(env, key, visibility, 1);
+        }
+        return val_nil();
+    }
     (void)blk;
     return val_nil();
 }
 
 Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                       const char *name, Value *args, int argc,
-                      Value *blk, Node *site);
+                      Value *blk, Node *site, int public_only, int explicit_receiver);
 
 Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                       const char *name, Value *args, int argc,
-                      Value *blk, Node *site) {
+                      Value *blk, Node *site, int public_only, int explicit_receiver) {
     Value out;
 
     if (strcmp(name, "nil?") == 0)
@@ -418,13 +459,10 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (argc < 1) return val_true();
         return val_bool(!val_equal(recv, args[0]));
     }
-    if (strcmp(name, "send") == 0 || strcmp(name, "__send__") == 0) {
-        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "send requires a method name");
-        const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING)
-                            ? args[0].sval : NULL;
-        if (!mname) return eval_raise_class(ev, site, "TypeError", "send: method name must be a symbol or string");
-        return dispatch_method(ev, env, recv, mname, args + 1, argc - 1, blk, site);
-    }
+    if (strcmp(name, "send") == 0 || strcmp(name, "__send__") == 0)
+        return dispatch_dynamic_send(ev, env, recv, name, args, argc, blk, site, 0);
+    if (strcmp(name, "public_send") == 0)
+        return dispatch_dynamic_send(ev, env, recv, name, args, argc, blk, site, 1);
     if (recv.kind == VAL_BLOCK) {
         if (strcmp(name, "call") == 0 || strcmp(name, "[]") == 0)
             return call_block(ev, recv, args, argc, site);
@@ -443,8 +481,8 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (recv.kind == VAL_HASH && dispatch_hash(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (recv.kind == VAL_NIL && dispatch_nil(ev, recv, name, site, &out)) return out;
     if (dispatch_bool(ev, recv, name, site, &out)) return out;
-    if (dispatch_class(ev, env, recv, name, args, argc, blk, site, &out)) return out;
-    if (dispatch_object(ev, recv, name, args, argc, blk, site, &out)) return out;
+    if (dispatch_class(ev, env, recv, name, args, argc, blk, site, &out, public_only, explicit_receiver)) return out;
+    if (dispatch_object(ev, env, recv, name, args, argc, blk, site, &out, public_only, explicit_receiver)) return out;
 
     return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", name, val_kind_name(recv.kind));
 }
@@ -507,7 +545,7 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
         if (strcmp(op, "-") == 0) return both_int ? val_int(left.ival - right.ival) : val_float(lf - rf);
         if (strcmp(op, "*") == 0) {
             if (left.kind == VAL_INT && right.kind == VAL_STRING)
-                return dispatch_method(ev, env, right, "*", &left, 1, NULL, node);
+                return dispatch_method(ev, env, right, "*", &left, 1, NULL, node, 0, 1);
             return both_int ? val_int(left.ival * right.ival) : val_float(lf * rf);
         }
         if (strcmp(op, "/") == 0) {
@@ -553,7 +591,7 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
         if (strcmp(op, "<=") == 0) return val_bool(strcmp(left.sval, right.sval) <= 0);
         if (strcmp(op, ">") == 0) return val_bool(strcmp(left.sval, right.sval) > 0);
         if (strcmp(op, ">=") == 0) return val_bool(strcmp(left.sval, right.sval) >= 0);
-        if (strcmp(op, "*") == 0) return dispatch_method(ev, env, left, "*", &right, 1, NULL, node);
+        if (strcmp(op, "*") == 0) return dispatch_method(ev, env, left, "*", &right, 1, NULL, node, 0, 1);
     }
 
     return eval_error(ev, node, "undefined operator '%s' for %s", op, val_kind_name(left.kind));
@@ -593,6 +631,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
 
         static const char *kernel_names[] = {
             "puts", "print", "p", "raise", "lambda", "rand", "exit", "include", "prepend", "extend",
+            "public", "private", "protected",
             "attr_reader", "attr_writer", "attr_accessor", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
@@ -717,5 +756,5 @@ call_method:
         }
     }
 
-    return dispatch_method(ev, env, recv, node->call.method, args, argc, blk, node);
+    return dispatch_method(ev, env, recv, node->call.method, args, argc, blk, node, 0, 1);
 }

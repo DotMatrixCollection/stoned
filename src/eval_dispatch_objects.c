@@ -3,7 +3,7 @@
 #include <string.h>
 
 int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
-                   Value *blk, Node *site, Value *out) {
+                   Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     (void)env;
     if (recv.kind != VAL_CLASS) return 0;
     if (strcmp(recv.klass->name, "Proc") == 0 && strcmp(name, "new") == 0) {
@@ -50,6 +50,9 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     while (cklass) {
         Value cm;
         if (env_get(cklass->class_env, key, &cm) && cm.kind == VAL_METHOD) {
+            if (!method_visibility_allows_call(ev, env, recv, cklass, cm.method.visibility,
+                                               public_only, explicit_receiver))
+                continue;
             Env *method_env = env_new(ev->arena, cm.method.closure, 1);
             env_set(ev->arena, method_env, "self", recv);
             env_set(ev->arena, method_env, "__method__", val_symbol(name));
@@ -72,8 +75,8 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     return 0;
 }
 
-int dispatch_object(Eval *ev, Value recv, const char *name, Value *args, int argc,
-                    Value *blk, Node *site, Value *out) {
+int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
+                    Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     if (recv.kind != VAL_OBJECT) return 0;
     if (value_is_a_named_class(ev, recv, "Exception")) {
         if (strcmp(name, "message") == 0 || strcmp(name, "to_s") == 0) {
@@ -97,6 +100,10 @@ int dispatch_object(Eval *ev, Value recv, const char *name, Value *args, int arg
     if (recv.obj->singleton_env) {
         Value method;
         if (env_get(recv.obj->singleton_env, name, &method) && method.kind == VAL_METHOD) {
+            RubyClass *owner = recv.obj->klass.kind == VAL_CLASS ? recv.obj->klass.klass : NULL;
+            if (!method_visibility_allows_call(ev, env, recv, owner, method.method.visibility,
+                                               public_only, explicit_receiver))
+                return 0;
             Env *method_env = env_new(ev->arena, method.method.closure, 1);
             env_set(ev->arena, method_env, "self", recv);
             env_set(ev->arena, method_env, "__method__", val_symbol(name));
@@ -119,6 +126,9 @@ int dispatch_object(Eval *ev, Value recv, const char *name, Value *args, int arg
         Value method;
         RubyClass *owner = NULL;
         if (ruby_class_find_instance_method(klass, name, &method, &owner)) {
+            if (!method_visibility_allows_call(ev, env, recv, owner, method.method.visibility,
+                                               public_only, explicit_receiver))
+                return 0;
             Env *method_env = env_new(ev->arena, method.method.closure, 1);
             env_set(ev->arena, method_env, "self", recv);
             env_set(ev->arena, method_env, "__method__", val_symbol(name));

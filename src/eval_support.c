@@ -24,6 +24,69 @@ void eval_pop_frame(Eval *ev) {
     if (ev->frame_count > 0) ev->frame_count--;
 }
 
+MethodVisibility current_method_visibility(Env *env) {
+    Value visibility;
+    if (env_get(env, "__visibility__", &visibility) && visibility.kind == VAL_SYMBOL) {
+        if (strcmp(visibility.sval, "private") == 0) return METHOD_PRIVATE;
+        if (strcmp(visibility.sval, "protected") == 0) return METHOD_PROTECTED;
+    }
+    return METHOD_PUBLIC;
+}
+
+void set_current_method_visibility(Arena *a, Env *env, MethodVisibility visibility) {
+    const char *name = "public";
+    if (visibility == METHOD_PRIVATE) name = "private";
+    else if (visibility == METHOD_PROTECTED) name = "protected";
+    env_define(a, env, "__visibility__", val_symbol(name));
+}
+
+void update_method_visibility(Env *env, const char *name, MethodVisibility visibility, int singleton_only) {
+    for (EnvEntry *entry = env ? env->vars : NULL; entry; entry = entry->next) {
+        if (strcmp(entry->name, name) != 0) continue;
+        if (entry->val.kind != VAL_METHOD) continue;
+        if (singleton_only && strncmp(entry->name, "self.", 5) != 0) continue;
+        entry->val.method.visibility = visibility;
+    }
+}
+
+static int class_inherits_from(RubyClass *klass, RubyClass *target) {
+    for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+        if (k == target) return 1;
+    }
+    return 0;
+}
+
+int method_visibility_allows_call(Eval *ev, Env *env, Value recv, RubyClass *owner,
+                                  MethodVisibility visibility, int public_only, int explicit_receiver) {
+    (void)ev;
+    if (explicit_receiver < 0) return 1;
+    if (visibility == METHOD_PUBLIC) return 1;
+    if (public_only) return 0;
+
+    Value current_self = val_nil();
+    int has_current_self = env && env_get(env, "self", &current_self);
+
+    if (visibility == METHOD_PRIVATE) {
+        if (explicit_receiver) return 0;
+        if (!has_current_self) return 0;
+        if (current_self.kind != recv.kind) return 0;
+        if (recv.kind == VAL_OBJECT) return current_self.obj == recv.obj;
+        if (recv.kind == VAL_CLASS) return current_self.klass == recv.klass;
+        return val_equal(current_self, recv);
+    }
+
+    if (visibility == METHOD_PROTECTED) {
+        if (!has_current_self || current_self.kind != VAL_OBJECT || recv.kind != VAL_OBJECT || !owner)
+            return 0;
+        RubyClass *caller_class = current_self.obj->klass.kind == VAL_CLASS ? current_self.obj->klass.klass : NULL;
+        RubyClass *recv_class = recv.obj->klass.kind == VAL_CLASS ? recv.obj->klass.klass : NULL;
+        if (!caller_class || !recv_class) return 0;
+        return class_inherits_from(caller_class, owner) && class_inherits_from(recv_class, owner);
+    }
+
+    return 0;
+}
+
 int ruby_class_find_instance_method(RubyClass *klass, const char *name, Value *out, RubyClass **owner) {
     for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
         for (RubyModuleInclusion *inc = k->prepended_modules; inc; inc = inc->next) {

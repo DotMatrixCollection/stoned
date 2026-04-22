@@ -29,6 +29,12 @@ typedef enum {
     VAL_NEXT,
 } ValueKind;
 
+typedef enum {
+    METHOD_PUBLIC,
+    METHOD_PRIVATE,
+    METHOD_PROTECTED,
+} MethodVisibility;
+
 /* Forward typedefs for class, object, and hash structures */
 typedef struct RubyArray  RubyArray;
 typedef struct RubyClass  RubyClass;
@@ -53,6 +59,7 @@ typedef struct Value {
         struct {             /* VAL_METHOD */
             struct Node *def_node;
             struct Env  *closure;
+            MethodVisibility visibility;
         } method;
 
         struct {             /* VAL_BLOCK */
@@ -122,7 +129,7 @@ Value val_string_n(Arena *a, const char *s, size_t len);
 Value val_array_new(void);
 void  val_array_push(Value *arr, Value elem);
 
-Value val_method(struct Node *def, struct Env *closure);
+Value val_method(struct Node *def, struct Env *closure, MethodVisibility visibility);
 Value val_block(struct Node *blk, struct Env *closure);
 Value val_lambda(struct Node *blk, struct Env *closure);
 
