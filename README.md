@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `48 passed, 0 failed, 48 total`.
+Current coverage in the tree: `50 passed, 0 failed, 50 total`.
 
 What is working today:
 
@@ -56,6 +56,7 @@ What is working today:
 - Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, rescue variable binding, re-raise, uncaught backtraces
 - Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls
 - Classes: instance methods, `def self.foo`, inheritance, `initialize`, instance variables, `super`, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
+- Modules: `module Foo ... end`, `include`, `extend`, instance method lookup through included modules, `super` through included modules
 - Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`
 - Hash syntax: both `{:a => 1}` and modern label syntax like `{a: 1}`
 - Assignment: parallel assignment, swap, splat capture, nested destructuring, destructured method and block params
@@ -66,8 +67,8 @@ What is working today:
 Known limitations:
 
 - This is not Ruby-compatible enough for real-world code yet
-- Modules, file loading, and IO are still missing
-- Exceptions work, but they still need richer exception objects, broader standard exception coverage, and more Ruby-complete rescue syntax
+- File loading and IO are still missing
+- Exceptions work, but they still need broader standard exception coverage and more Ruby-complete rescue syntax
 - Proc/lambda semantics exist, but there are still edge cases around control flow and argument handling that are not Ruby-complete
 - Compatibility around edge-case parsing and method semantics is still being tightened
 

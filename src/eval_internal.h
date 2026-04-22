@@ -22,6 +22,8 @@ int count_required_params(NodeList *params);
 int has_splat_param(NodeList *params);
 const char *eval_rope(Eval *ev, Env *env, RopeNode *r);
 Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site);
+int ruby_class_find_instance_method(RubyClass *klass, const char *name, Value *out, RubyClass **owner);
+int ruby_class_find_super_method(RubyClass *start, RubyClass *after, const char *name, Value *out, RubyClass **owner);
 Value dispatch_method(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                       Value *blk, Node *site);
 Value eval_binop(Eval *ev, Env *env, Node *node);

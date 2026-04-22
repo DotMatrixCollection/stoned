@@ -34,6 +34,7 @@ typedef struct RubyArray  RubyArray;
 typedef struct RubyClass  RubyClass;
 typedef struct RubyObject RubyObject;
 typedef struct RubyHash   RubyHash;
+typedef struct RubyModuleInclusion RubyModuleInclusion;
 
 typedef struct Value {
     ValueKind kind;
@@ -81,11 +82,19 @@ typedef struct RubyClass {
     const char *name;
     Value       superclass;  /* VAL_CLASS or VAL_NIL */
     struct Env *class_env;   /* Methods defined in this class */
+    RubyModuleInclusion *included_modules;
+    int         is_module;
 } RubyClass;
+
+struct RubyModuleInclusion {
+    RubyClass *mod;
+    RubyModuleInclusion *next;
+};
 
 typedef struct RubyObject {
     Value       klass;       /* VAL_CLASS: the object's class */
     IVarEntry  *ivars;       /* Instance variables */
+    struct Env *singleton_env; /* Methods added via extend */
 } RubyObject;
 
 /* Insertion-order-preserving hash map (keys/vals malloc'd, struct arena'd) */

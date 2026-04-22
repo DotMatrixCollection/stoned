@@ -24,6 +24,48 @@ void eval_pop_frame(Eval *ev) {
     if (ev->frame_count > 0) ev->frame_count--;
 }
 
+int ruby_class_find_instance_method(RubyClass *klass, const char *name, Value *out, RubyClass **owner) {
+    for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+        if (env_get(k->class_env, name, out) && out->kind == VAL_METHOD) {
+            if (owner) *owner = k;
+            return 1;
+        }
+        for (RubyModuleInclusion *inc = k->included_modules; inc; inc = inc->next) {
+            RubyClass *module_owner = NULL;
+            if (ruby_class_find_instance_method(inc->mod, name, out, &module_owner)) {
+                if (owner) *owner = module_owner;
+                return 1;
+            }
+        }
+        if (k->is_module) break;
+    }
+    return 0;
+}
+
+static int ruby_class_find_super_method_inner(RubyClass *klass, RubyClass *after, int *seen_after,
+                                              const char *name, Value *out, RubyClass **owner) {
+    for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+        if (*seen_after && env_get(k->class_env, name, out) && out->kind == VAL_METHOD) {
+            if (owner) *owner = k;
+            return 1;
+        }
+        if (k == after) *seen_after = 1;
+
+        for (RubyModuleInclusion *inc = k->included_modules; inc; inc = inc->next) {
+            if (ruby_class_find_super_method_inner(inc->mod, after, seen_after, name, out, owner))
+                return 1;
+        }
+
+        if (k->is_module) break;
+    }
+    return 0;
+}
+
+int ruby_class_find_super_method(RubyClass *start, RubyClass *after, const char *name, Value *out, RubyClass **owner) {
+    int seen_after = 0;
+    return ruby_class_find_super_method_inner(start, after, &seen_after, name, out, owner);
+}
+
 int value_is_a_named_class(Eval *ev, Value v, const char *class_name) {
     if (v.kind != VAL_OBJECT) return 0;
     Value klass;

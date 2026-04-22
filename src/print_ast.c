@@ -139,6 +139,11 @@ void print_ast(FILE *out, Node *node, int indent) {
             print_ast(out, node->def.body, indent+1);
             break;
 
+        case NODE_MODULE:
+            fprintf(out, "MODULE(%s)\n", node->klass.name);
+            print_ast(out, node->klass.body, indent+1);
+            break;
+
         case NODE_PARAM:
             fprintf(out, "PARAM(%s%s%s)\n",
                 node->param.splat       ? "*" : "",

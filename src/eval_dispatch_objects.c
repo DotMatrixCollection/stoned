@@ -19,11 +19,12 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         RubyClass *klass = recv.klass;
         while (klass) {
             Value init_method;
-            if (env_get(klass->class_env, "initialize", &init_method) && init_method.kind == VAL_METHOD) {
+            RubyClass *owner = NULL;
+            if (ruby_class_find_instance_method(klass, "initialize", &init_method, &owner)) {
                 Env *method_env = env_new(ev->arena, init_method.method.closure, 1);
                 env_set(ev->arena, method_env, "self", obj);
                 env_set(ev->arena, method_env, "__method__", val_symbol("initialize"));
-                Value klass_val; klass_val.kind = VAL_CLASS; klass_val.klass = klass;
+                Value klass_val; klass_val.kind = VAL_CLASS; klass_val.klass = owner;
                 env_set(ev->arena, method_env, "__class__", klass_val);
                 if (blk) method_env->block_arg = blk;
                 bind_params(ev, method_env, init_method.method.def_node->def.params, args, argc);
@@ -93,14 +94,35 @@ int dispatch_object(Eval *ev, Value recv, const char *name, Value *args, int arg
             return 1;
         }
     }
-    RubyClass *klass = recv.obj->klass.klass;
-    while (klass) {
+    if (recv.obj->singleton_env) {
         Value method;
-        if (env_get(klass->class_env, name, &method) && method.kind == VAL_METHOD) {
+        if (env_get(recv.obj->singleton_env, name, &method) && method.kind == VAL_METHOD) {
             Env *method_env = env_new(ev->arena, method.method.closure, 1);
             env_set(ev->arena, method_env, "self", recv);
             env_set(ev->arena, method_env, "__method__", val_symbol(name));
-            Value klass_val; klass_val.kind = VAL_CLASS; klass_val.klass = klass;
+            env_set(ev->arena, method_env, "__class__", recv.obj->klass);
+            if (blk) method_env->block_arg = blk;
+            bind_params(ev, method_env, method.method.def_node->def.params, args, argc);
+            ev->call_depth++;
+            eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
+            Value result = eval_node(ev, method_env, method.method.def_node->def.body);
+            eval_pop_frame(ev);
+            ev->call_depth--;
+            if (result.kind == VAL_RETURN) result = *result.wrapped;
+            else if (val_is_signal(result)) { *out = result; return 1; }
+            *out = result;
+            return 1;
+        }
+    }
+    RubyClass *klass = recv.obj->klass.klass;
+    while (klass) {
+        Value method;
+        RubyClass *owner = NULL;
+        if (ruby_class_find_instance_method(klass, name, &method, &owner)) {
+            Env *method_env = env_new(ev->arena, method.method.closure, 1);
+            env_set(ev->arena, method_env, "self", recv);
+            env_set(ev->arena, method_env, "__method__", val_symbol(name));
+            Value klass_val; klass_val.kind = VAL_CLASS; klass_val.klass = owner;
             env_set(ev->arena, method_env, "__class__", klass_val);
             if (blk) method_env->block_arg = blk;
             bind_params(ev, method_env, method.method.def_node->def.params, args, argc);

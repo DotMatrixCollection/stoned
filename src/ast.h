@@ -64,6 +64,7 @@ typedef enum {
     /* Definition */
     NODE_DEF,
     NODE_CLASS,         /* class Foo < Bar ... end */
+    NODE_MODULE,        /* module Foo ... end */
     NODE_PARAM,         /* single formal parameter */
 
     /* Super call */

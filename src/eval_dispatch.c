@@ -8,6 +8,48 @@
 
 #define CHECK(v) do { if (ev->errored || val_is_signal(v)) return (v); } while(0)
 
+static void copy_module_methods(Eval *ev, Env *target, RubyClass *mod, int singleton_prefix) {
+    if (!mod || !target) return;
+    for (EnvEntry *entry = mod->class_env ? mod->class_env->vars : NULL; entry; entry = entry->next) {
+        if (strcmp(entry->name, "self") == 0) continue;
+        if (entry->val.kind != VAL_METHOD) continue;
+
+        const char *name = entry->name;
+        if (strncmp(name, "self.", 5) == 0) continue;
+
+        if (singleton_prefix) {
+            size_t nlen = strlen(name);
+            char *key = arena_alloc(ev->arena, nlen + 6);
+            memcpy(key, "self.", 5);
+            memcpy(key + 5, name, nlen + 1);
+            env_define(ev->arena, target, key, entry->val);
+        } else {
+            env_define(ev->arena, target, name, entry->val);
+        }
+    }
+}
+
+static Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *site) {
+    if (self.kind != VAL_CLASS && self.kind != VAL_OBJECT)
+        return eval_raise_class(ev, site, "TypeError", "extend requires an object");
+
+    for (int i = 0; i < argc; i++) {
+        if (args[i].kind != VAL_CLASS || !args[i].klass->is_module)
+            return eval_raise_class(ev, site, "TypeError", "extend requires a Module");
+    }
+
+    if (self.kind == VAL_CLASS) {
+        for (int i = 0; i < argc; i++)
+            copy_module_methods(ev, self.klass->class_env, args[i].klass, 1);
+    } else {
+        if (!self.obj->singleton_env)
+            self.obj->singleton_env = env_new(ev->arena, NULL, 1);
+        for (int i = 0; i < argc; i++)
+            copy_module_methods(ev, self.obj->singleton_env, args[i].klass, 0);
+    }
+    return self;
+}
+
 static void define_attr_reader(Eval *ev, Value klass, const char *attr) {
     if (klass.kind != VAL_CLASS) return;
     Arena *a = ev->arena;
@@ -145,13 +187,10 @@ static int val_responds_to(Eval *ev, Value recv, const char *name) {
         return 1;
 
     if (recv.kind == VAL_OBJECT) {
-        RubyClass *k = recv.obj->klass.klass;
-        while (k) {
-            Value m;
-            if (env_get(k->class_env, name, &m) && m.kind == VAL_METHOD) return 1;
-            k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL;
-        }
-        return 0;
+        Value m;
+        if (recv.obj->singleton_env && env_get(recv.obj->singleton_env, name, &m) && m.kind == VAL_METHOD)
+            return 1;
+        return ruby_class_find_instance_method(recv.obj->klass.klass, name, &m, NULL);
     }
 
     if (recv.kind == VAL_CLASS) {
@@ -287,6 +326,26 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         }
         return val_nil();
     }
+    if (strcmp(name, "include") == 0) {
+        Value self;
+        if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
+            return eval_error(ev, site, "include must be called in a class or module body");
+        for (int i = 0; i < argc; i++) {
+            if (args[i].kind != VAL_CLASS || !args[i].klass->is_module)
+                return eval_raise_class(ev, site, "TypeError", "include requires a Module");
+            RubyModuleInclusion *inc = arena_alloc(ev->arena, sizeof(RubyModuleInclusion));
+            inc->mod = args[i].klass;
+            inc->next = self.klass->included_modules;
+            self.klass->included_modules = inc;
+        }
+        return val_nil();
+    }
+    if (strcmp(name, "extend") == 0) {
+        Value self;
+        if (!env_get(env, "self", &self))
+            return eval_raise_class(ev, site, "TypeError", "extend requires an object");
+        return builtin_extend(ev, self, args, argc, site);
+    }
     (void)blk;
     return val_nil();
 }
@@ -322,6 +381,8 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (!mname) return val_false();
         return val_bool(val_responds_to(ev, recv, mname));
     }
+    if (strcmp(name, "extend") == 0)
+        return builtin_extend(ev, recv, args, argc, site);
     if (strcmp(name, "equal?") == 0) {
         if (argc < 1) return val_false();
         if (recv.kind == VAL_OBJECT && args[0].kind == VAL_OBJECT)
@@ -517,7 +578,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "raise", "lambda", "rand", "exit",
+            "puts", "print", "p", "raise", "lambda", "rand", "exit", "include", "extend",
             "attr_reader", "attr_writer", "attr_accessor", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
@@ -531,26 +592,40 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
 
         Value self;
         if (env_get(env, "self", &self) && self.kind == VAL_OBJECT) {
-            RubyClass *klass = self.obj->klass.klass;
-            while (klass) {
-                if (env_get(klass->class_env, name, &fn) && fn.kind == VAL_METHOD) {
-                    Env *method_env = env_new(ev->arena, fn.method.closure, 1);
-                    env_set(ev->arena, method_env, "self", self);
-                    env_set(ev->arena, method_env, "__method__", val_symbol(name));
-                    Value klass_val; klass_val.kind = VAL_CLASS; klass_val.klass = klass;
-                    env_set(ev->arena, method_env, "__class__", klass_val);
-                    if (blk) method_env->block_arg = blk;
-                    bind_params(ev, method_env, fn.method.def_node->def.params, args, argc);
-                    ev->call_depth++;
-                    eval_push_frame(ev, node->span.line, node->span.col, name);
-                    Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
-                    eval_pop_frame(ev);
-                    ev->call_depth--;
-                    if (result.kind == VAL_RETURN) result = *result.wrapped;
-                    else if (val_is_signal(result)) return result;
-                    return result;
-                }
-                klass = klass->superclass.kind == VAL_CLASS ? klass->superclass.klass : NULL;
+            if (self.obj->singleton_env && env_get(self.obj->singleton_env, name, &fn) && fn.kind == VAL_METHOD) {
+                Env *method_env = env_new(ev->arena, fn.method.closure, 1);
+                env_set(ev->arena, method_env, "self", self);
+                env_set(ev->arena, method_env, "__method__", val_symbol(name));
+                Value klass_val = self.obj->klass;
+                env_set(ev->arena, method_env, "__class__", klass_val);
+                if (blk) method_env->block_arg = blk;
+                bind_params(ev, method_env, fn.method.def_node->def.params, args, argc);
+                ev->call_depth++;
+                eval_push_frame(ev, node->span.line, node->span.col, name);
+                Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
+                eval_pop_frame(ev);
+                ev->call_depth--;
+                if (result.kind == VAL_RETURN) result = *result.wrapped;
+                else if (val_is_signal(result)) return result;
+                return result;
+            }
+            RubyClass *owner = NULL;
+            if (ruby_class_find_instance_method(self.obj->klass.klass, name, &fn, &owner)) {
+                Env *method_env = env_new(ev->arena, fn.method.closure, 1);
+                env_set(ev->arena, method_env, "self", self);
+                env_set(ev->arena, method_env, "__method__", val_symbol(name));
+                Value klass_val; klass_val.kind = VAL_CLASS; klass_val.klass = owner;
+                env_set(ev->arena, method_env, "__class__", klass_val);
+                if (blk) method_env->block_arg = blk;
+                bind_params(ev, method_env, fn.method.def_node->def.params, args, argc);
+                ev->call_depth++;
+                eval_push_frame(ev, node->span.line, node->span.col, name);
+                Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
+                eval_pop_frame(ev);
+                ev->call_depth--;
+                if (result.kind == VAL_RETURN) result = *result.wrapped;
+                else if (val_is_signal(result)) return result;
+                return result;
             }
         }
 

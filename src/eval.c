@@ -311,9 +311,6 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 return eval_error(ev, node, "super called outside of instance method");
             const char *method_name = method_name_val.sval;
 
-            RubyClass *search = cur_class_val.klass->superclass.kind == VAL_CLASS
-                                ? cur_class_val.klass->superclass.klass : NULL;
-
             Value super_args[64];
             int super_argc = 0;
             if (!node->super_call.forward_args) {
@@ -338,34 +335,31 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 }
             }
 
-            while (search) {
-                Value method;
-                if (env_get(search->class_env, method_name, &method) && method.kind == VAL_METHOD) {
-                    Env *method_env = env_new(ev->arena, method.method.closure, 1);
-                    env_set(ev->arena, method_env, "self", self);
-                    Value sc_val; sc_val.kind = VAL_CLASS; sc_val.klass = search;
-                    env_set(ev->arena, method_env, "__method__", val_symbol(method_name));
-                    env_set(ev->arena, method_env, "__class__", sc_val);
+            Value method;
+            RubyClass *owner = NULL;
+            if (ruby_class_find_super_method(self.obj->klass.klass, cur_class_val.klass,
+                                             method_name, &method, &owner)) {
+                Env *method_env = env_new(ev->arena, method.method.closure, 1);
+                env_set(ev->arena, method_env, "self", self);
+                env_set(ev->arena, method_env, "__method__", val_symbol(method_name));
+                Value sc_val; sc_val.kind = VAL_CLASS; sc_val.klass = owner;
+                env_set(ev->arena, method_env, "__class__", sc_val);
 
-                    Value *blk = NULL;
-                    for (Env *sc = env; sc; sc = sc->parent) {
-                        if (sc->block_arg) { blk = sc->block_arg; break; }
-                        if (sc->is_def) break;
-                    }
-                    if (blk) method_env->block_arg = blk;
-
-                    NodeList *params = method.method.def_node->def.params;
-                    for (int i = 0; i < super_argc && params; i++, params = params->next)
-                        env_set(ev->arena, method_env, params->node->param.name, super_args[i]);
-
-                    ev->call_depth++;
-                    Value result = eval_node(ev, method_env, method.method.def_node->def.body);
-                    ev->call_depth--;
-                    if (result.kind == VAL_RETURN) result = *result.wrapped;
-                    else if (val_is_signal(result)) return result;
-                    return result;
+                Value *blk = NULL;
+                for (Env *sc = env; sc; sc = sc->parent) {
+                    if (sc->block_arg) { blk = sc->block_arg; break; }
+                    if (sc->is_def) break;
                 }
-                search = search->superclass.kind == VAL_CLASS ? search->superclass.klass : NULL;
+                if (blk) method_env->block_arg = blk;
+
+                bind_params(ev, method_env, method.method.def_node->def.params, super_args, super_argc);
+
+                ev->call_depth++;
+                Value result = eval_node(ev, method_env, method.method.def_node->def.body);
+                ev->call_depth--;
+                if (result.kind == VAL_RETURN) result = *result.wrapped;
+                else if (val_is_signal(result)) return result;
+                return result;
             }
             return eval_error(ev, node, "super: no superclass method '%s'", method_name);
         }
@@ -415,6 +409,31 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             if (!reopen)
                 env_define(ev->arena, ev->top_env, node->klass.name, klass);
             return klass;
+        }
+
+        case NODE_MODULE: {
+            Value existing;
+            int reopen = env_get(ev->top_env, node->klass.name, &existing) &&
+                         existing.kind == VAL_CLASS;
+
+            Value mod;
+            if (reopen) {
+                mod = existing;
+            } else {
+                mod = val_class(ev->arena, node->klass.name, val_nil());
+                mod.klass->class_env = env_new(ev->arena, ev->top_env, 1);
+                mod.klass->is_module = 1;
+            }
+
+            env_set(ev->arena, mod.klass->class_env, "self", mod);
+            if (node->klass.body) {
+                Value body_result = eval_node(ev, mod.klass->class_env, node->klass.body);
+                if (val_is_signal(body_result)) return body_result;
+            }
+
+            if (!reopen)
+                env_define(ev->arena, ev->top_env, node->klass.name, mod);
+            return mod;
         }
 
         case NODE_ARRAY: {

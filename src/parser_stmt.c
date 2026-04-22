@@ -217,6 +217,21 @@ Node *parse_stmt(Parser *p) {
         return n;
     }
 
+    if (t.kind == TOK_MODULE) {
+        advance(p);
+        Token name_tok = advance(p);
+        if (name_tok.kind != TOK_CONST) {
+            error(p, "expected module name after 'module'", name_tok.line, name_tok.col);
+            return NULL;
+        }
+        Node *n = node_new(p->arena, NODE_MODULE, s);
+        n->klass.name = name_tok.sval;
+        skip_terminators(p);
+        n->klass.body = parse_body(p, 0);
+        expect(p, TOK_END, "expected 'end'");
+        return n;
+    }
+
     Node *expr = parse_expr(p, 0);
     if (!expr) return NULL;
 

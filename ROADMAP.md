@@ -27,8 +27,12 @@ The core callable forms now exist, but the remaining work is semantic cleanup:
 - fuller arity behavior and argument coercion
 - better integration with method/block conversion patterns
 
-### Modules and `include` / `extend`
-`module Foo ... end`, `include Foo` in a class body. Method lookup needs to walk the full ancestor chain (class → included modules in reverse order → superclass → ...).
+### Modules
+The core module path now exists, but the next semantic gaps are:
+
+- `prepend`
+- tighter ancestor ordering compatibility
+- class-side mixins beyond the current `extend` behavior
 
 ### `send` / `public_send`
 Dynamic method dispatch by name. Needed for metaprogramming and for closing a lot of Ruby surface-area gaps cleanly now that method lookup is more centralized.
@@ -83,6 +87,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - broader typed runtime errors (`ArgumentError`, `TypeError`, `NoMethodError`, `ZeroDivisionError`, `LocalJumpError`, `KeyError`)
 - multiple assignment, splat capture, and destructuring
 - `Proc.new`, `lambda`, and `->` literals with callable proc/lambda values
+- `module`, `include`, `extend`, and `super` through included modules
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files

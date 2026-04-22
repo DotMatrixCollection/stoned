@@ -8,6 +8,8 @@ Value val_class(Arena *a, const char *name, Value superclass) {
     klass->name = name;
     klass->superclass = superclass;
     klass->class_env = NULL;  /* Will be set by eval when methods are defined */
+    klass->included_modules = NULL;
+    klass->is_module = 0;
     Value v; v.kind = VAL_CLASS; v.klass = klass;
     return v;
 }
@@ -16,6 +18,7 @@ Value val_object(Arena *a, Value klass) {
     struct RubyObject *obj = arena_alloc(a, sizeof(struct RubyObject));
     obj->klass = klass;
     obj->ivars = NULL;
+    obj->singleton_env = NULL;
     Value v; v.kind = VAL_OBJECT; v.obj = obj;
     return v;
 }

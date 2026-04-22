@@ -192,6 +192,9 @@ static void collect(Sema *s, Node *node, NodeList *excl) {
         case NODE_DEF:
             break;
 
+        case NODE_MODULE:
+            break;
+
         default:
             break;
     }
@@ -348,6 +351,16 @@ static void resolve(Sema *s, Node *node) {
             /* Class body is a hard scope; resolve it so method bodies get analyzed */
             scope_push(s, 1);
             if (node->klass.superclass) resolve(s, node->klass.superclass);
+            if (node->klass.body) {
+                collect(s, node->klass.body, NULL);
+                resolve(s, node->klass.body);
+            }
+            scope_pop(s);
+            break;
+        }
+
+        case NODE_MODULE: {
+            scope_push(s, 1);
             if (node->klass.body) {
                 collect(s, node->klass.body, NULL);
                 resolve(s, node->klass.body);
