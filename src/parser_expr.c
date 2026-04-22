@@ -53,7 +53,9 @@ static Node *parse_command_hash(Parser *p, Node *first_key_node) {
 }
 
 static Node *parse_arg_expr(Parser *p) {
+    p->command_arg_depth++;
     Node *arg = parse_expr(p, 0);
+    p->command_arg_depth--;
     if (command_hash_label_node(arg) && check(p, TOK_COLON))
         return parse_command_hash(p, arg);
     return arg;
@@ -290,7 +292,7 @@ Node *parse_expr(Parser *p, int min_bp) {
                     call->call.args = parse_command_args(p);
                 }
             }
-            if (check(p, TOK_LBRACE) || check(p, TOK_DO))
+            if (check(p, TOK_LBRACE) || (check(p, TOK_DO) && p->command_arg_depth <= 1))
                 call->call.block = parse_block(p);
             left = call;
             continue;
@@ -491,7 +493,8 @@ Node *parse_primary(Parser *p) {
                 n->call.recv = NULL; n->call.method = t.sval; n->call.args = args; n->call.block = block;
                 return n;
             }
-            if ((check(p, TOK_LBRACE) || check(p, TOK_DO)) && peek(p).line == t.line) {
+            if ((check(p, TOK_LBRACE) || (check(p, TOK_DO) && p->command_arg_depth <= 1)) &&
+                peek(p).line == t.line) {
                 Node *n = node_new(p->arena, NODE_CALL, s);
                 n->call.recv = NULL; n->call.method = t.sval; n->call.args = NULL; n->call.block = parse_block(p);
                 return n;
@@ -507,7 +510,7 @@ Node *parse_primary(Parser *p) {
             if (can_be_arg && nxt.line == t.line) {
                 NodeList *args = parse_command_args(p);
                 Node *block = NULL;
-                if (check(p, TOK_LBRACE) || check(p, TOK_DO)) block = parse_block(p);
+                if (check(p, TOK_LBRACE) || (check(p, TOK_DO) && p->command_arg_depth <= 1)) block = parse_block(p);
                 Node *n = node_new(p->arena, NODE_CALL, s);
                 n->call.recv = NULL; n->call.method = t.sval; n->call.args = args; n->call.block = block;
                 return n;

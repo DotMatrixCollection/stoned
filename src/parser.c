@@ -68,6 +68,7 @@ void parser_init(Parser *p, const char *src, size_t len, Arena *arena) {
     lexer_init(&p->lexer, src, len, arena);
     p->arena = arena;
     p->allow_command_arg_commas = 1;
+    p->command_arg_depth = 0;
 }
 
 Node *parse_program(Parser *p) {

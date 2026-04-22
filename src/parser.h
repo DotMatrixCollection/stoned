@@ -19,6 +19,7 @@ typedef struct {
     int        error_count;
     int        panic;           /* 1 = in panic mode, skip to sync point */
     int        allow_command_arg_commas;
+    int        command_arg_depth;
 } Parser;
 
 void  parser_init(Parser *p, const char *src, size_t len, Arena *arena);
