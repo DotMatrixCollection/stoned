@@ -7,16 +7,16 @@ This reflects the current checked-in interpreter state, not the original prototy
 ### Semantics hardening
 The current priority is making the implemented subset more Ruby-like and less surprising:
 
-- tighten command-style call parsing in more edge cases
+- tighten command-style call parsing in the remaining edge cases beyond current keyword-hash parity
 - expand regression coverage for arrays, hashes, and method dispatch
-- reduce remaining differences between parenthesized and unparenthesized call forms
+- reduce the remaining differences between parenthesized and unparenthesized call forms
 - keep exception behavior coherent as more Ruby-like forms land
 
 ### Type introspection consistency
 Core reflection exists in part, but it should be made more consistent across value kinds:
 
-- `is_a?`, `kind_of?`, `instance_of?`, `class`, `nil?`, `respond_to?`
-- align behavior across primitives, objects, classes, arrays, and hashes
+- finish aligning `is_a?`, `kind_of?`, `instance_of?`, `class`, `nil?`, `respond_to?`
+- keep behavior coherent across primitives, objects, classes, modules, arrays, and hashes
 
 ## Medium term
 

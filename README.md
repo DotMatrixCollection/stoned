@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `90 passed, 0 failed, 90 total`.
+Current coverage in the tree: `92 passed, 0 failed, 92 total`.
 
 What is working today:
 
@@ -54,13 +54,13 @@ What is working today:
 - Operators: arithmetic, comparison, bitwise, string/array `+`, array `<<`, `**`, `<=>`, `&&`, `||`
 - Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return`
 - Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, typed rescue lists, rescue variable binding, `retry`, re-raise, uncaught backtraces, typed runtime failures including `NameError`, `NoMethodError`, `TypeError`, `SystemStackError`, `EncodingError`, and existing core error classes; exception instances support `new(message)`, `message`, `to_s`, `inspect`, `exception`, `backtrace`, and `set_backtrace`
-- Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls, `send`, `__send__`, `public_send`
+- Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls, command-style and parenthesized keyword-hash args, `send`, `__send__`, `public_send`
 - Classes: instance methods, `def self.foo`, inheritance, `initialize`, instance variables, `super`, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
-- Visibility: `public`, `private`, `protected`, `private_class_method`/`public_class_method`/`protected_class_method`, public-only `respond_to?`, explicit receiver restrictions, protected same-family receiver calls
+- Visibility: `public`, `private`, `protected`, `private_class_method`/`public_class_method`/`protected_class_method`, `respond_to?` with `include_private`, explicit receiver restrictions, protected same-family receiver calls
 - Modules: `module Foo ... end`, `include`, `prepend`, `extend`, instance method lookup through included and prepended modules, `super` through module ancestors
 - Built-in mixins: `Comparable` (`between?`, `clamp`) and `Enumerable` (`find`, `detect`, `count`, `entries`, `first`, `take`, `drop`)
 - File loading: `require_relative`, `require`, `$LOAD_PATH` search, duplicate-load skipping, `LoadError` on load failures
-- Dispatch hooks: `method_missing` and `respond_to_missing?` for objects, classes, and primitive-backed reopened classes
+- Dispatch hooks: `method_missing` and `respond_to_missing?` for objects, classes, and primitive-backed reopened classes; class/module reflection is now consistent across `class`, `is_a?`, and `instance_of?`
 - Operator method defs like `def <=>` and generic operator dispatch for user-defined operator methods
 - Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`
 - Hash syntax: both `{:a => 1}` and modern label syntax like `{a: 1}`

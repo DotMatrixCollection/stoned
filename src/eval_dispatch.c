@@ -165,6 +165,11 @@ static int val_is_a(Value v, Value klass_arg) {
     if (klass_arg.kind != VAL_CLASS) return 0;
     const char *kname = klass_arg.klass->name;
     if (strcmp(kname, "Object") == 0 || strcmp(kname, "BasicObject") == 0) return 1;
+    if (v.kind == VAL_CLASS) {
+        if (strcmp(kname, "Module") == 0) return 1;
+        if (strcmp(kname, "Class") == 0) return !v.klass->is_module;
+        return 0;
+    }
     if (v.kind == VAL_OBJECT) {
         RubyClass *k = v.obj->klass.klass;
         while (k) {
@@ -181,6 +186,7 @@ static int val_is_a(Value v, Value klass_arg) {
 static Value val_class_of(Eval *ev, Value v) {
     if (v.kind == VAL_OBJECT) return v.obj->klass;
     const char *kname = prim_class_name(v);
+    if (v.kind == VAL_CLASS && v.klass->is_module) kname = "Module";
     Value klass;
     if (env_get(ev->top_env, kname, &klass) && klass.kind == VAL_CLASS) return klass;
     Value stub = val_class(ev->arena, kname, val_nil());
@@ -188,7 +194,73 @@ static Value val_class_of(Eval *ev, Value v) {
     return stub;
 }
 
-static int val_responds_to(Eval *ev, Value recv, const char *name) {
+static int method_visible_for_respond_to(Value method, int include_private) {
+    return method.kind == VAL_METHOD && (include_private || method.method.visibility == METHOD_PUBLIC);
+}
+
+static int builtin_primitive_responds_to(Value recv, const char *name) {
+    static const char *int_methods[] = {
+        "to_s", "to_f", "to_i", "to_int", "to_r", "abs", "abs2", "even?", "odd?", "zero?",
+        "nonzero?", "positive?", "negative?", "integer?", "ceil", "floor", "round",
+        "truncate", "succ", "next", "pred", "chr", "gcd", "lcm", "pow", "divmod",
+        "digits", "between?", "clamp", "times", "upto", "downto", "step", NULL
+    };
+    static const char *float_methods[] = {
+        "to_s", "to_f", "to_i", "truncate", "to_r", "abs", "abs2", "zero?", "nonzero?",
+        "positive?", "negative?", "integer?", "nan?", "finite?", "infinite?", "ceil",
+        "floor", "round", "divmod", "between?", "clamp", "step", NULL
+    };
+    static const char *str_methods[] = {
+        "to_s", "to_i", "to_f", "to_sym", "length", "size", "empty?", "upcase",
+        "downcase", "strip", "chars", "include?", "start_with?", "end_with?", "split",
+        "each_char", "reverse", "next", "succ", "replace", "inspect", "chomp", "chop",
+        "lstrip", "rstrip", "capitalize", "swapcase", "ljust", "rjust", "center", "ord",
+        "hex", "oct", "bytes", "<<", "index", "rindex", "[]", "slice", "lines",
+        "each_line", "tr", "count", "delete", "squeeze", "scan", "sub", "gsub", "*", NULL
+    };
+    static const char *arr_methods[] = {
+        "length", "size", "count", "empty?", "first", "last", "push", "append", "pop",
+        "shift", "unshift", "prepend", "reverse", "to_s", "inspect", "join", "include?",
+        "each", "each_with_index", "map", "collect", "select", "filter", "reject",
+        "reduce", "inject", "any?", "all?", "none?", "min", "max", "sum", "flatten",
+        "uniq", "sort", "compact", "zip", NULL
+    };
+    static const char *hash_methods[] = {
+        "[]", "[]=", "fetch", "has_key?", "key?", "include?", "member?", "has_value?",
+        "value?", "delete", "keys", "values", "length", "size", "count", "empty?",
+        "to_s", "inspect", "to_a", "merge", "merge!", "update", "each", "each_pair",
+        "each_key", "each_value", "map", "collect", "select", "filter", "reject", "any?",
+        "all?", "min_by", "max_by", "sort_by", "flat_map", "reduce", "inject", "store",
+        "clear", "dup", "nil?", NULL
+    };
+    static const char *proc_methods[] = {
+        "call", "[]", "lambda?", "arity", "to_s", "inspect", NULL
+    };
+    static const char *nil_methods[] = {
+        "nil?", "to_s", "inspect", NULL
+    };
+    static const char *bool_methods[] = {
+        "to_s", "inspect", "!", "nil?", NULL
+    };
+
+    const char **methods = NULL;
+    if (recv.kind == VAL_INT) methods = int_methods;
+    else if (recv.kind == VAL_FLOAT) methods = float_methods;
+    else if (recv.kind == VAL_STRING) methods = str_methods;
+    else if (recv.kind == VAL_ARRAY) methods = arr_methods;
+    else if (recv.kind == VAL_HASH) methods = hash_methods;
+    else if (recv.kind == VAL_BLOCK) methods = proc_methods;
+    else if (recv.kind == VAL_NIL) methods = nil_methods;
+    else if (recv.kind == VAL_BOOL) methods = bool_methods;
+    if (!methods) return 0;
+
+    for (int i = 0; methods[i]; i++) {
+        if (strcmp(name, methods[i]) == 0) return 1;
+    }
+    return 0;
+}
+
+static int val_responds_to(Eval *ev, Value recv, const char *name, int include_private) {
     if (strcmp(name, "is_a?") == 0 || strcmp(name, "kind_of?") == 0 ||
         strcmp(name, "instance_of?") == 0 || strcmp(name, "class") == 0 ||
         strcmp(name, "nil?") == 0 || strcmp(name, "respond_to?") == 0 ||
@@ -202,11 +274,11 @@ static int val_responds_to(Eval *ev, Value recv, const char *name) {
 
     if (recv.kind == VAL_OBJECT) {
         Value m;
-        if (recv.obj->singleton_env && env_get(recv.obj->singleton_env, name, &m) && m.kind == VAL_METHOD &&
-            m.method.visibility == METHOD_PUBLIC)
+        if (recv.obj->singleton_env && env_get(recv.obj->singleton_env, name, &m) &&
+            method_visible_for_respond_to(m, include_private))
             return 1;
         if (ruby_class_find_instance_method(recv.obj->klass.klass, name, &m, NULL))
-            return m.kind == VAL_METHOD && m.method.visibility == METHOD_PUBLIC;
+            return method_visible_for_respond_to(m, include_private);
         return 0;
     }
 
@@ -219,50 +291,21 @@ static int val_responds_to(Eval *ev, Value recv, const char *name) {
         RubyClass *k = recv.klass;
         while (k) {
             Value m;
-            if (env_get(k->class_env, key, &m) && m.kind == VAL_METHOD && m.method.visibility == METHOD_PUBLIC)
+            if (env_get(k->class_env, key, &m) && method_visible_for_respond_to(m, include_private))
                 return 1;
             k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL;
         }
         return 0;
     }
 
-    static const char *int_methods[] = {
-        "to_s", "to_f", "to_i", "abs", "even?", "odd?", "zero?", "times", "upto", "downto", NULL
-    };
-    static const char *float_methods[] = {
-        "to_s", "to_f", "to_i", "abs", "ceil", "floor", "round", "zero?", NULL
-    };
-    static const char *str_methods[] = {
-        "to_s", "to_i", "to_f", "to_sym", "length", "size", "empty?", "upcase", "downcase",
-        "strip", "chars", "include?", "start_with?", "end_with?", "split", "each_char",
-        "reverse", "replace", "*", NULL
-    };
-    static const char *arr_methods[] = {
-        "length", "size", "count", "empty?", "first", "last", "push", "pop", "shift", "unshift",
-        "reverse", "to_s", "join", "include?", "each", "each_with_index", "map", "select",
-        "reject", "reduce", "any?", "all?", "none?", "min", "max", "sum", "flatten", "uniq",
-        "sort", "compact", "zip", NULL
-    };
-    static const char *hash_methods[] = {
-        "[]", "[]=", "fetch", "has_key?", "has_value?", "delete", "keys", "values",
-        "length", "size", "empty?", "to_s", "to_a", "merge", "merge!", "each", "map",
-        "select", "reject", "any?", "all?", NULL
-    };
-    static const char *proc_methods[] = {
-        "call", "[]", "lambda?", "arity", "to_s", "inspect", NULL
-    };
+    if (builtin_primitive_responds_to(recv, name)) return 1;
 
-    const char **methods = NULL;
-    if (recv.kind == VAL_INT) methods = int_methods;
-    if (recv.kind == VAL_FLOAT) methods = float_methods;
-    if (recv.kind == VAL_STRING) methods = str_methods;
-    if (recv.kind == VAL_ARRAY) methods = arr_methods;
-    if (recv.kind == VAL_HASH) methods = hash_methods;
-    if (recv.kind == VAL_BLOCK) methods = proc_methods;
-    if (!methods) return 0;
-
-    for (int i = 0; methods[i]; i++)
-        if (strcmp(name, methods[i]) == 0) return 1;
+    Value klass = val_class_of(ev, recv);
+    if (klass.kind == VAL_CLASS) {
+        Value method;
+        if (ruby_class_find_instance_method(klass.klass, name, &method, NULL))
+            return method_visible_for_respond_to(method, include_private);
+    }
     return 0;
 }
 
@@ -289,14 +332,15 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     return result;
 }
 
-static Value dispatch_respond_to_missing(Eval *ev, Env *env, Value recv, const char *name, Node *site) {
+static Value dispatch_respond_to_missing(Eval *ev, Env *env, Value recv, const char *name,
+                                         int include_private, Node *site) {
     if (recv.kind == VAL_OBJECT) {
         RubyClass *owner = NULL;
         Value method;
         if (ruby_class_find_instance_method(recv.obj->klass.klass, "respond_to_missing?", &method, &owner)) {
             Value args[2];
             args[0] = val_symbol(name);
-            args[1] = val_false();
+            args[1] = val_bool(include_private);
             Value result = call_method_value(ev, env, recv, method, owner, "respond_to_missing?", args, 2, NULL, site);
             if (val_is_signal(result)) return result;
             return val_bool(val_truthy(result));
@@ -311,7 +355,7 @@ static Value dispatch_respond_to_missing(Eval *ev, Env *env, Value recv, const c
             if (env_get(k->class_env, key, &method) && method.kind == VAL_METHOD) {
                 Value args[2];
                 args[0] = val_symbol(name);
-                args[1] = val_false();
+                args[1] = val_bool(include_private);
                 Value result = call_method_value(ev, env, recv, method, k, "respond_to_missing?", args, 2, NULL, site);
                 if (val_is_signal(result)) return result;
                 return val_bool(val_truthy(result));
@@ -325,7 +369,7 @@ static Value dispatch_respond_to_missing(Eval *ev, Env *env, Value recv, const c
             if (ruby_class_find_instance_method(klass.klass, "respond_to_missing?", &method, &owner)) {
                 Value args[2];
                 args[0] = val_symbol(name);
-                args[1] = val_false();
+                args[1] = val_bool(include_private);
                 Value result = call_method_value(ev, env, recv, method, owner, "respond_to_missing?", args, 2, NULL, site);
                 if (val_is_signal(result)) return result;
                 return val_bool(val_truthy(result));
@@ -573,17 +617,20 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (args[0].kind != VAL_CLASS) return val_false();
         if (recv.kind == VAL_OBJECT)
             return val_bool(recv.obj->klass.klass == args[0].klass);
+        if (recv.kind == VAL_CLASS)
+            return val_bool(strcmp(recv.klass->is_module ? "Module" : "Class", args[0].klass->name) == 0);
         return val_bool(strcmp(prim_class_name(recv), args[0].klass->name) == 0);
     }
     if (strcmp(name, "class") == 0)
         return val_class_of(ev, recv);
     if (strcmp(name, "respond_to?") == 0) {
         if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "respond_to? requires an argument");
+        int include_private = argc >= 2 && val_truthy(args[1]);
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING)
                             ? args[0].sval : NULL;
         if (!mname) return val_false();
-        if (val_responds_to(ev, recv, mname)) return val_true();
-        return dispatch_respond_to_missing(ev, env, recv, mname, site);
+        if (val_responds_to(ev, recv, mname, include_private)) return val_true();
+        return dispatch_respond_to_missing(ev, env, recv, mname, include_private, site);
     }
     if (strcmp(name, "extend") == 0)
         return builtin_extend(ev, recv, args, argc, site);

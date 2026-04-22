@@ -5,13 +5,71 @@
 
 typedef struct { int lbp; int rbp; } BP;
 
+static Node *parse_hash_key(Parser *p, int *used_label);
+
+static int command_hash_label_node(Node *node) {
+    return node && (node->kind == NODE_LVAR || node->kind == NODE_CONST);
+}
+
+static Node *command_hash_label_key(Parser *p, Node *node) {
+    Node *key = node_new(p->arena, NODE_SYMBOL, node->span);
+    key->sval = node->sval;
+    return key;
+}
+
+static Node *parse_command_hash(Parser *p, Node *first_key_node) {
+    Node *n = node_new(p->arena, NODE_HASH, first_key_node->span);
+    NodeList *pairs = NULL;
+    int saved_allow_commas = p->allow_command_arg_commas;
+    p->allow_command_arg_commas = 0;
+
+    Node *key = command_hash_label_key(p, first_key_node);
+    expect(p, TOK_COLON, "expected ':' in hash literal");
+    Node *val = parse_expr(p, 0);
+    if (val) {
+        Node *pair = node_new(p->arena, NODE_PAIR, key->span);
+        pair->pair.key = key;
+        pair->pair.value = val;
+        pairs = nodelist_append(p->arena, pairs, pair);
+    }
+
+    while (match(p, TOK_COMMA)) {
+        Node *next_key_node = parse_expr(p, 0);
+        if (!command_hash_label_node(next_key_node) || !check(p, TOK_COLON))
+            break;
+        Node *next_key = command_hash_label_key(p, next_key_node);
+        advance(p);
+        Node *next_val = parse_expr(p, 0);
+        if (!next_val) break;
+        Node *pair = node_new(p->arena, NODE_PAIR, next_key->span);
+        pair->pair.key = next_key;
+        pair->pair.value = next_val;
+        pairs = nodelist_append(p->arena, pairs, pair);
+    }
+
+    p->allow_command_arg_commas = saved_allow_commas;
+    n->hash.pairs = pairs;
+    return n;
+}
+
+static Node *parse_arg_expr(Parser *p) {
+    Node *arg = parse_expr(p, 0);
+    if (command_hash_label_node(arg) && check(p, TOK_COLON))
+        return parse_command_hash(p, arg);
+    return arg;
+}
+
+static Node *parse_command_arg(Parser *p) {
+    return parse_arg_expr(p);
+}
+
 static NodeList *parse_command_args(Parser *p) {
     NodeList *args = NULL;
-    Node *first = parse_expr(p, 0);
+    Node *first = parse_command_arg(p);
     if (first) args = nodelist_append(p->arena, args, first);
 
     while (p->allow_command_arg_commas && match(p, TOK_COMMA)) {
-        Node *arg = parse_expr(p, 0);
+        Node *arg = parse_command_arg(p);
         if (arg) args = nodelist_append(p->arena, args, arg);
     }
 
@@ -248,7 +306,7 @@ NodeList *parse_args(Parser *p) {
     int saved_allow_commas = p->allow_command_arg_commas;
     p->allow_command_arg_commas = 0;
     while (!check(p, TOK_RPAREN) && !check(p, TOK_EOF)) {
-        Node *arg = parse_expr(p, 0);
+        Node *arg = parse_arg_expr(p);
         if (arg) args = nodelist_append(p->arena, args, arg);
         if (!match(p, TOK_COMMA)) break;
     }
