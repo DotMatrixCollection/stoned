@@ -69,6 +69,7 @@ static NodeList *parse_command_args(Parser *p) {
     if (first) args = nodelist_append(p->arena, args, first);
 
     while (p->allow_command_arg_commas && match(p, TOK_COMMA)) {
+        skip_terminators(p);
         Node *arg = parse_command_arg(p);
         if (arg) args = nodelist_append(p->arena, args, arg);
     }
@@ -309,6 +310,7 @@ NodeList *parse_args(Parser *p) {
         Node *arg = parse_arg_expr(p);
         if (arg) args = nodelist_append(p->arena, args, arg);
         if (!match(p, TOK_COMMA)) break;
+        skip_terminators(p);
     }
     p->allow_command_arg_commas = saved_allow_commas;
     return args;

@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `92 passed, 0 failed, 92 total`.
+Current coverage in the tree: `93 passed, 0 failed, 93 total`.
 
 What is working today:
 
@@ -54,7 +54,7 @@ What is working today:
 - Operators: arithmetic, comparison, bitwise, string/array `+`, array `<<`, `**`, `<=>`, `&&`, `||`
 - Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return`
 - Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, typed rescue lists, rescue variable binding, `retry`, re-raise, uncaught backtraces, typed runtime failures including `NameError`, `NoMethodError`, `TypeError`, `SystemStackError`, `EncodingError`, and existing core error classes; exception instances support `new(message)`, `message`, `to_s`, `inspect`, `exception`, `backtrace`, and `set_backtrace`
-- Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls, command-style and parenthesized keyword-hash args, `send`, `__send__`, `public_send`
+- Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls, multiline command-style arg lists after commas, command-style and parenthesized keyword-hash args, `send`, `__send__`, `public_send`
 - Classes: instance methods, `def self.foo`, inheritance, `initialize`, instance variables, `super`, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
 - Visibility: `public`, `private`, `protected`, `private_class_method`/`public_class_method`/`protected_class_method`, `respond_to?` with `include_private`, explicit receiver restrictions, protected same-family receiver calls
 - Modules: `module Foo ... end`, `include`, `prepend`, `extend`, instance method lookup through included and prepended modules, `super` through module ancestors
@@ -81,7 +81,7 @@ Known limitations:
 - File/IO coverage is path-backed and stream-mode basic; no socket IO, no binary mode, no seek/tell
 - Exceptions work, but they still need broader standard exception coverage and fuller Ruby rescue semantics beyond the current typed clauses, lists, variable binding, and `retry`
 - Proc/lambda semantics exist, but there are still edge cases around control flow and argument handling that are not Ruby-complete
-- Compatibility around edge-case parsing and method semantics is still being tightened
+- Compatibility around edge-case parsing and method semantics is still being tightened, especially for the remaining unparenthesized call precedence and block-binding corners
 - File loading still needs stronger path canonicalization and more Ruby-complete search behavior
 
 ## Architecture
