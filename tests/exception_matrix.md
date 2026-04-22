@@ -94,5 +94,5 @@ Nice-to-have after the basics work:
 
 - exception variable binding in rescue clauses
 - re-raise
-- exception object message / class inspection
+- broader exception instance API coverage (`new(message)`, `exception`, `set_backtrace`)
 - backtrace support

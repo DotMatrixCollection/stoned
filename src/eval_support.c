@@ -414,6 +414,17 @@ int value_is_a_named_class(Eval *ev, Value v, const char *class_name) {
     return 0;
 }
 
+int class_is_a_named_class(Eval *ev, RubyClass *klass, const char *class_name) {
+    Value target;
+    if (!klass) return 0;
+    if (!env_get(ev->top_env, class_name, &target) || target.kind != VAL_CLASS)
+        return 0;
+    for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+        if (k == target.klass || strcmp(k->name, class_name) == 0) return 1;
+    }
+    return 0;
+}
+
 const char *exception_value_class_name(Value exc) {
     if (exc.kind != VAL_OBJECT || exc.obj->klass.kind != VAL_CLASS || !exc.obj->klass.klass)
         return "RuntimeError";
@@ -428,13 +439,10 @@ const char *exception_value_message(Eval *ev, Value exc) {
     return exception_value_class_name(exc);
 }
 
-static Value build_exception(Eval *ev, const char *class_name, const char *msg) {
-    Value klass;
-    if (!env_get(ev->top_env, class_name, &klass) || klass.kind != VAL_CLASS) {
-        env_get(ev->top_env, "RuntimeError", &klass);
-    }
+Value build_exception_object(Eval *ev, Value klass, const char *msg) {
     Value exc = val_object(ev->arena, klass);
-    val_object_set_ivar(ev->arena, exc, "message", val_string(ev->arena, msg ? msg : class_name));
+    val_object_set_ivar(ev->arena, exc, "message",
+                        val_string(ev->arena, msg ? msg : (klass.kind == VAL_CLASS ? klass.klass->name : "RuntimeError")));
     Value backtrace = val_array_new();
     for (int i = ev->frame_count - 1; i >= 0; i--) {
         char buf[256];
@@ -444,6 +452,23 @@ static Value build_exception(Eval *ev, const char *class_name, const char *msg) 
     }
     val_object_set_ivar(ev->arena, exc, "backtrace", backtrace);
     return exc;
+}
+
+static Value build_exception(Eval *ev, const char *class_name, const char *msg) {
+    Value klass;
+    if (!env_get(ev->top_env, class_name, &klass) || klass.kind != VAL_CLASS)
+        env_get(ev->top_env, "RuntimeError", &klass);
+    return build_exception_object(ev, klass, msg);
+}
+
+void exception_set_message(Eval *ev, Value exc, Value msg) {
+    if (exc.kind != VAL_OBJECT) return;
+    val_object_set_ivar(ev->arena, exc, "message", msg);
+}
+
+void exception_set_backtrace(Eval *ev, Value exc, Value backtrace) {
+    if (exc.kind != VAL_OBJECT) return;
+    val_object_set_ivar(ev->arena, exc, "backtrace", backtrace);
 }
 
 static void set_exception_origin(Arena *arena, Value exc, uint32_t line, uint32_t col) {

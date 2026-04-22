@@ -3,6 +3,17 @@
 #include <stdio.h>
 #include <string.h>
 
+static Value exception_arg_message(Eval *ev, Value recv, Value *args, int argc, int *ok, Node *site) {
+    if (argc > 1) {
+        *ok = 0;
+        return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+    }
+    *ok = 1;
+    if (argc == 0 || args[0].kind == VAL_NIL)
+        return val_string(ev->arena, recv.kind == VAL_CLASS ? recv.klass->name : exception_value_class_name(recv));
+    return val_string(ev->arena, val_to_s(ev->arena, args[0]));
+}
+
 int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     if (recv.kind != VAL_CLASS) return 0;
@@ -89,6 +100,14 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "new") == 0) {
+        if (class_is_a_named_class(ev, recv.klass, "Exception")) {
+            int ok = 1;
+            Value message = exception_arg_message(ev, recv, args, argc, &ok, site);
+            if (!ok) { *out = message; return 1; }
+            Value obj = build_exception_object(ev, recv, message.sval);
+            *out = obj;
+            return 1;
+        }
         Value obj = val_object(ev->arena, recv);
         RubyClass *klass = recv.klass;
         while (klass) {
@@ -360,6 +379,38 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             char *buf = arena_alloc(ev->arena, len);
             snprintf(buf, len, "%s: %s", klass, msg);
             *out = val_string(ev->arena, buf);
+            return 1;
+        }
+        if (strcmp(name, "exception") == 0) {
+            int ok = 1;
+            if (argc == 0 || (argc == 1 && val_equal(recv, args[0]))) {
+                *out = recv;
+                return 1;
+            }
+            Value message = exception_arg_message(ev, recv, args, argc, &ok, site);
+            if (!ok) { *out = message; return 1; }
+            Value klass;
+            klass.kind = VAL_CLASS;
+            klass.klass = recv.obj->klass.klass;
+            Value copy = build_exception_object(ev, klass, message.sval);
+            exception_set_backtrace(ev, copy, exception_value_backtrace(recv));
+            Value line, col;
+            if (val_object_get_ivar(recv, "line", &line)) val_object_set_ivar(ev->arena, copy, "line", line);
+            if (val_object_get_ivar(recv, "col", &col)) val_object_set_ivar(ev->arena, copy, "col", col);
+            *out = copy;
+            return 1;
+        }
+        if (strcmp(name, "set_backtrace") == 0) {
+            if (argc < 1) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "set_backtrace requires an argument");
+                return 1;
+            }
+            if (args[0].kind != VAL_ARRAY && args[0].kind != VAL_NIL) {
+                *out = eval_raise_class(ev, site, "TypeError", "set_backtrace requires an Array or nil");
+                return 1;
+            }
+            exception_set_backtrace(ev, recv, args[0]);
+            *out = args[0];
             return 1;
         }
     }

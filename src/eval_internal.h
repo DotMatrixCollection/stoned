@@ -10,11 +10,15 @@ Value eval_raise_class(Eval *ev, Node *n, const char *class_name, const char *fm
 Value eval_raise_value(Eval *ev, Node *n, Value exc);
 void eval_clear_exception(Eval *ev);
 int value_is_a_named_class(Eval *ev, Value v, const char *class_name);
+int class_is_a_named_class(Eval *ev, RubyClass *klass, const char *class_name);
 const char *exception_value_class_name(Value exc);
 const char *exception_value_message(Eval *ev, Value exc);
 uint32_t exception_value_line(Value exc);
 uint32_t exception_value_col(Value exc);
 Value exception_value_backtrace(Value exc);
+Value build_exception_object(Eval *ev, Value klass, const char *msg);
+void exception_set_message(Eval *ev, Value exc, Value msg);
+void exception_set_backtrace(Eval *ev, Value exc, Value backtrace);
 void eval_push_frame(Eval *ev, uint32_t line, uint32_t col, const char *label);
 void eval_pop_frame(Eval *ev);
 void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc);
