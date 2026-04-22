@@ -30,7 +30,6 @@ The core callable forms now exist, but the remaining work is semantic cleanup:
 ### Modules
 The core module path now exists, but the next semantic gaps are:
 
-- `prepend`
 - tighter ancestor ordering compatibility
 - class-side mixins beyond the current `extend` behavior
 
@@ -87,7 +86,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - broader typed runtime errors (`ArgumentError`, `TypeError`, `NoMethodError`, `ZeroDivisionError`, `LocalJumpError`, `KeyError`)
 - multiple assignment, splat capture, and destructuring
 - `Proc.new`, `lambda`, and `->` literals with callable proc/lambda values
-- `module`, `include`, `extend`, and `super` through included modules
+- `module`, `include`, `prepend`, `extend`, and `super` through module ancestors
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files

@@ -340,6 +340,20 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         }
         return val_nil();
     }
+    if (strcmp(name, "prepend") == 0) {
+        Value self;
+        if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
+            return eval_error(ev, site, "prepend must be called in a class or module body");
+        for (int i = 0; i < argc; i++) {
+            if (args[i].kind != VAL_CLASS || !args[i].klass->is_module)
+                return eval_raise_class(ev, site, "TypeError", "prepend requires a Module");
+            RubyModuleInclusion *inc = arena_alloc(ev->arena, sizeof(RubyModuleInclusion));
+            inc->mod = args[i].klass;
+            inc->next = self.klass->prepended_modules;
+            self.klass->prepended_modules = inc;
+        }
+        return val_nil();
+    }
     if (strcmp(name, "extend") == 0) {
         Value self;
         if (!env_get(env, "self", &self))
@@ -578,7 +592,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "raise", "lambda", "rand", "exit", "include", "extend",
+            "puts", "print", "p", "raise", "lambda", "rand", "exit", "include", "prepend", "extend",
             "attr_reader", "attr_writer", "attr_accessor", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {

@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `50 passed, 0 failed, 50 total`.
+Current coverage in the tree: `51 passed, 0 failed, 51 total`.
 
 What is working today:
 
@@ -56,7 +56,7 @@ What is working today:
 - Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, rescue variable binding, re-raise, uncaught backtraces
 - Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls
 - Classes: instance methods, `def self.foo`, inheritance, `initialize`, instance variables, `super`, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
-- Modules: `module Foo ... end`, `include`, `extend`, instance method lookup through included modules, `super` through included modules
+- Modules: `module Foo ... end`, `include`, `prepend`, `extend`, instance method lookup through included and prepended modules, `super` through module ancestors
 - Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`
 - Hash syntax: both `{:a => 1}` and modern label syntax like `{a: 1}`
 - Assignment: parallel assignment, swap, splat capture, nested destructuring, destructured method and block params

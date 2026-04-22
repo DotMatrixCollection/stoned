@@ -82,6 +82,7 @@ typedef struct RubyClass {
     const char *name;
     Value       superclass;  /* VAL_CLASS or VAL_NIL */
     struct Env *class_env;   /* Methods defined in this class */
+    RubyModuleInclusion *prepended_modules;
     RubyModuleInclusion *included_modules;
     int         is_module;
 } RubyClass;
