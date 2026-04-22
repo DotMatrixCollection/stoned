@@ -24,7 +24,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 ev->call_depth++;
                 Value result = eval_node(ev, method_env, init_method.method.def_node->def.body);
                 ev->call_depth--;
-                if (ev->errored) { *out = val_nil(); return 1; }
+                if (result.kind == VAL_EXCEPTION) { *out = result; return 1; }
                 (void)result;
                 break;
             }
@@ -53,8 +53,8 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             ev->call_depth++;
             Value result = eval_node(ev, method_env, cm.method.def_node->def.body);
             ev->call_depth--;
-            if (ev->errored) { *out = val_nil(); return 1; }
             if (result.kind == VAL_RETURN) result = *result.wrapped;
+            else if (val_is_signal(result)) { *out = result; return 1; }
             *out = result;
             return 1;
         }
@@ -66,6 +66,21 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
 int dispatch_object(Eval *ev, Value recv, const char *name, Value *args, int argc,
                     Value *blk, Value *out) {
     if (recv.kind != VAL_OBJECT) return 0;
+    if (value_is_a_named_class(ev, recv, "Exception")) {
+        if (strcmp(name, "message") == 0 || strcmp(name, "to_s") == 0) {
+            *out = val_string(ev->arena, exception_value_message(ev, recv));
+            return 1;
+        }
+        if (strcmp(name, "inspect") == 0) {
+            const char *klass = exception_value_class_name(recv);
+            const char *msg = exception_value_message(ev, recv);
+            size_t len = strlen(klass) + strlen(msg) + 5;
+            char *buf = arena_alloc(ev->arena, len);
+            snprintf(buf, len, "%s: %s", klass, msg);
+            *out = val_string(ev->arena, buf);
+            return 1;
+        }
+    }
     RubyClass *klass = recv.obj->klass.klass;
     while (klass) {
         Value method;
@@ -82,8 +97,8 @@ int dispatch_object(Eval *ev, Value recv, const char *name, Value *args, int arg
             ev->call_depth++;
             Value result = eval_node(ev, method_env, method.method.def_node->def.body);
             ev->call_depth--;
-            if (ev->errored) { *out = val_nil(); return 1; }
             if (result.kind == VAL_RETURN) result = *result.wrapped;
+            else if (val_is_signal(result)) { *out = result; return 1; }
             *out = result;
             return 1;
         }

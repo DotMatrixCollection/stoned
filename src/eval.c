@@ -10,6 +10,16 @@ static void assign_lvar(Eval *ev, Env *env, const char *name, Value val) {
         env_set(ev->arena, env, name, val);
 }
 
+static int exception_is_a(Eval *ev, Value klass) {
+    if (klass.kind != VAL_CLASS || ev->current_exception.kind != VAL_OBJECT) return 0;
+    RubyClass *k = ev->current_exception.obj->klass.klass;
+    while (k) {
+        if (strcmp(k->name, klass.klass->name) == 0) return 1;
+        k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL;
+    }
+    return 0;
+}
+
 Value eval_node(Eval *ev, Env *env, Node *node) {
     if (!node || ev->errored) return val_nil();
 
@@ -158,14 +168,51 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 int cont = (node->kind == NODE_WHILE) ? val_truthy(cond) : !val_truthy(cond);
                 if (!cont) break;
                 result = eval_node(ev, env, node->loop.body);
-                if (ev->errored) return val_nil();
                 if (result.kind == VAL_BREAK) return *result.wrapped;
                 if (result.kind == VAL_RETURN) return result;
                 if (result.kind == VAL_NEXT) {
                     result = val_nil();
                     continue;
                 }
+                if (result.kind == VAL_EXCEPTION) return result;
             }
+            return result;
+        }
+
+        case NODE_BEGIN: {
+            Value result = eval_node(ev, env, node->begin_stmt.body);
+
+            if (result.kind == VAL_EXCEPTION && node->begin_stmt.rescues) {
+                for (NodeList *l = node->begin_stmt.rescues; l; l = l->next) {
+                    Node *rescue_clause = l->node;
+                    if (!rescue_clause || rescue_clause->kind != NODE_RESCUE) continue;
+                    if (rescue_clause->rescue_clause.exception_class) {
+                        Value rescue_class = eval_node(ev, env, rescue_clause->rescue_clause.exception_class);
+                        CHECK(rescue_class);
+                    if (!exception_is_a(ev, rescue_class))
+                            continue;
+                    }
+                    Value rescued_exc = ev->current_exception;
+                    Value previous_rescue = ev->rescue_context;
+                    eval_clear_exception(ev);
+                    ev->rescue_context = rescued_exc;
+                    Env *rescue_env = env;
+                    if (rescue_clause->rescue_clause.exception_var) {
+                        rescue_env = env_new(ev->arena, env, 0);
+                        env_set(ev->arena, rescue_env, rescue_clause->rescue_clause.exception_var, rescued_exc);
+                    }
+                    result = eval_node(ev, rescue_env, rescue_clause->rescue_clause.body);
+                    ev->rescue_context = previous_rescue;
+                    break;
+                }
+            }
+
+            if (node->begin_stmt.ensure_body) {
+                Value ensure_result = eval_node(ev, env, node->begin_stmt.ensure_body);
+                if (val_is_signal(ensure_result))
+                    return ensure_result;
+            }
+
             return result;
         }
 
@@ -257,8 +304,8 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     ev->call_depth++;
                     Value result = eval_node(ev, method_env, method.method.def_node->def.body);
                     ev->call_depth--;
-                    if (ev->errored) return val_nil();
                     if (result.kind == VAL_RETURN) result = *result.wrapped;
+                    else if (val_is_signal(result)) return result;
                     return result;
                 }
                 search = search->superclass.kind == VAL_CLASS ? search->superclass.klass : NULL;
@@ -303,9 +350,10 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             }
 
             env_set(ev->arena, klass.klass->class_env, "self", klass);
-            if (node->klass.body)
-                eval_node(ev, klass.klass->class_env, node->klass.body);
-            if (ev->errored) return val_nil();
+            if (node->klass.body) {
+                Value body_result = eval_node(ev, klass.klass->class_env, node->klass.body);
+                if (val_is_signal(body_result)) return body_result;
+            }
 
             if (!reopen)
                 env_define(ev->arena, ev->top_env, node->klass.name, klass);
@@ -362,11 +410,27 @@ void eval_init(Eval *ev, Arena *arena, FILE *out) {
         "Integer", "Float", "String", "Symbol",
         "Array", "Hash", "NilClass", "TrueClass", "FalseClass",
         "Class", "Module", "Method", "Proc",
+        "Exception", "StandardError", "RuntimeError",
+        "ArgumentError", "TypeError", "NoMethodError",
         NULL
     };
     for (int i = 0; builtins[i]; i++) {
         Value klass = val_class(arena, builtins[i], val_nil());
         klass.klass->class_env = env_new(arena, ev->top_env, 1);
         env_define(arena, ev->top_env, builtins[i], klass);
+    }
+
+    Value exception, standard_error, runtime_error, argument_error, type_error, no_method_error;
+    if (env_get(ev->top_env, "Exception", &exception) && exception.kind == VAL_CLASS &&
+        env_get(ev->top_env, "StandardError", &standard_error) && standard_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "RuntimeError", &runtime_error) && runtime_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "ArgumentError", &argument_error) && argument_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "TypeError", &type_error) && type_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "NoMethodError", &no_method_error) && no_method_error.kind == VAL_CLASS) {
+        standard_error.klass->superclass = exception;
+        runtime_error.klass->superclass = standard_error;
+        argument_error.klass->superclass = standard_error;
+        type_error.klass->superclass = standard_error;
+        no_method_error.klass->superclass = standard_error;
     }
 }

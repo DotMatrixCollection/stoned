@@ -80,10 +80,17 @@ int main(int argc, char **argv) {
 
     Eval eval;
     eval_init(&eval, &arena, stdout);
-    eval_node(&eval, eval.top_env, tree);
+    Value result = eval_node(&eval, eval.top_env, tree);
 
     if (eval.errored) {
         fprintf(stderr, "error: %s\n", eval.errmsg);
+        arena_free(&arena);
+        free(file_buf);
+        return 1;
+    }
+    if (result.kind == VAL_EXCEPTION) {
+        fprintf(stderr, "error: %u:%u: %s\n",
+                eval.exception_line, eval.exception_col, eval.exception_msg);
         arena_free(&arena);
         free(file_buf);
         return 1;

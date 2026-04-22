@@ -23,6 +23,7 @@ typedef enum {
     VAL_METHOD,     /* user-defined: Node* + closure Env* */
     VAL_BLOCK,      /* block/proc: Node* + closure Env* */
     /* Control flow signals — not real values, used to unwind */
+    VAL_EXCEPTION,
     VAL_RETURN,
     VAL_BREAK,
     VAL_NEXT,
@@ -121,6 +122,7 @@ int   val_hash_delete(RubyHash *h, Value key);
 Value val_return(Arena *a, Value inner);
 Value val_break(Arena *a, Value inner);
 Value val_next(Arena *a, Value inner);
+Value val_exception(void);
 
 /* Class and object creation */
 Value val_class(Arena *a, const char *name, Value superclass);
@@ -137,7 +139,8 @@ static inline int val_truthy(Value v) {
     return 1;
 }
 static inline int val_is_signal(Value v) {
-    return v.kind == VAL_RETURN || v.kind == VAL_BREAK || v.kind == VAL_NEXT;
+    return v.kind == VAL_EXCEPTION || v.kind == VAL_RETURN ||
+           v.kind == VAL_BREAK || v.kind == VAL_NEXT;
 }
 static inline Value val_hash_val(RubyHash *h) {
     Value v; v.kind = VAL_HASH; v.hash = h; return v;

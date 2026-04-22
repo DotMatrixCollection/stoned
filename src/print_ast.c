@@ -101,6 +101,34 @@ void print_ast(FILE *out, Node *node, int indent) {
             print_ast(out, node->loop.body, indent+2);
             break;
 
+        case NODE_BEGIN:
+            fprintf(out, "BEGIN\n");
+            indent_print(out, indent+1); fprintf(out, "body:\n");
+            print_ast(out, node->begin_stmt.body, indent+2);
+            if (node->begin_stmt.rescues) {
+                indent_print(out, indent+1); fprintf(out, "rescues:\n");
+                for (NodeList *l = node->begin_stmt.rescues; l; l = l->next)
+                    print_ast(out, l->node, indent+2);
+            }
+            if (node->begin_stmt.ensure_body) {
+                indent_print(out, indent+1); fprintf(out, "ensure:\n");
+                print_ast(out, node->begin_stmt.ensure_body, indent+2);
+            }
+            break;
+
+        case NODE_RESCUE:
+            fprintf(out, "RESCUE\n");
+            if (node->rescue_clause.exception_class) {
+                indent_print(out, indent+1); fprintf(out, "class:\n");
+                print_ast(out, node->rescue_clause.exception_class, indent+2);
+            }
+            if (node->rescue_clause.exception_var) {
+                indent_print(out, indent+1); fprintf(out, "var: %s\n", node->rescue_clause.exception_var);
+            }
+            indent_print(out, indent+1); fprintf(out, "body:\n");
+            print_ast(out, node->rescue_clause.body, indent+2);
+            break;
+
         case NODE_DEF:
             fprintf(out, "DEF(%s)\n", node->def.name);
             if (node->def.params) {

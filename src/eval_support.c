@@ -5,6 +5,70 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void format_exception_summary(Eval *ev, const char *class_name, const char *msg) {
+    size_t cls_len = strlen(class_name);
+    size_t max_msg = sizeof(ev->exception_msg) - cls_len - 3;
+    snprintf(ev->exception_msg, sizeof(ev->exception_msg), "%s: %.*s",
+             class_name, (int)max_msg, msg);
+}
+
+int value_is_a_named_class(Eval *ev, Value v, const char *class_name) {
+    if (v.kind != VAL_OBJECT) return 0;
+    Value klass;
+    if (!env_get(ev->top_env, class_name, &klass) || klass.kind != VAL_CLASS)
+        return 0;
+    RubyClass *k = v.obj->klass.klass;
+    while (k) {
+        if (k == klass.klass || strcmp(k->name, class_name) == 0) return 1;
+        k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL;
+    }
+    return 0;
+}
+
+const char *exception_value_class_name(Value exc) {
+    if (exc.kind != VAL_OBJECT || exc.obj->klass.kind != VAL_CLASS || !exc.obj->klass.klass)
+        return "RuntimeError";
+    return exc.obj->klass.klass->name;
+}
+
+const char *exception_value_message(Eval *ev, Value exc) {
+    Value msg;
+    if (exc.kind == VAL_OBJECT && val_object_get_ivar(exc, "message", &msg)) {
+        return val_to_s(ev->arena, msg);
+    }
+    return exception_value_class_name(exc);
+}
+
+static Value build_exception(Eval *ev, const char *class_name, const char *msg) {
+    Value klass;
+    if (!env_get(ev->top_env, class_name, &klass) || klass.kind != VAL_CLASS) {
+        env_get(ev->top_env, "RuntimeError", &klass);
+    }
+    Value exc = val_object(ev->arena, klass);
+    val_object_set_ivar(ev->arena, exc, "message", val_string(ev->arena, msg ? msg : class_name));
+    return exc;
+}
+
+static void set_exception_origin(Arena *arena, Value exc, uint32_t line, uint32_t col) {
+    if (exc.kind != VAL_OBJECT) return;
+    val_object_set_ivar(arena, exc, "line", val_int((int64_t)line));
+    val_object_set_ivar(arena, exc, "col", val_int((int64_t)col));
+}
+
+uint32_t exception_value_line(Value exc) {
+    Value line;
+    if (exc.kind == VAL_OBJECT && val_object_get_ivar(exc, "line", &line) && line.kind == VAL_INT)
+        return (uint32_t)line.ival;
+    return 0;
+}
+
+uint32_t exception_value_col(Value exc) {
+    Value col;
+    if (exc.kind == VAL_OBJECT && val_object_get_ivar(exc, "col", &col) && col.kind == VAL_INT)
+        return (uint32_t)col.ival;
+    return 0;
+}
+
 Value eval_error(Eval *ev, Node *n, const char *fmt, ...) {
     if (!ev->errored) {
         ev->errored = 1;
@@ -23,6 +87,69 @@ Value eval_error(Eval *ev, Node *n, const char *fmt, ...) {
     return val_nil();
 }
 
+Value eval_raise(Eval *ev, Node *n, const char *fmt, ...) {
+    if (ev->exception_msg[0] == '\0') {
+        ev->exception_class = "RuntimeError";
+        va_list ap;
+        va_start(ap, fmt);
+        char raw_msg[512];
+        vsnprintf(raw_msg, sizeof(raw_msg), fmt, ap);
+        va_end(ap);
+        ev->current_exception = build_exception(ev, ev->exception_class, raw_msg);
+        if (n) set_exception_origin(ev->arena, ev->current_exception, n->span.line, n->span.col);
+        format_exception_summary(ev, ev->exception_class, raw_msg);
+        if (n) {
+            ev->exception_line = n->span.line;
+            ev->exception_col = n->span.col;
+        }
+    }
+    return val_exception();
+}
+
+Value eval_raise_class(Eval *ev, Node *n, const char *class_name, const char *fmt, ...) {
+    if (ev->exception_msg[0] == '\0') {
+        ev->exception_class = class_name;
+        va_list ap;
+        va_start(ap, fmt);
+        char raw_msg[512];
+        vsnprintf(raw_msg, sizeof(raw_msg), fmt, ap);
+        va_end(ap);
+        ev->current_exception = build_exception(ev, class_name, raw_msg);
+        if (n) set_exception_origin(ev->arena, ev->current_exception, n->span.line, n->span.col);
+        format_exception_summary(ev, class_name, raw_msg);
+        if (n) {
+            ev->exception_line = n->span.line;
+            ev->exception_col = n->span.col;
+        }
+    }
+    return val_exception();
+}
+
+Value eval_raise_value(Eval *ev, Node *n, Value exc) {
+    if (ev->exception_msg[0] == '\0') {
+        ev->current_exception = exc;
+        ev->exception_class = exception_value_class_name(exc);
+        snprintf(ev->exception_msg, sizeof(ev->exception_msg), "%s: %s",
+                 ev->exception_class, exception_value_message(ev, exc));
+        ev->exception_line = exception_value_line(exc);
+        ev->exception_col = exception_value_col(exc);
+        if ((ev->exception_line == 0 || ev->exception_col == 0) && n) {
+            ev->exception_line = n->span.line;
+            ev->exception_col = n->span.col;
+            set_exception_origin(ev->arena, exc, n->span.line, n->span.col);
+        }
+    }
+    return val_exception();
+}
+
+void eval_clear_exception(Eval *ev) {
+    ev->current_exception = val_nil();
+    ev->exception_line = 0;
+    ev->exception_col = 0;
+    ev->exception_class = NULL;
+    ev->exception_msg[0] = '\0';
+}
+
 static void rope_collect(Eval *ev, Env *env, RopeNode *r,
                          char **buf, size_t *len, size_t *cap) {
     if (!r) return;
@@ -39,7 +166,7 @@ static void rope_collect(Eval *ev, Env *env, RopeNode *r,
             break;
         case ROPE_EXPR: {
             Value v = eval_node(ev, env, r->expr.node);
-            if (ev->errored) return;
+            if (ev->errored || val_is_signal(v)) return;
             const char *s = val_to_s(ev->arena, v);
             size_t slen = strlen(s);
             while (*len + slen + 1 > *cap) {

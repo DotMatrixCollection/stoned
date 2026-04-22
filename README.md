@@ -46,13 +46,14 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `16 passed, 0 failed, 16 total`.
+Current coverage in the tree: `32 passed, 0 failed, 32 total`.
 
 What is working today:
 
 - Core values: `nil`, booleans, integers, floats, strings with interpolation, symbols, arrays, hashes
 - Operators: arithmetic, comparison, bitwise, string/array `+`, array `<<`, `**`, `<=>`, `&&`, `||`
 - Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return`
+- Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, rescue variable binding, re-raise
 - Methods: `def`, default params, splat params, blocks, `yield`, closures, bare command-style calls
 - Classes: instance methods, `def self.foo`, inheritance, `initialize`, instance variables, `super`, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
 - Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`
@@ -63,7 +64,8 @@ What is working today:
 Known limitations:
 
 - This is not Ruby-compatible enough for real-world code yet
-- Exceptions/rescue, modules, file loading, lambdas/procs, and IO are still missing
+- Modules, file loading, lambdas/procs, and IO are still missing
+- Exceptions work, but they still need backtraces, richer exception objects, and more Ruby-complete rescue syntax
 - Compatibility around edge-case parsing and method semantics is still being tightened
 
 ## Architecture
@@ -77,9 +79,9 @@ The pipeline is: **source** → **lexer** → **parser** → **semantic pass** �
 | Lexer | `lexer.c/h` | Full Ruby token vocabulary, context-sensitive mode stack for nested `#{}` interpolation. |
 | Parser | `parser.c/h`, `parser_expr.c`, `parser_stmt.c`, `parser_internal.h` | Recursive descent for statements, Pratt (TDOP) for expressions. Split by concern so syntax work is no longer concentrated in one file. |
 | Semantic pass | `sema.c/h` | Two-phase: collect local assignments (Ruby hoisting rule), then resolve bare names as locals or method calls. Hard scope boundaries at `def`. |
-| Values | `value.c/h` | Tagged union `Value`. Control flow (return/break/next) is carried as signal values that unwind the call stack. |
+| Values | `value.c/h` | Tagged union `Value`. Control flow and exceptions are carried as signal values that unwind the evaluator. |
 | Environment | `env.c/h` | Linked-list env chain. `is_def` flag enforces def scope boundaries for assignment. `env_define` for method/class definitions. |
-| Evaluator | `eval.c`, `eval_support.c`, `eval_dispatch*.c`, `eval_internal.h` | Tree-walking evaluator split into AST walking, shared helpers, and dispatch by receiver family. |
+| Evaluator | `eval.c`, `eval_support.c`, `eval_dispatch*.c`, `eval_internal.h` | Tree-walking evaluator split into AST walking, shared helpers, and dispatch by receiver family, including exception unwind and rescue/ensure handling. |
 
 ## What's not yet implemented
 

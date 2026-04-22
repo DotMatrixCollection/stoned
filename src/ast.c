@@ -50,6 +50,8 @@ const char *node_kind_name(NodeKind k) {
         case NODE_UNLESS:    return "UNLESS";
         case NODE_WHILE:     return "WHILE";
         case NODE_UNTIL:     return "UNTIL";
+        case NODE_BEGIN:     return "BEGIN";
+        case NODE_RESCUE:    return "RESCUE";
         case NODE_RETURN:    return "RETURN";
         case NODE_BREAK:     return "BREAK";
         case NODE_NEXT:      return "NEXT";

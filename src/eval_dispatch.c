@@ -236,8 +236,22 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         return arr;
     }
     if (strcmp(name, "raise") == 0) {
-        const char *msg = argc > 0 ? val_to_s(ev->arena, args[0]) : "RuntimeError";
-        return eval_error(ev, site, "RuntimeError: %s", msg);
+        const char *class_name = "RuntimeError";
+        const char *msg = "RuntimeError";
+        if (argc == 0 && ev->rescue_context.kind == VAL_OBJECT &&
+            value_is_a_named_class(ev, ev->rescue_context, "Exception")) {
+            return eval_raise_value(ev, site, ev->rescue_context);
+        } else if (argc >= 1 && args[0].kind == VAL_OBJECT && value_is_a_named_class(ev, args[0], "Exception")) {
+            return eval_raise_value(ev, site, args[0]);
+        } else if (argc >= 1 && args[0].kind == VAL_CLASS) {
+            class_name = args[0].klass->name;
+            msg = class_name;
+            if (argc >= 2)
+                msg = val_to_s(ev->arena, args[1]);
+        } else if (argc >= 1) {
+            msg = val_to_s(ev->arena, args[0]);
+        }
+        return eval_raise_class(ev, site, class_name, "%s", msg);
     }
     if (strcmp(name, "rand") == 0) {
         if (argc == 0) return val_float((double)rand() / RAND_MAX);
@@ -514,8 +528,8 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                     ev->call_depth++;
                     Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
                     ev->call_depth--;
-                    if (ev->errored) return val_nil();
                     if (result.kind == VAL_RETURN) result = *result.wrapped;
+                    else if (val_is_signal(result)) return result;
                     return result;
                 }
                 klass = klass->superclass.kind == VAL_CLASS ? klass->superclass.klass : NULL;
@@ -542,8 +556,8 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                     ev->call_depth++;
                     Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
                     ev->call_depth--;
-                    if (ev->errored) return val_nil();
                     if (result.kind == VAL_RETURN) result = *result.wrapped;
+                    else if (val_is_signal(result)) return result;
                     return result;
                 }
                 cklass = cklass->superclass.kind == VAL_CLASS ? cklass->superclass.klass : NULL;
@@ -551,7 +565,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         if (!env_get(env, name, &fn))
-            return eval_error(ev, node, "undefined method '%s'", name);
+            return eval_raise_class(ev, node, "NoMethodError", "undefined method '%s'", name);
         if (fn.kind != VAL_METHOD)
             return eval_error(ev, node, "'%s' is not a method", name);
 
@@ -586,6 +600,7 @@ call_method:
         Value result = eval_node(ev, frame, def->def.body);
         ev->call_depth--;
         if (result.kind == VAL_RETURN) return *result.wrapped;
+        if (val_is_signal(result)) return result;
         return result;
     }
 

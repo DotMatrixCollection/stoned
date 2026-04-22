@@ -155,6 +155,9 @@ Value val_break(Arena *a, Value inner) {
 Value val_next(Arena *a, Value inner) {
     Value v; v.kind = VAL_NEXT; v.wrapped = alloc_val(a, inner); return v;
 }
+Value val_exception(void) {
+    Value v; v.kind = VAL_EXCEPTION; v.wrapped = NULL; return v;
+}
 
 /* ------------------------------------------------------------------ */
 /* to_s / inspect                                                       */
@@ -257,6 +260,7 @@ const char *val_kind_name(ValueKind k) {
         case VAL_OBJECT: return "Object";
         case VAL_METHOD: return "Method";
         case VAL_BLOCK:  return "Proc";
+        case VAL_EXCEPTION: return "Exception";
         default:         return "?";
     }
 }

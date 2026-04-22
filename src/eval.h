@@ -16,6 +16,12 @@ typedef struct {
     int          call_depth;
     int          errored;
     char         errmsg[512];
+    Value        current_exception;
+    Value        rescue_context;
+    uint32_t     exception_line;
+    uint32_t     exception_col;
+    const char  *exception_class;
+    char         exception_msg[512];
 } Eval;
 
 void  eval_init(Eval *ev, Arena *arena, FILE *out);

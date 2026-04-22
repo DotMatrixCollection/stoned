@@ -64,6 +64,38 @@ Node *parse_stmt(Parser *p) {
         return n;
     }
 
+    if (t.kind == TOK_BEGIN) {
+        advance(p);
+        Node *n = node_new(p->arena, NODE_BEGIN, s);
+        skip_terminators(p);
+        n->begin_stmt.body = parse_body(p, 0);
+        while (match(p, TOK_RESCUE)) {
+            Node *rescue_clause = node_new(p->arena, NODE_RESCUE, s);
+            if (!check(p, TOK_ARROW) && !check(p, TOK_NEWLINE) && !check(p, TOK_SEMICOLON) &&
+                !check(p, TOK_END) && !check(p, TOK_ENSURE)) {
+                rescue_clause->rescue_clause.exception_class = parse_expr(p, 0);
+            }
+            if (match(p, TOK_ARROW)) {
+                Token var_tok = advance(p);
+                if (var_tok.kind != TOK_IDENT) {
+                    error(p, "expected exception variable name after '=>'", var_tok.line, var_tok.col);
+                    return NULL;
+                }
+                rescue_clause->rescue_clause.exception_var = var_tok.sval;
+            }
+            skip_terminators(p);
+            rescue_clause->rescue_clause.body = parse_body(p, 0);
+            n->begin_stmt.rescues =
+                nodelist_append(p->arena, n->begin_stmt.rescues, rescue_clause);
+        }
+        if (match(p, TOK_ENSURE)) {
+            skip_terminators(p);
+            n->begin_stmt.ensure_body = parse_body(p, 0);
+        }
+        expect(p, TOK_END, "expected 'end'");
+        return n;
+    }
+
     if (t.kind == TOK_DEF) {
         advance(p);
         Token name_tok = advance(p);

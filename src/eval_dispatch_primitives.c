@@ -22,8 +22,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
                 Value arg = val_int(i);
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
             }
             *out = recv;
         }
@@ -37,8 +36,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
                 Value arg = val_int(i);
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
             }
             *out = recv;
         }
@@ -52,8 +50,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
                 Value arg = val_int(i);
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
             }
             *out = recv;
         }
@@ -161,8 +158,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 Value ch = val_string_n(ev->arena, s + i, 1);
                 Value r = call_block(ev, *blk, &ch, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
             }
             *out = recv;
         }

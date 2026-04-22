@@ -11,6 +11,7 @@ The current priority is making the implemented subset more Ruby-like and less su
 - tighten block/yield semantics and block argument handling
 - expand regression coverage for arrays, hashes, and method dispatch
 - reduce remaining differences between parenthesized and unparenthesized call forms
+- keep exception behavior coherent as more Ruby-like forms land
 
 ### Type introspection consistency
 Core reflection exists in part, but it should be made more consistent across value kinds:
@@ -22,9 +23,6 @@ Core reflection exists in part, but it should be made more consistent across val
 `a, b = 1, 2` and `a, b = b, a`. Splat on the left: `first, *rest = arr`. Parser already tokenizes the pieces, but assignment needs a real multi-target representation.
 
 ## Medium term
-
-### `begin` / `rescue` / `ensure`
-Exception handling. Requires: a new `VAL_EXCEPTION` signal type (parallel to VAL_RETURN), `raise` producing it, `begin`/`rescue` catching it by class match, `ensure` always running. The parser will need `NODE_BEGIN` with rescue/ensure clauses.
 
 ### Proc / lambda
 `Proc.new { |x| x }`, `lambda { |x| x }`, `-> (x) { x }`. Mostly reuses the existing `VAL_BLOCK` machinery; the main delta is: lambdas check arity strictly and `return` from a lambda exits the lambda (not the enclosing method).
@@ -49,8 +47,14 @@ File loading. `require_relative` is straightforward — resolve path relative to
 ### `method_missing` / `respond_to_missing?`
 Hook called when method lookup fails on an object. Enables metaprogramming patterns like `OpenStruct`, `Proxy`, `DelegateClass`.
 
-### Exception hierarchy
-`RuntimeError`, `ArgumentError`, `TypeError`, `NoMethodError`, `StopIteration` etc. as actual class values so `rescue TypeError` works correctly.
+### Exception polish
+The core exception path now exists, but it still needs:
+
+- backtraces on uncaught exceptions
+- richer exception objects beyond class/message/origin
+- more rescue syntax (`rescue => e` is in; typed lists and fuller Ruby forms are not)
+- better typed runtime errors throughout the evaluator
+- `StopIteration` and broader standard exception coverage
 
 ### Frozen objects and string mutability
 `freeze`, `frozen?`, `dup`, `clone`. Strings in Ruby are mutable by default; frozen strings raise `FrozenError` on mutation. Requires a `frozen` flag on string/object values.
@@ -72,6 +76,10 @@ These were previously roadmap items and are now implemented in the current tree:
 - class methods via `def self.foo`
 - bare `puts` / `print` / `p` and command-style calls
 - block calls and `yield`
+- exception signal plumbing
+- `begin` / `rescue` / `ensure`
+- typed rescue clauses and rescue variable binding
+- re-raise and exception object basics
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files

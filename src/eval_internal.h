@@ -5,6 +5,15 @@
 #include "rope.h"
 
 Value eval_error(Eval *ev, Node *n, const char *fmt, ...);
+Value eval_raise(Eval *ev, Node *n, const char *fmt, ...);
+Value eval_raise_class(Eval *ev, Node *n, const char *class_name, const char *fmt, ...);
+Value eval_raise_value(Eval *ev, Node *n, Value exc);
+void eval_clear_exception(Eval *ev);
+int value_is_a_named_class(Eval *ev, Value v, const char *class_name);
+const char *exception_value_class_name(Value exc);
+const char *exception_value_message(Eval *ev, Value exc);
+uint32_t exception_value_line(Value exc);
+uint32_t exception_value_col(Value exc);
 const char *eval_rope(Eval *ev, Env *env, RopeNode *r);
 Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site);
 Value dispatch_method(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
@@ -27,5 +36,17 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                    Value *blk, Node *site, Value *out);
 int dispatch_object(Eval *ev, Value recv, const char *name, Value *args, int argc,
                     Value *blk, Value *out);
+
+static inline int flow_signal_out(Value v, Value *out) {
+    if (v.kind == VAL_BREAK) {
+        *out = *v.wrapped;
+        return 1;
+    }
+    if (v.kind == VAL_RETURN || v.kind == VAL_EXCEPTION) {
+        *out = v;
+        return 1;
+    }
+    return 0;
+}
 
 #endif

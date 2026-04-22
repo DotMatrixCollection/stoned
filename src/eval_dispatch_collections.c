@@ -78,8 +78,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 Value arg = recv.array->elems[i];
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
             }
             *out = recv;
         }
@@ -92,8 +91,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 Value bargs[2] = { recv.array->elems[i], val_int((int64_t)i) };
                 Value r = call_block(ev, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
             }
             *out = recv;
         }
@@ -107,8 +105,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 Value arg = recv.array->elems[i];
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
                 val_array_push(&result, r);
             }
             *out = result;
@@ -123,8 +120,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 Value arg = recv.array->elems[i];
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
                 if (val_truthy(r)) val_array_push(&result, arg);
             }
             *out = result;
@@ -139,8 +135,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 Value arg = recv.array->elems[i];
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
                 if (!val_truthy(r)) val_array_push(&result, arg);
             }
             *out = result;
@@ -157,8 +152,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 Value bargs[2] = { acc, recv.array->elems[i] };
                 Value r = call_block(ev, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
                 acc = r;
             }
             *out = acc;
@@ -175,6 +169,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 Value arg = recv.array->elems[i];
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
+                if (r.kind == VAL_EXCEPTION) { *out = r; return 1; }
                 if (strcmp(name, "any?") == 0 && val_truthy(r)) { *out = val_true(); return 1; }
                 if (strcmp(name, "all?") == 0 && !val_truthy(r)) { *out = val_false(); return 1; }
                 if (strcmp(name, "none?") == 0 && val_truthy(r)) { *out = val_false(); return 1; }
@@ -395,8 +390,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
                 Value bargs[2] = { h->keys[i], h->vals[i] };
                 Value r = call_block(ev, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
             }
             *out = recv;
         }
@@ -409,8 +403,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
                 Value arg = strcmp(name, "each_key") == 0 ? h->keys[i] : h->vals[i];
                 Value r = call_block(ev, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
             }
             *out = recv;
         }
@@ -424,8 +417,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
                 Value bargs[2] = { h->keys[i], h->vals[i] };
                 Value r = call_block(ev, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
                 val_array_push(&result, r);
             }
             *out = result;
@@ -440,8 +432,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
                 Value bargs[2] = { h->keys[i], h->vals[i] };
                 Value r = call_block(ev, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
                 if ((strcmp(name, "reject") == 0 && !val_truthy(r)) || (strcmp(name, "reject") != 0 && val_truthy(r)))
                     val_hash_set(result.hash, h->keys[i], h->vals[i]);
             }
@@ -457,6 +448,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
                 Value bargs[2] = { h->keys[i], h->vals[i] };
                 Value r = call_block(ev, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
+                if (r.kind == VAL_EXCEPTION) { *out = r; return 1; }
                 if (strcmp(name, "any?") == 0 && val_truthy(r)) { *out = val_true(); return 1; }
                 if (strcmp(name, "all?") == 0 && !val_truthy(r)) { *out = val_false(); return 1; }
             }
@@ -482,6 +474,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
                 Value bargs[2] = { h->keys[i], h->vals[i] };
                 Value r = call_block(ev, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
+                if (r.kind == VAL_EXCEPTION) { *out = r; return 1; }
                 if (r.kind == VAL_ARRAY) for (size_t j = 0; j < r.array->len; j++) val_array_push(&result, r.array->elems[j]);
                 else val_array_push(&result, r);
             }
@@ -510,8 +503,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
                 Value bargs[2] = { acc, pair };
                 Value r = call_block(ev, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_BREAK) { *out = *r.wrapped; return 1; }
-                if (r.kind == VAL_RETURN) { *out = r; return 1; }
+                if (flow_signal_out(r, out)) return 1;
                 acc = r;
             }
             *out = acc;

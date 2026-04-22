@@ -100,6 +100,18 @@ static void collect(Sema *s, Node *node, NodeList *excl) {
             collect(s, node->loop.body, excl);
             break;
 
+        case NODE_BEGIN:
+            collect(s, node->begin_stmt.body, excl);
+            for (NodeList *l = node->begin_stmt.rescues; l; l = l->next)
+                collect(s, l->node, excl);
+            collect(s, node->begin_stmt.ensure_body, excl);
+            break;
+
+        case NODE_RESCUE:
+            collect(s, node->rescue_clause.exception_class, excl);
+            collect(s, node->rescue_clause.body, excl);
+            break;
+
         case NODE_BODY:
         case NODE_PROGRAM:
             for (NodeList *l = node->body.stmts; l; l = l->next)
@@ -237,6 +249,22 @@ static void resolve(Sema *s, Node *node) {
             s->loop_depth++;
             resolve(s, node->loop.body);
             s->loop_depth--;
+            break;
+
+        case NODE_BEGIN:
+            resolve(s, node->begin_stmt.body);
+            resolve_list(s, node->begin_stmt.rescues);
+            resolve(s, node->begin_stmt.ensure_body);
+            break;
+
+        case NODE_RESCUE:
+            resolve(s, node->rescue_clause.exception_class);
+            scope_push(s, 0);
+            if (node->rescue_clause.exception_var)
+                scope_add(s, node->rescue_clause.exception_var);
+            collect(s, node->rescue_clause.body, NULL);
+            resolve(s, node->rescue_clause.body);
+            scope_pop(s);
             break;
 
         case NODE_DEF: {

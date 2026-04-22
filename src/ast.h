@@ -55,6 +55,8 @@ typedef enum {
     NODE_UNLESS,
     NODE_WHILE,
     NODE_UNTIL,
+    NODE_BEGIN,
+    NODE_RESCUE,
     NODE_RETURN,
     NODE_BREAK,
     NODE_NEXT,
@@ -149,6 +151,20 @@ struct Node {
             Node *cond;
             Node *body;
         } loop;
+
+        /* NODE_BEGIN */
+        struct {
+            Node *body;
+            NodeList *rescues;
+            Node *ensure_body;
+        } begin_stmt;
+
+        /* NODE_RESCUE */
+        struct {
+            Node *exception_class;
+            const char *exception_var;
+            Node *body;
+        } rescue_clause;
 
         /* NODE_DEF */
         struct {
