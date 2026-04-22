@@ -1,4 +1,5 @@
 #include "eval_internal.h"
+#include "utf8.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -235,6 +236,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 *out = val_nil();
                 return 1;
             }
+            if (!utf8_validate(buf, strlen(buf), NULL)) {
+                *out = eval_raise_encoding_error(ev, site, "$stdin.gets");
+                return 1;
+            }
             *out = val_string(ev->arena, buf);
             return 1;
         }
@@ -252,6 +257,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 buf[len++] = (char)c;
             }
             buf[len] = '\0';
+            if (!utf8_validate(buf, len, NULL)) {
+                *out = eval_raise_encoding_error(ev, site, "$stdin.read");
+                return 1;
+            }
             *out = val_string(ev->arena, buf);
             return 1;
         }

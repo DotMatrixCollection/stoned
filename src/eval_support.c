@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "utf8.h"
 
 static char *read_file_bytes(const char *path, size_t *out_len) {
     FILE *f = fopen(path, "rb");
@@ -24,6 +25,21 @@ static char *read_file_bytes(const char *path, size_t *out_len) {
     buf[len] = '\0';
     *out_len = len;
     return buf;
+}
+
+static void source_line_col_for_offset(const char *src, size_t offset, uint32_t *line, uint32_t *col) {
+    uint32_t l = 1;
+    uint32_t c = 1;
+    for (size_t i = 0; i < offset; i++) {
+        if (src[i] == '\n') {
+            l++;
+            c = 1;
+        } else {
+            c++;
+        }
+    }
+    *line = l;
+    *col = c;
 }
 
 static int write_file_bytes(const char *path, const char *content, size_t len) {
@@ -159,6 +175,16 @@ static Value eval_require_path(Eval *ev, const char *resolved, Node *site) {
     char *src = read_file_bytes(resolved, &src_len);
     if (!src)
         return eval_raise_class(ev, site, "LoadError", "cannot load such file -- %s", resolved);
+    {
+        size_t bad = 0;
+        if (!utf8_validate(src, src_len, &bad)) {
+            uint32_t line = 1, col = 1;
+            source_line_col_for_offset(src, bad, &line, &col);
+            free(src);
+            return eval_raise_class(ev, site, "LoadError",
+                                    "invalid UTF-8 in source -- %s:%u:%u", resolved, line, col);
+        }
+    }
 
     Parser parser;
     parser_init(&parser, src, src_len, ev->arena);
@@ -554,6 +580,10 @@ Value eval_raise_class(Eval *ev, Node *n, const char *class_name, const char *fm
     return val_exception();
 }
 
+Value eval_raise_encoding_error(Eval *ev, Node *n, const char *context) {
+    return eval_raise_class(ev, n, "EncodingError", "invalid UTF-8 in %s", context);
+}
+
 Value eval_raise_value(Eval *ev, Node *n, Value exc) {
     if (ev->exception_msg[0] == '\0') {
         ev->current_exception = exc;
@@ -764,6 +794,10 @@ Value eval_file_read(Eval *ev, const char *path, Node *site) {
     char *src = read_file_bytes(path, &len);
     if (!src)
         return eval_raise_class(ev, site, "LoadError", "cannot read file -- %s", path);
+    if (!utf8_validate(src, len, NULL)) {
+        free(src);
+        return eval_raise_encoding_error(ev, site, "File.read");
+    }
 
     Value out = val_string_n(ev->arena, src, len);
     free(src);

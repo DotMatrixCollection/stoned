@@ -77,6 +77,12 @@ Node *parse_program(Parser *p) {
 
     skip_terminators(p);
     while (!check(p, TOK_EOF)) {
+        if (check(p, TOK_ERROR)) {
+            Token t = advance(p);
+            error(p, t.sval ? t.sval : "invalid token", t.line, t.col);
+            sync(p);
+            continue;
+        }
         Node *stmt = parse_stmt(p);
         if (p->panic) {
             sync(p);

@@ -5,6 +5,7 @@
 #include "parser.h"
 #include "sema.h"
 #include "eval_internal.h"
+#include "utf8.h"
 
 static char *read_file(const char *path, size_t *out_len) {
     FILE *f = fopen(path, "rb");
@@ -18,6 +19,21 @@ static char *read_file(const char *path, size_t *out_len) {
     fclose(f);
     *out_len = len;
     return buf;
+}
+
+static void line_col_for_offset(const char *src, size_t offset, uint32_t *line, uint32_t *col) {
+    uint32_t l = 1;
+    uint32_t c = 1;
+    for (size_t i = 0; i < offset; i++) {
+        if (src[i] == '\n') {
+            l++;
+            c = 1;
+        } else {
+            c++;
+        }
+    }
+    *line = l;
+    *col = c;
 }
 
 int main(int argc, char **argv) {
@@ -42,6 +58,17 @@ int main(int argc, char **argv) {
         src = buf;
         src_len = len;
         file_buf = buf;
+    }
+
+    {
+        size_t bad = 0;
+        if (!utf8_validate(src, src_len, &bad)) {
+            uint32_t line = 1, col = 1;
+            line_col_for_offset(src, bad, &line, &col);
+            fprintf(stderr, "parse error:%u:%u: invalid UTF-8 in source\n", line, col);
+            free(file_buf);
+            return 1;
+        }
     }
 
     Arena  arena = arena_new();

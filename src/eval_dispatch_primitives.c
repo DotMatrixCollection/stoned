@@ -1,9 +1,40 @@
 #include "eval_internal.h"
+#include "utf8.h"
 
 #include <ctype.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int string_ascii_guard(Eval *ev, Node *site, const char *name, const char *s, Value *out) {
+    if (utf8_ascii_only(s)) return 1;
+    *out = eval_raise_class(ev, site, "EncodingError", "%s only supports ASCII strings for now", name);
+    return 0;
+}
+
+static int string_ascii_guard2(Eval *ev, Node *site, const char *name, const char *a, const char *b, Value *out) {
+    if (utf8_ascii_only(a) && utf8_ascii_only(b)) return 1;
+    *out = eval_raise_class(ev, site, "EncodingError", "%s only supports ASCII strings for now", name);
+    return 0;
+}
+
+static int string_ascii_guard3(Eval *ev, Node *site, const char *name, const char *a, const char *b, const char *c, Value *out) {
+    if (utf8_ascii_only(a) && utf8_ascii_only(b) && utf8_ascii_only(c)) return 1;
+    *out = eval_raise_class(ev, site, "EncodingError", "%s only supports ASCII strings for now", name);
+    return 0;
+}
+
+static void append_utf8_pad(char *buf, size_t *pos, const char *pad, size_t count) {
+    size_t pad_chars = utf8_char_count(pad);
+    if (pad_chars == 0) return;
+    for (size_t i = 0; i < count; i++) {
+        const char *ptr = NULL;
+        size_t width = 0;
+        utf8_char_at(pad, i % pad_chars, &ptr, &width, NULL);
+        memcpy(buf + *pos, ptr, width);
+        *pos += width;
+    }
+}
 
 /* Integer to string in an arbitrary base (2-36). */
 static void int_to_s_base(int64_t n, int base, char *buf) {
@@ -334,9 +365,10 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     if (strcmp(name, "to_i") == 0) { *out = val_int(atoll(s)); return 1; }
     if (strcmp(name, "to_f") == 0) { *out = val_float(atof(s)); return 1; }
     if (strcmp(name, "to_sym") == 0) { *out = val_symbol(s); return 1; }
-    if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0) { *out = val_int((int64_t)strlen(s)); return 1; }
+    if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0) { *out = val_int((int64_t)utf8_char_count(s)); return 1; }
     if (strcmp(name, "empty?") == 0) { *out = val_bool(s[0] == '\0'); return 1; }
     if (strcmp(name, "upcase") == 0) {
+        if (!string_ascii_guard(ev, site, "String#upcase", s, out)) return 1;
         size_t len = strlen(s);
         char *buf = arena_alloc(ev->arena, len + 1);
         for (size_t i = 0; i <= len; i++) buf[i] = (char)(s[i] >= 'a' && s[i] <= 'z' ? s[i] - 32 : s[i]);
@@ -344,6 +376,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "downcase") == 0) {
+        if (!string_ascii_guard(ev, site, "String#downcase", s, out)) return 1;
         size_t len = strlen(s);
         char *buf = arena_alloc(ev->arena, len + 1);
         for (size_t i = 0; i <= len; i++) buf[i] = (char)(s[i] >= 'A' && s[i] <= 'Z' ? s[i] + 32 : s[i]);
@@ -359,7 +392,13 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "chars") == 0) {
         Value arr = val_array_new();
-        for (size_t i = 0; s[i]; i++) val_array_push(&arr, val_string_n(ev->arena, s + i, 1));
+        size_t chars = utf8_char_count(s);
+        for (size_t i = 0; i < chars; i++) {
+            const char *ptr = NULL;
+            size_t width = 0;
+            utf8_char_at(s, i, &ptr, &width, NULL);
+            val_array_push(&arr, val_string_n(ev->arena, ptr, width));
+        }
         *out = arr;
         return 1;
     }
@@ -390,7 +429,13 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         const char *sep = argc > 0 ? val_to_s(ev->arena, args[0]) : " ";
         size_t seplen = strlen(sep);
         if (seplen == 0) {
-            for (size_t i = 0; s[i]; i++) val_array_push(&arr, val_string_n(ev->arena, s + i, 1));
+            size_t chars = utf8_char_count(s);
+            for (size_t i = 0; i < chars; i++) {
+                const char *ptr = NULL;
+                size_t width = 0;
+                utf8_char_at(s, i, &ptr, &width, NULL);
+                val_array_push(&arr, val_string_n(ev->arena, ptr, width));
+            }
         } else {
             const char *p = s, *found;
             while ((found = strstr(p, sep)) != NULL) {
@@ -405,8 +450,12 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     if (strcmp(name, "each_char") == 0) {
         if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "String#each_char requires a block");
         else {
-            for (size_t i = 0; s[i]; i++) {
-                Value ch = val_string_n(ev->arena, s + i, 1);
+            size_t chars = utf8_char_count(s);
+            for (size_t i = 0; i < chars; i++) {
+                const char *ptr = NULL;
+                size_t width = 0;
+                utf8_char_at(s, i, &ptr, &width, NULL);
+                Value ch = val_string_n(ev->arena, ptr, width);
                 Value r = call_block(ev, *blk, &ch, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
@@ -418,12 +467,20 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     if (strcmp(name, "reverse") == 0) {
         size_t len = strlen(s);
         char *buf = arena_alloc(ev->arena, len + 1);
-        for (size_t i = 0; i < len; i++) buf[i] = s[len - 1 - i];
-        buf[len] = '\0';
+        size_t pos = 0;
+        size_t end = len;
+        while (end > 0) {
+            size_t start = utf8_prev_char_start(s, end);
+            memcpy(buf + pos, s + start, end - start);
+            pos += end - start;
+            end = start;
+        }
+        buf[pos] = '\0';
         *out = val_string(ev->arena, buf);
         return 1;
     }
     if (strcmp(name, "next") == 0 || strcmp(name, "succ") == 0) {
+        if (!string_ascii_guard(ev, site, "String#succ", s, out)) return 1;
         size_t len = strlen(s);
         if (len == 0) { *out = val_string(ev->arena, ""); return 1; }
         int has_alnum = 0;
@@ -494,7 +551,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         size_t len = strlen(s);
         if (len == 0) { *out = val_string(ev->arena, ""); return 1; }
         if (len >= 2 && s[len - 2] == '\r' && s[len - 1] == '\n') len -= 2;
-        else len--;
+        else len = utf8_prev_char_start(s, len);
         *out = val_string_n(ev->arena, s, len);
         return 1;
     }
@@ -512,6 +569,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "capitalize") == 0) {
+        if (!string_ascii_guard(ev, site, "String#capitalize", s, out)) return 1;
         size_t len = strlen(s);
         char *buf = arena_alloc(ev->arena, len + 1);
         for (size_t i = 0; i < len; i++)
@@ -521,6 +579,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "swapcase") == 0) {
+        if (!string_ascii_guard(ev, site, "String#swapcase", s, out)) return 1;
         size_t len = strlen(s);
         char *buf = arena_alloc(ev->arena, len + 1);
         for (size_t i = 0; i < len; i++) {
@@ -535,26 +594,33 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         if (argc < 1) { *out = recv; return 1; }
         int64_t width = args[0].kind == VAL_INT ? args[0].ival : 0;
         const char *pad = argc >= 2 && args[1].kind == VAL_STRING ? args[1].sval : " ";
-        size_t padlen = strlen(pad);
-        if (padlen == 0) padlen = 1;
-        size_t slen = strlen(s);
+        size_t pad_chars = utf8_char_count(pad);
+        size_t slen = utf8_char_count(s);
+        if (pad_chars == 0) pad_chars = 1;
         if ((int64_t)slen >= width) { *out = recv; return 1; }
-        size_t total = (size_t)width;
-        char *buf = arena_alloc(ev->arena, total + 1);
+        size_t total_chars = (size_t)width;
+        size_t total = strlen(s) + (total_chars - slen) * strlen(pad) + 1;
+        char *buf = arena_alloc(ev->arena, total);
         size_t lpad = 0, rpad = 0;
-        if (strcmp(name, "ljust") == 0) { lpad = 0; rpad = total - slen; }
-        else if (strcmp(name, "rjust") == 0) { lpad = total - slen; rpad = 0; }
-        else { lpad = (total - slen) / 2; rpad = total - slen - lpad; }
-        for (size_t i = 0; i < lpad; i++) buf[i] = pad[i % padlen];
-        memcpy(buf + lpad, s, slen);
-        for (size_t i = 0; i < rpad; i++) buf[lpad + slen + i] = pad[i % padlen];
-        buf[total] = '\0';
+        size_t pos = 0;
+        if (strcmp(name, "ljust") == 0) { lpad = 0; rpad = total_chars - slen; }
+        else if (strcmp(name, "rjust") == 0) { lpad = total_chars - slen; rpad = 0; }
+        else { lpad = (total_chars - slen) / 2; rpad = total_chars - slen - lpad; }
+        append_utf8_pad(buf, &pos, pad, lpad);
+        memcpy(buf + pos, s, strlen(s));
+        pos += strlen(s);
+        append_utf8_pad(buf, &pos, pad, rpad);
+        buf[pos] = '\0';
         *out = val_string(ev->arena, buf);
         return 1;
     }
     if (strcmp(name, "ord") == 0) {
-        if (s[0] == '\0') { *out = eval_raise_class(ev, site, "ArgumentError", "empty string"); return 1; }
-        *out = val_int((int64_t)(unsigned char)s[0]);
+        uint32_t cp = 0;
+        if (s[0] == '\0' || !utf8_decode_one(s, strlen(s), &cp, NULL)) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "empty string");
+            return 1;
+        }
+        *out = val_int((int64_t)cp);
         return 1;
     }
     if (strcmp(name, "hex") == 0) {
@@ -586,28 +652,28 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     if (strcmp(name, "index") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#index requires an argument"); return 1; }
         const char *needle = val_to_s(ev->arena, args[0]);
-        size_t offset = (argc >= 2 && args[1].kind == VAL_INT) ? (size_t)args[1].ival : 0;
+        size_t offset = (argc >= 2 && args[1].kind == VAL_INT) ? utf8_byte_offset_for_char(s, (size_t)args[1].ival) : 0;
         if (offset > strlen(s)) { *out = val_nil(); return 1; }
         const char *found = strstr(s + offset, needle);
-        *out = found ? val_int((int64_t)(found - s)) : val_nil();
+        *out = found ? val_int((int64_t)utf8_char_index_for_byte(s, (size_t)(found - s))) : val_nil();
         return 1;
     }
     if (strcmp(name, "rindex") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#rindex requires an argument"); return 1; }
         const char *needle = val_to_s(ev->arena, args[0]);
         size_t nlen = strlen(needle), slen = strlen(s);
-        size_t limit = (argc >= 2 && args[1].kind == VAL_INT) ? (size_t)args[1].ival : slen;
+        size_t limit = (argc >= 2 && args[1].kind == VAL_INT) ? utf8_byte_offset_for_char(s, (size_t)args[1].ival) : slen;
         if (limit > slen) limit = slen;
         const char *last = NULL;
         for (size_t i = 0; i + nlen <= limit + 1 && i <= limit; i++) {
             if (strncmp(s + i, needle, nlen) == 0) last = s + i;
         }
-        *out = last ? val_int((int64_t)(last - s)) : val_nil();
+        *out = last ? val_int((int64_t)utf8_char_index_for_byte(s, (size_t)(last - s))) : val_nil();
         return 1;
     }
     if (strcmp(name, "[]") == 0 || strcmp(name, "slice") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#[] requires an argument"); return 1; }
-        size_t slen = strlen(s);
+        size_t slen = utf8_char_count(s);
         int64_t idx = args[0].kind == VAL_INT ? args[0].ival : 0;
         if (idx < 0) idx += (int64_t)slen;
         if (idx < 0 || (size_t)idx >= slen) { *out = val_nil(); return 1; }
@@ -615,9 +681,14 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             int64_t len = args[1].ival;
             if (len < 0) { *out = val_nil(); return 1; }
             size_t take = (size_t)idx + (size_t)len > slen ? slen - (size_t)idx : (size_t)len;
-            *out = val_string_n(ev->arena, s + idx, take);
+            size_t start = utf8_byte_offset_for_char(s, (size_t)idx);
+            size_t end = utf8_byte_offset_for_char(s, (size_t)idx + take);
+            *out = val_string_n(ev->arena, s + start, end - start);
         } else {
-            *out = val_string_n(ev->arena, s + idx, 1);
+            const char *ptr = NULL;
+            size_t width = 0;
+            utf8_char_at(s, (size_t)idx, &ptr, &width, NULL);
+            *out = val_string_n(ev->arena, ptr, width);
         }
         return 1;
     }
@@ -661,6 +732,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "String#tr requires two arguments"); return 1; }
         const char *from_pat = val_to_s(ev->arena, args[0]);
         const char *to_pat   = val_to_s(ev->arena, args[1]);
+        if (!string_ascii_guard3(ev, site, "String#tr", s, from_pat, to_pat, out)) return 1;
         char from_chars[256], to_chars[256];
         size_t from_len = tr_expand_chars(from_pat, from_chars);
         size_t to_len   = tr_expand_chars(to_pat,   to_chars);
@@ -680,6 +752,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "count") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#count requires an argument"); return 1; }
+        if (!string_ascii_guard2(ev, site, "String#count", s, val_to_s(ev->arena, args[0]), out)) return 1;
         int set[256];
         tr_expand_set(val_to_s(ev->arena, args[0]), set);
         int64_t n = 0;
@@ -689,6 +762,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "delete") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#delete requires an argument"); return 1; }
+        if (!string_ascii_guard2(ev, site, "String#delete", s, val_to_s(ev->arena, args[0]), out)) return 1;
         int set[256];
         tr_expand_set(val_to_s(ev->arena, args[0]), set);
         size_t slen = strlen(s);
@@ -700,6 +774,11 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "squeeze") == 0) {
+        if (argc >= 1) {
+            if (!string_ascii_guard2(ev, site, "String#squeeze", s, val_to_s(ev->arena, args[0]), out)) return 1;
+        } else if (!string_ascii_guard(ev, site, "String#squeeze", s, out)) {
+            return 1;
+        }
         int set[256];
         if (argc >= 1) tr_expand_set(val_to_s(ev->arena, args[0]), set);
         else           for (int i = 0; i < 256; i++) set[i] = 1;
@@ -739,6 +818,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         int global = strcmp(name, "gsub") == 0;
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#%s requires an argument", name); return 1; }
         const char *needle = val_to_s(ev->arena, args[0]);
+        if (!string_ascii_guard2(ev, site, global ? "String#gsub" : "String#sub", s, needle, out)) return 1;
         size_t nlen = strlen(needle);
         size_t slen = strlen(s);
         if (nlen == 0) { *out = recv; return 1; }

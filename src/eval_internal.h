@@ -9,6 +9,7 @@ Value eval_raise(Eval *ev, Node *n, const char *fmt, ...);
 Value eval_raise_class(Eval *ev, Node *n, const char *class_name, const char *fmt, ...);
 Value eval_raise_value(Eval *ev, Node *n, Value exc);
 void eval_clear_exception(Eval *ev);
+Value eval_raise_encoding_error(Eval *ev, Node *n, const char *context);
 int value_is_a_named_class(Eval *ev, Value v, const char *class_name);
 int class_is_a_named_class(Eval *ev, RubyClass *klass, const char *class_name);
 const char *exception_value_class_name(Value exc);

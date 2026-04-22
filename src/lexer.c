@@ -167,6 +167,7 @@ static Token scan_string_dq(Lexer *l, size_t start, uint32_t sline, uint32_t sco
     size_t cap = 64;
     char *buf = arena_alloc(l->arena, cap);
     size_t blen = 0;
+    const char *err = NULL;
 
 #define BUF_PUSH(ch) do { \
     if (blen + 1 >= cap) { \
@@ -188,9 +189,10 @@ static Token scan_string_dq(Lexer *l, size_t start, uint32_t sline, uint32_t sco
                 case 'r':  BUF_PUSH('\r'); break;
                 case '\\': BUF_PUSH('\\'); break;
                 case '"':  BUF_PUSH('"');  break;
-                case '0':  BUF_PUSH('\0'); break;
+                case '0':  err = "invalid \\0 escape in UTF-8 string"; break;
                 default:   BUF_PUSH('\\'); BUF_PUSH(esc); break;
             }
+            if (err) break;
         } else {
             BUF_PUSH(c);
         }
@@ -198,8 +200,9 @@ static Token scan_string_dq(Lexer *l, size_t start, uint32_t sline, uint32_t sco
     BUF_PUSH('\0');
     if (!at_end(l)) advance(l); /* consume closing " */
 
-    Token t = make_tok(l, TOK_STRING, start, sline, scol);
+    Token t = make_tok(l, err ? TOK_ERROR : TOK_STRING, start, sline, scol);
     t.sval = buf;
+    if (err) t.sval = err;
     return t;
 #undef BUF_PUSH
 }
@@ -296,6 +299,7 @@ static Token scan_interp_str_content(Lexer *l) {
     size_t cap  = 64;
     char  *buf  = arena_alloc(l->arena, cap);
     size_t blen = 0;
+    const char *err = NULL;
 
 #define IBUF_PUSH(ch) do { \
     if (blen + 1 >= cap) { \
@@ -323,9 +327,10 @@ static Token scan_interp_str_content(Lexer *l) {
                 case '\\': IBUF_PUSH('\\'); break;
                 case '"':  IBUF_PUSH('"');  break;
                 case '#':  IBUF_PUSH('#');  break;
-                case '0':  IBUF_PUSH('\0'); break;
+                case '0':  err = "invalid \\0 escape in UTF-8 string"; break;
                 default:   IBUF_PUSH('\\'); IBUF_PUSH(esc); break;
             }
+            if (err) break;
         } else {
             IBUF_PUSH(c);
         }
@@ -335,10 +340,10 @@ static Token scan_interp_str_content(Lexer *l) {
 #undef IBUF_PUSH
 
     Token t; memset(&t, 0, sizeof(t));
-    t.kind = TOK_INTERP_LIT;
+    t.kind = err ? TOK_ERROR : TOK_INTERP_LIT;
     t.line = sline; t.col = scol;
     t.len  = (uint32_t)(l->pos - start);
-    t.sval = buf;
+    t.sval = err ? err : buf;
     return t;
 }
 

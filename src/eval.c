@@ -515,7 +515,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NameError", "NoMethodError",
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError", "StopIteration",
-        "SystemStackError", "IOError",
+        "SystemStackError", "IOError", "EncodingError",
         NULL
     };
     for (int i = 0; builtins[i]; i++) {
@@ -527,7 +527,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     }
 
     Value exception, standard_error, runtime_error, argument_error, type_error, name_error, no_method_error;
-    Value zero_division_error, local_jump_error, key_error, load_error, stop_iteration, system_stack_error, io_error;
+    Value zero_division_error, local_jump_error, key_error, load_error, stop_iteration, system_stack_error, io_error, encoding_error;
     if (env_get(ev->top_env, "Exception", &exception) && exception.kind == VAL_CLASS &&
         env_get(ev->top_env, "StandardError", &standard_error) && standard_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "RuntimeError", &runtime_error) && runtime_error.kind == VAL_CLASS &&
@@ -541,7 +541,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         env_get(ev->top_env, "LoadError", &load_error) && load_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "StopIteration", &stop_iteration) && stop_iteration.kind == VAL_CLASS &&
         env_get(ev->top_env, "SystemStackError", &system_stack_error) && system_stack_error.kind == VAL_CLASS &&
-        env_get(ev->top_env, "IOError", &io_error) && io_error.kind == VAL_CLASS) {
+        env_get(ev->top_env, "IOError", &io_error) && io_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "EncodingError", &encoding_error) && encoding_error.kind == VAL_CLASS) {
         standard_error.klass->superclass = exception;
         runtime_error.klass->superclass = standard_error;
         argument_error.klass->superclass = standard_error;
@@ -555,6 +556,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         stop_iteration.klass->superclass = standard_error;
         system_stack_error.klass->superclass = standard_error;
         io_error.klass->superclass = standard_error;
+        encoding_error.klass->superclass = standard_error;
         no_method_error.klass->superclass = name_error;
     }
 
