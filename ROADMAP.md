@@ -60,8 +60,8 @@ The core loading path now exists, but it still needs:
 ### UTF-8 polish
 The runtime now treats source text and runtime strings as UTF-8-only. Remaining gaps are:
 
-- replace current ASCII-only fallbacks in `upcase`/`downcase`/`capitalize`/`swapcase`/`succ`/`tr`/`count`/`delete`/`squeeze` with real Unicode-aware semantics
 - audit any remaining byte-oriented string behavior for closer Ruby compatibility
+- improve current simple codepoint-based Unicode handling toward fuller Ruby semantics where needed
 - decide whether any future raw-binary APIs should coexist alongside the UTF-8-only text model
 
 ### Dispatch hook polish
@@ -113,6 +113,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - broader typed runtime errors (`ArgumentError`, `TypeError`, `NameError`, `NoMethodError`, `ZeroDivisionError`, `LocalJumpError`, `KeyError`, `LoadError`, `SystemStackError`, `IOError`)
 - UTF-8-only source and runtime string validation, with invalid UTF-8 rejected in source loading, `require`, `File.read`, and stdin text reads
 - core UTF-8-aware string ops for `length`, `chars`, `split(\"\")`, `each_char`, `reverse`, `ord`, `[]`/`slice`, `index`/`rindex`, `chop`, and width-sensitive padding
+- codepoint-based Unicode behavior for `upcase`, `downcase`, `capitalize`, `swapcase`, `succ`, `tr`, `count`, `delete`, and `squeeze`
 - multiple assignment, splat capture, and destructuring
 - `Proc.new`, `lambda`, and `->` literals with callable proc/lambda values
 - `module`, `include`, `prepend`, `extend`, and `super` through module ancestors

@@ -47,6 +47,29 @@ int utf8_decode_one(const char *s, size_t len, uint32_t *codepoint, size_t *widt
     return 1;
 }
 
+size_t utf8_encode_one(uint32_t codepoint, char out[4]) {
+    if (codepoint <= 0x7F) {
+        out[0] = (char)codepoint;
+        return 1;
+    }
+    if (codepoint <= 0x7FF) {
+        out[0] = (char)(0xC0 | (codepoint >> 6));
+        out[1] = (char)(0x80 | (codepoint & 0x3F));
+        return 2;
+    }
+    if (codepoint <= 0xFFFF) {
+        out[0] = (char)(0xE0 | (codepoint >> 12));
+        out[1] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (codepoint & 0x3F));
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (codepoint >> 18));
+    out[1] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (codepoint & 0x3F));
+    return 4;
+}
+
 int utf8_validate(const char *s, size_t len, size_t *error_offset) {
     size_t i = 0;
     while (i < len) {
