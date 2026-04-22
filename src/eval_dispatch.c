@@ -604,6 +604,23 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (recv.kind == VAL_HASH && dispatch_hash(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (recv.kind == VAL_NIL && dispatch_nil(ev, recv, name, site, &out)) return out;
     if (dispatch_bool(ev, recv, name, site, &out)) return out;
+
+    if (recv.kind != VAL_OBJECT && recv.kind != VAL_CLASS) {
+        Value klass = val_class_of(ev, recv);
+        if (klass.kind == VAL_CLASS) {
+            RubyClass *owner = NULL;
+            Value method;
+            if (ruby_class_find_instance_method(klass.klass, name, &method, &owner)) {
+                if (method_visibility_allows_call(ev, env, recv, owner, method.method.visibility,
+                                                  public_only, explicit_receiver)) {
+                    Value result = call_method_value(ev, env, recv, method, owner, name, args, argc, blk, site);
+                    if (val_is_signal(result)) return result;
+                    return result;
+                }
+            }
+        }
+    }
+
     if (dispatch_class(ev, env, recv, name, args, argc, blk, site, &out, public_only, explicit_receiver)) return out;
     if (dispatch_object(ev, env, recv, name, args, argc, blk, site, &out, public_only, explicit_receiver)) return out;
 
@@ -719,7 +736,14 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
         if (strcmp(op, "*") == 0) return dispatch_method(ev, env, left, "*", &right, 1, NULL, node, 0, 1);
     }
 
-    return eval_error(ev, node, "undefined operator '%s' for %s", op, val_kind_name(left.kind));
+    Value op_result = dispatch_method(ev, env, left, op, &right, 1, NULL, node, 0, 1);
+    if (!ev->errored && !val_is_signal(op_result))
+        return op_result;
+    if (ev->errored) {
+        ev->errored = 0;
+        return eval_error(ev, node, "undefined operator '%s' for %s", op, val_kind_name(left.kind));
+    }
+    return op_result;
 }
 
 Value eval_call(Eval *ev, Env *env, Node *node) {

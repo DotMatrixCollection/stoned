@@ -1,4 +1,6 @@
 #include "eval_internal.h"
+#include "parser.h"
+#include "sema.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -489,7 +491,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         "Object", "BasicObject", "Numeric",
         "Integer", "Float", "String", "Symbol",
         "Array", "Hash", "NilClass", "TrueClass", "FalseClass",
-        "Class", "Module", "Method", "Proc",
+        "Class", "Module", "Method", "Proc", "Comparable", "Enumerable",
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NoMethodError",
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError",
@@ -498,6 +500,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     for (int i = 0; builtins[i]; i++) {
         Value klass = val_class(arena, builtins[i], val_nil());
         klass.klass->class_env = env_new(arena, ev->top_env, 1);
+        if (strcmp(builtins[i], "Comparable") == 0 || strcmp(builtins[i], "Enumerable") == 0)
+            klass.klass->is_module = 1;
         env_define(arena, ev->top_env, builtins[i], klass);
     }
 
@@ -522,5 +526,115 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         local_jump_error.klass->superclass = standard_error;
         key_error.klass->superclass = standard_error;
         load_error.klass->superclass = standard_error;
+    }
+
+    static const char *prelude =
+        "module Comparable\n"
+        "  def between?(min, max)\n"
+        "    lower = self <=> min\n"
+        "    upper = self <=> max\n"
+        "    lower >= 0 && upper <= 0\n"
+        "  end\n"
+        "\n"
+        "  def clamp(min, max)\n"
+        "    lower = self <=> min\n"
+        "    upper = self <=> max\n"
+        "    return min if lower < 0\n"
+        "    return max if upper > 0\n"
+        "    self\n"
+        "  end\n"
+        "end\n"
+        "\n"
+        "module Enumerable\n"
+        "  def find\n"
+        "    result = nil\n"
+        "    each do |x|\n"
+        "      if yield x\n"
+        "        result = x\n"
+        "        break\n"
+        "      end\n"
+        "    end\n"
+        "    result\n"
+        "  end\n"
+        "\n"
+        "  def detect\n"
+        "    result = nil\n"
+        "    each do |x|\n"
+        "      if yield x\n"
+        "        result = x\n"
+        "        break\n"
+        "      end\n"
+        "    end\n"
+        "    result\n"
+        "  end\n"
+        "\n"
+        "  def entries\n"
+        "    result = []\n"
+        "    each do |x|\n"
+        "      result << x\n"
+        "    end\n"
+        "    result\n"
+        "  end\n"
+        "\n"
+        "  def first\n"
+        "    each do |x|\n"
+        "      return x\n"
+        "    end\n"
+        "    nil\n"
+        "  end\n"
+        "\n"
+        "  def take(n)\n"
+        "    result = []\n"
+        "    each do |x|\n"
+        "      break result if result.length >= n\n"
+        "      result << x\n"
+        "    end\n"
+        "    result\n"
+        "  end\n"
+        "\n"
+        "  def drop(n)\n"
+        "    result = []\n"
+        "    i = 0\n"
+        "    each do |x|\n"
+        "      result << x if i >= n\n"
+        "      i = i + 1\n"
+        "    end\n"
+        "    result\n"
+        "  end\n"
+        "\n"
+        "  def count\n"
+        "    n = 0\n"
+        "    each do |x|\n"
+        "      n = n + 1 if yield x\n"
+        "    end\n"
+        "    n\n"
+        "  end\n"
+        "end\n"
+        "\n"
+        "class Integer\n"
+        "  include Comparable\n"
+        "end\n"
+        "class Float\n"
+        "  include Comparable\n"
+        "end\n"
+        "class String\n"
+        "  include Comparable\n"
+        "end\n"
+        "class Array\n"
+        "  include Enumerable\n"
+        "end\n"
+        "class Hash\n"
+        "  include Enumerable\n"
+        "end\n";
+
+    Parser parser;
+    parser_init(&parser, prelude, strlen(prelude), arena);
+    Node *tree = parse_program(&parser);
+    if (!parser.error_count) {
+        Sema sema;
+        sema_init(&sema, arena);
+        sema_run(&sema, tree);
+        if (!sema.error_count)
+            (void)eval_node(ev, ev->top_env, tree);
     }
 }

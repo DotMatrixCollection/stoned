@@ -312,6 +312,52 @@ int ruby_class_find_super_method(RubyClass *start, RubyClass *after, const char 
     return ruby_class_find_super_method_inner(start, after, &seen_after, name, out, owner);
 }
 
+static int ruby_class_has_module(RubyClass *klass, RubyClass *target) {
+    for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+        if (k == target) return 1;
+        for (RubyModuleInclusion *inc = k->prepended_modules; inc; inc = inc->next) {
+            if (inc->mod == target || ruby_class_has_module(inc->mod, target))
+                return 1;
+        }
+        for (RubyModuleInclusion *inc = k->included_modules; inc; inc = inc->next) {
+            if (inc->mod == target || ruby_class_has_module(inc->mod, target))
+                return 1;
+        }
+        if (k->is_module) break;
+    }
+    return 0;
+}
+
+int value_has_module(Eval *ev, Value recv, const char *module_name) {
+    Value mod;
+    if (!env_get(ev->top_env, module_name, &mod) || mod.kind != VAL_CLASS)
+        return 0;
+
+    RubyClass *klass = NULL;
+    if (recv.kind == VAL_OBJECT) klass = recv.obj->klass.klass;
+    else {
+        const char *class_name = NULL;
+        switch (recv.kind) {
+            case VAL_INT: class_name = "Integer"; break;
+            case VAL_FLOAT: class_name = "Float"; break;
+            case VAL_STRING: class_name = "String"; break;
+            case VAL_ARRAY: class_name = "Array"; break;
+            case VAL_HASH: class_name = "Hash"; break;
+            case VAL_NIL: class_name = "NilClass"; break;
+            case VAL_BOOL: class_name = recv.bval ? "TrueClass" : "FalseClass"; break;
+            case VAL_CLASS: klass = recv.klass; break;
+            default: break;
+        }
+        if (!klass && class_name) {
+            Value klass_val;
+            if (env_get(ev->top_env, class_name, &klass_val) && klass_val.kind == VAL_CLASS)
+                klass = klass_val.klass;
+        }
+    }
+    if (!klass) return 0;
+    return ruby_class_has_module(klass, mod.klass);
+}
+
 int value_is_a_named_class(Eval *ev, Value v, const char *class_name) {
     if (v.kind != VAL_OBJECT) return 0;
     Value klass;

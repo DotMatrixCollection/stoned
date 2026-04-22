@@ -4,6 +4,40 @@
 
 static Node *parse_expr_list(Parser *p, Node *first, int elem_min_bp, int assignment_target);
 
+static const char *def_name_from_token(Parser *p, Token tok) {
+    switch (tok.kind) {
+        case TOK_IDENT:
+        case TOK_CONST:
+            return tok.sval;
+        case TOK_PLUS: return "+";
+        case TOK_MINUS: return "-";
+        case TOK_STAR: return "*";
+        case TOK_STAR2: return "**";
+        case TOK_SLASH: return "/";
+        case TOK_PERCENT: return "%";
+        case TOK_EQ2: return "==";
+        case TOK_EQ3: return "===";
+        case TOK_NEQ: return "!=";
+        case TOK_LT: return "<";
+        case TOK_LEQ: return "<=";
+        case TOK_GT: return ">";
+        case TOK_GEQ: return ">=";
+        case TOK_SPACESHIP: return "<=>";
+        case TOK_LSHIFT: return "<<";
+        case TOK_RSHIFT: return ">>";
+        case TOK_LBRACKET:
+            if (match(p, TOK_RBRACKET)) return "[]";
+            if (match(p, TOK_EQ)) {
+                expect(p, TOK_RBRACKET, "expected ']'");
+                return "[]=";
+            }
+            error(p, "expected ']' or ']=' after '[' in method name", tok.line, tok.col);
+            return NULL;
+        default:
+            return NULL;
+    }
+}
+
 static Node *parse_assignment_target_elem(Parser *p) {
     Token t = peek(p);
     Span s = tok_span(t);
@@ -164,20 +198,22 @@ Node *parse_stmt(Parser *p) {
             name_tok = advance(p);
         }
 
-        if (name_tok.kind != TOK_IDENT && name_tok.kind != TOK_CONST) {
+        const char *def_name = def_name_from_token(p, name_tok);
+        if (!def_name) {
             error(p, "expected method name after 'def'", name_tok.line, name_tok.col);
             return NULL;
         }
-        if (check(p, TOK_QUESTION) || check(p, TOK_BANG)) {
+        if ((name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) &&
+            (check(p, TOK_QUESTION) || check(p, TOK_BANG))) {
             Token suffix = advance(p);
-            size_t nlen = strlen(name_tok.sval);
+            size_t nlen = strlen(def_name);
             char *buf = arena_alloc(p->arena, nlen + 2);
-            memcpy(buf, name_tok.sval, nlen);
+            memcpy(buf, def_name, nlen);
             buf[nlen] = suffix.kind == TOK_QUESTION ? '?' : '!';
             buf[nlen + 1] = '\0';
-            name_tok.sval = buf;
+            def_name = buf;
         }
-        n->def.name = name_tok.sval;
+        n->def.name = def_name;
 
         if (match(p, TOK_LPAREN)) {
             n->def.params = parse_params(p);

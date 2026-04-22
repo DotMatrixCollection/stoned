@@ -41,8 +41,12 @@ The core visibility model now exists, but it still needs:
 
 ## Longer term
 
-### `Comparable` and `Enumerable`
-Implement as built-in modules once module infrastructure exists. `Comparable` needs `<=>` defined; `Enumerable` needs `each` defined.
+### `Comparable` and `Enumerable` polish
+The core built-in mixins now exist, but the next gaps are:
+
+- broader method coverage
+- closer Ruby compatibility on edge cases
+- more complete interaction with non-array/hash receiver kinds
 
 ### File loading polish
 The core loading path now exists, but it still needs:
@@ -102,6 +106,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - class-method visibility helpers (`private_class_method`, `public_class_method`, `protected_class_method`)
 - `require_relative`, minimal `require`, load guards, and `LoadError`
 - `method_missing` / `respond_to_missing?` for objects and classes
+- built-in `Comparable` / `Enumerable` plus operator method defs like `def <=>`
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files
