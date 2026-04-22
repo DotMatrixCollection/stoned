@@ -60,7 +60,6 @@ The core loading path now exists, but it still needs:
 ### Dispatch hook polish
 The core hook path now exists, but it still needs:
 
-- broader coverage across more receiver kinds
 - closer Ruby compatibility around `respond_to_missing?` edge cases
 - integration with future metaprogramming features
 
@@ -104,7 +103,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - `send`, `__send__`, `public_send`, and method visibility (`public`, `private`, `protected`)
 - class-method visibility helpers (`private_class_method`, `public_class_method`, `protected_class_method`)
 - `require_relative`, `require`, `$LOAD_PATH`, load guards, and `LoadError`
-- `method_missing` / `respond_to_missing?` for objects and classes
+- `method_missing` / `respond_to_missing?` for objects, classes, and primitive-backed reopened classes
 - built-in `Comparable` / `Enumerable` plus operator method defs like `def <=>`
 - regression test suite wired into `make test`
 - evaluator split into smaller files

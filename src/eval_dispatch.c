@@ -317,6 +317,20 @@ static Value dispatch_respond_to_missing(Eval *ev, Env *env, Value recv, const c
                 return val_bool(val_truthy(result));
             }
         }
+    } else {
+        Value klass = val_class_of(ev, recv);
+        if (klass.kind == VAL_CLASS) {
+            RubyClass *owner = NULL;
+            Value method;
+            if (ruby_class_find_instance_method(klass.klass, "respond_to_missing?", &method, &owner)) {
+                Value args[2];
+                args[0] = val_symbol(name);
+                args[1] = val_false();
+                Value result = call_method_value(ev, env, recv, method, owner, "respond_to_missing?", args, 2, NULL, site);
+                if (val_is_signal(result)) return result;
+                return val_bool(val_truthy(result));
+            }
+        }
     }
     return val_false();
 }
@@ -342,6 +356,18 @@ static Value dispatch_method_missing(Eval *ev, Env *env, Value recv, const char 
                 mm_args[0] = val_symbol(name);
                 for (int i = 0; i < argc && i < 64; i++) mm_args[i + 1] = args[i];
                 return call_method_value(ev, env, recv, method, k, "method_missing", mm_args, argc + 1, blk, site);
+            }
+        }
+    } else {
+        Value klass = val_class_of(ev, recv);
+        if (klass.kind == VAL_CLASS) {
+            RubyClass *owner = NULL;
+            Value method;
+            if (ruby_class_find_instance_method(klass.klass, "method_missing", &method, &owner)) {
+                Value mm_args[65];
+                mm_args[0] = val_symbol(name);
+                for (int i = 0; i < argc && i < 64; i++) mm_args[i + 1] = args[i];
+                return call_method_value(ev, env, recv, method, owner, "method_missing", mm_args, argc + 1, blk, site);
             }
         }
     }
@@ -858,6 +884,13 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                 }
                 cklass = cklass->superclass.kind == VAL_CLASS ? cklass->superclass.klass : NULL;
             }
+        }
+
+        if (env_get(env, "self", &self) && self.kind != VAL_OBJECT && self.kind != VAL_CLASS) {
+            Value result = dispatch_method(ev, env, self, name, args, argc, blk, node, 0, 0);
+            if (!ev->errored)
+                return result;
+            ev->errored = 0;
         }
 
         if (!env_get(env, name, &fn))
