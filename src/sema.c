@@ -63,11 +63,59 @@ static int scope_has(Sema *s, const char *name) {
 static int param_list_has(NodeList *params, const char *name) {
     for (NodeList *l = params; l; l = l->next) {
         Node *p = l->node;
-        if (p && p->kind == NODE_PARAM && p->param.name &&
+        if (!p) continue;
+        if (p->kind == NODE_PARAM && p->param.name &&
             strcmp(p->param.name, name) == 0)
+            return 1;
+        if (p->kind == NODE_ARRAY && param_list_has(p->array.elements, name))
             return 1;
     }
     return 0;
+}
+
+static void resolve(Sema *s, Node *node);
+
+static void scope_add_params(Sema *s, NodeList *params) {
+    for (NodeList *l = params; l; l = l->next) {
+        Node *param = l->node;
+        if (!param) continue;
+        if (param->kind == NODE_PARAM && param->param.name) {
+            scope_add(s, param->param.name);
+        } else if (param->kind == NODE_ARRAY) {
+            scope_add_params(s, param->array.elements);
+        }
+    }
+}
+
+static void resolve_param_defaults(Sema *s, NodeList *params) {
+    for (NodeList *l = params; l; l = l->next) {
+        Node *param = l->node;
+        if (!param) continue;
+        if (param->kind == NODE_PARAM && param->param.default_val) {
+            resolve(s, param->param.default_val);
+        } else if (param->kind == NODE_ARRAY) {
+            resolve_param_defaults(s, param->array.elements);
+        }
+    }
+}
+
+static void collect_assignment_target(Sema *s, Node *target, NodeList *excl) {
+    if (!target) return;
+    if (target->kind == NODE_LVAR) {
+        const char *name = target->sval;
+        if (!param_list_has(excl, name))
+            scope_add(s, name);
+        return;
+    }
+    if (target->kind == NODE_PARAM && target->param.name) {
+        if (!param_list_has(excl, target->param.name))
+            scope_add(s, target->param.name);
+        return;
+    }
+    if (target->kind == NODE_ARRAY) {
+        for (NodeList *l = target->array.elements; l; l = l->next)
+            collect_assignment_target(s, l->node, excl);
+    }
 }
 
 static void collect(Sema *s, Node *node, NodeList *excl) {
@@ -75,11 +123,7 @@ static void collect(Sema *s, Node *node, NodeList *excl) {
 
     switch (node->kind) {
         case NODE_ASSIGN:
-            if (node->assign.target && node->assign.target->kind == NODE_LVAR) {
-                const char *name = node->assign.target->sval;
-                if (!param_list_has(excl, name))
-                    scope_add(s, name);
-            }
+            collect_assignment_target(s, node->assign.target, excl);
             collect(s, node->assign.value, excl);
             break;
 
@@ -157,7 +201,6 @@ static void collect(Sema *s, Node *node, NodeList *excl) {
 /* Phase 2: resolve — walk tree, fix NODE_LVAR → NODE_CALL where       */
 /* needed, check break/next/return context.                            */
 /* ------------------------------------------------------------------ */
-static void resolve(Sema *s, Node *node);
 
 static void resolve_list(Sema *s, NodeList *list) {
     for (NodeList *l = list; l; l = l->next)
@@ -222,11 +265,7 @@ static void resolve(Sema *s, Node *node) {
             /* Blocks are soft scopes */
             scope_push(s, 0);
             /* Block params are locals in the block's scope */
-            for (NodeList *l = node->block.params; l; l = l->next) {
-                Node *param = l->node;
-                if (param->kind == NODE_PARAM && param->param.name)
-                    scope_add(s, param->param.name);
-            }
+            scope_add_params(s, node->block.params);
             /* Collect any assignments inside the block body */
             collect(s, node->block.body, node->block.params);
             s->block_depth++;
@@ -272,13 +311,8 @@ static void resolve(Sema *s, Node *node) {
             scope_push(s, 1);
             scope_add(s, "self");  /* self is always in scope inside methods */
             /* Parameters are locals in the def's scope */
-            for (NodeList *l = node->def.params; l; l = l->next) {
-                Node *param = l->node;
-                if (param->kind == NODE_PARAM && param->param.name)
-                    scope_add(s, param->param.name);
-                if (param->param.default_val)
-                    resolve(s, param->param.default_val);
-            }
+            scope_add_params(s, node->def.params);
+            resolve_param_defaults(s, node->def.params);
             /* Collect locals in the def body */
             collect(s, node->def.body, NULL);
             s->def_depth++;

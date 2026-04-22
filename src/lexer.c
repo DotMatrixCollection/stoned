@@ -404,6 +404,7 @@ static Token scan(Lexer *l) {
             SIMPLE(TOK_PLUS);
         case '-':
             if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_MINUS_EQ); }
+            if (peek_ch(l) == '>') { advance(l); SIMPLE(TOK_LAMBDA); }
             SIMPLE(TOK_MINUS);
         case '%':
             if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_PERCENT_EQ); }
@@ -668,6 +669,7 @@ const char *token_kind_name(TokenKind k) {
         case TOK_RBRACE:     return "}";
         case TOK_PIPE_BLOCK: return "|block|";
         case TOK_ARROW:      return "=>";
+        case TOK_LAMBDA:     return "->";
         case TOK_QUESTION:   return "?";
         case TOK_PLUS_EQ:    return "+=";
         case TOK_MINUS_EQ:   return "-=";

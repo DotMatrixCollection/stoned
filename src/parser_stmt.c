@@ -2,6 +2,52 @@
 
 #include <string.h>
 
+static Node *parse_expr_list(Parser *p, Node *first, int elem_min_bp, int assignment_target);
+
+static Node *parse_assignment_target_elem(Parser *p) {
+    Token t = peek(p);
+    Span s = tok_span(t);
+
+    if (t.kind == TOK_LPAREN) {
+        advance(p);
+        Node *group = parse_assignment_target_elem(p);
+        if (check(p, TOK_COMMA))
+            group = parse_expr_list(p, group, 7, 1);
+        expect(p, TOK_RPAREN, "expected ')'");
+        return group;
+    }
+
+    if (t.kind == TOK_STAR) {
+        advance(p);
+        Token name_tok = advance(p);
+        if (name_tok.kind != TOK_IDENT) {
+            error(p, "expected identifier after '*'", name_tok.line, name_tok.col);
+            return NULL;
+        }
+        Node *param = node_new(p->arena, NODE_PARAM, s);
+        param->param.splat = 1;
+        param->param.name = name_tok.sval;
+        return param;
+    }
+
+    return parse_expr(p, 7);
+}
+
+static Node *parse_expr_list(Parser *p, Node *first, int elem_min_bp, int assignment_target) {
+    if (!first) return NULL;
+    if (!check(p, TOK_COMMA)) return first;
+
+    Node *list = node_new(p->arena, NODE_ARRAY, first->span);
+    NodeList *elems = NULL;
+    elems = nodelist_append(p->arena, elems, first);
+    while (match(p, TOK_COMMA)) {
+        Node *elem = assignment_target ? parse_assignment_target_elem(p) : parse_expr(p, elem_min_bp);
+        if (elem) elems = nodelist_append(p->arena, elems, elem);
+    }
+    list->array.elements = elems;
+    return list;
+}
+
 Node *parse_stmt(Parser *p) {
     Token t = peek(p);
     Span s = tok_span(t);
@@ -173,6 +219,21 @@ Node *parse_stmt(Parser *p) {
 
     Node *expr = parse_expr(p, 0);
     if (!expr) return NULL;
+
+    if (check(p, TOK_COMMA)) {
+        Node *lhs = parse_expr_list(p, expr, 7, 1);
+        if (!match(p, TOK_EQ)) {
+            Token t2 = peek(p);
+            error(p, "expected '=' after multiple assignment target", t2.line, t2.col);
+            return NULL;
+        }
+        Node *rhs_first = parse_expr(p, 0);
+        Node *rhs = parse_expr_list(p, rhs_first, 0, 0);
+        Node *n = node_new(p->arena, NODE_ASSIGN, s);
+        n->assign.target = lhs;
+        n->assign.value = rhs;
+        return n;
+    }
 
     t = peek(p);
     if (t.kind == TOK_IF || t.kind == TOK_UNLESS) {

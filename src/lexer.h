@@ -97,6 +97,7 @@ typedef enum {
     TOK_RBRACE,         /* } */
     TOK_PIPE_BLOCK,     /* | used as block param delim */
     TOK_ARROW,          /* => */
+    TOK_LAMBDA,         /* -> */
     TOK_QUESTION,       /* ? */
 
     /* Compound assignment */

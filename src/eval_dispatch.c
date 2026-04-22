@@ -191,6 +191,9 @@ static int val_responds_to(Eval *ev, Value recv, const char *name) {
         "length", "size", "empty?", "to_s", "to_a", "merge", "merge!", "each", "map",
         "select", "reject", "any?", "all?", NULL
     };
+    static const char *proc_methods[] = {
+        "call", "[]", "lambda?", "arity", "to_s", "inspect", NULL
+    };
 
     const char **methods = NULL;
     if (recv.kind == VAL_INT) methods = int_methods;
@@ -198,6 +201,7 @@ static int val_responds_to(Eval *ev, Value recv, const char *name) {
     if (recv.kind == VAL_STRING) methods = str_methods;
     if (recv.kind == VAL_ARRAY) methods = arr_methods;
     if (recv.kind == VAL_HASH) methods = hash_methods;
+    if (recv.kind == VAL_BLOCK) methods = proc_methods;
     if (!methods) return 0;
 
     for (int i = 0; methods[i]; i++)
@@ -252,6 +256,10 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
             msg = val_to_s(ev->arena, args[0]);
         }
         return eval_raise_class(ev, site, class_name, "%s", msg);
+    }
+    if (strcmp(name, "lambda") == 0) {
+        if (!blk) return eval_raise_class(ev, site, "ArgumentError", "lambda requires a block");
+        return val_lambda(blk->block.block_node, blk->block.closure);
     }
     if (strcmp(name, "rand") == 0) {
         if (argc == 0) return val_float((double)rand() / RAND_MAX);
@@ -341,6 +349,16 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                             ? args[0].sval : NULL;
         if (!mname) return eval_raise_class(ev, site, "TypeError", "send: method name must be a symbol or string");
         return dispatch_method(ev, env, recv, mname, args + 1, argc - 1, blk, site);
+    }
+    if (recv.kind == VAL_BLOCK) {
+        if (strcmp(name, "call") == 0 || strcmp(name, "[]") == 0)
+            return call_block(ev, recv, args, argc, site);
+        if (strcmp(name, "lambda?") == 0)
+            return val_bool(recv.block.is_lambda);
+        if (strcmp(name, "arity") == 0)
+            return val_int(count_required_params(recv.block.block_node->block.params));
+        if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0)
+            return val_string(ev->arena, recv.block.is_lambda ? "#<Proc:lambda>" : "#<Proc>");
     }
 
     if (dispatch_integer(ev, env, recv, name, args, argc, blk, site, &out)) return out;
@@ -499,7 +517,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "raise", "rand", "exit",
+            "puts", "print", "p", "raise", "lambda", "rand", "exit",
             "attr_reader", "attr_writer", "attr_accessor", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
@@ -522,9 +540,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                     Value klass_val; klass_val.kind = VAL_CLASS; klass_val.klass = klass;
                     env_set(ev->arena, method_env, "__class__", klass_val);
                     if (blk) method_env->block_arg = blk;
-                    NodeList *params = fn.method.def_node->def.params;
-                    for (int i = 0; i < argc && params; i++, params = params->next)
-                        env_set(ev->arena, method_env, params->node->param.name, args[i]);
+                    bind_params(ev, method_env, fn.method.def_node->def.params, args, argc);
                     ev->call_depth++;
                     eval_push_frame(ev, node->span.line, node->span.col, name);
                     Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
@@ -552,9 +568,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                     Value kv; kv.kind = VAL_CLASS; kv.klass = cklass;
                     env_set(ev->arena, method_env, "__class__", kv);
                     if (blk) method_env->block_arg = blk;
-                    NodeList *params = fn.method.def_node->def.params;
-                    for (int i = 0; i < argc && params; i++, params = params->next)
-                        env_set(ev->arena, method_env, params->node->param.name, args[i]);
+                    bind_params(ev, method_env, fn.method.def_node->def.params, args, argc);
                     ev->call_depth++;
                     eval_push_frame(ev, node->span.line, node->span.col, name);
                     Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
@@ -581,24 +595,7 @@ call_method:
         Env *frame = env_new(ev->arena, closure, 1);
         if (blk) frame->block_arg = blk;
 
-        NodeList *pl = def->def.params;
-        int pi = 0;
-        for (; pl; pl = pl->next, pi++) {
-            Node *p = pl->node;
-            if (!p || p->kind != NODE_PARAM) continue;
-            if (p->param.splat) {
-                Value rest = val_array_new();
-                for (int j = pi; j < argc; j++) val_array_push(&rest, args[j]);
-                if (p->param.name) env_set(ev->arena, frame, p->param.name, rest);
-                pl = NULL;
-                break;
-            }
-            Value pval = pi < argc ? args[pi]
-                       : (p->param.default_val
-                          ? eval_node(ev, frame, p->param.default_val)
-                          : val_nil());
-            if (p->param.name) env_set(ev->arena, frame, p->param.name, pval);
-        }
+        bind_params(ev, frame, def->def.params, args, argc);
 
         ev->call_depth++;
         eval_push_frame(ev, node->span.line, node->span.col, name);

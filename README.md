@@ -46,26 +46,29 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `32 passed, 0 failed, 32 total`.
+Current coverage in the tree: `48 passed, 0 failed, 48 total`.
 
 What is working today:
 
 - Core values: `nil`, booleans, integers, floats, strings with interpolation, symbols, arrays, hashes
 - Operators: arithmetic, comparison, bitwise, string/array `+`, array `<<`, `**`, `<=>`, `&&`, `||`
 - Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return`
-- Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, rescue variable binding, re-raise
-- Methods: `def`, default params, splat params, blocks, `yield`, closures, bare command-style calls
+- Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, rescue variable binding, re-raise, uncaught backtraces
+- Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls
 - Classes: instance methods, `def self.foo`, inheritance, `initialize`, instance variables, `super`, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
 - Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`
 - Hash syntax: both `{:a => 1}` and modern label syntax like `{a: 1}`
-- Kernel: `puts`, `print`, `p`, `raise`, `rand`, `exit`
+- Assignment: parallel assignment, swap, splat capture, nested destructuring, destructured method and block params
+- Proc/lambda: `Proc.new {}`, `lambda {}`, `-> (...) {}`, `call`, `[]`, `lambda?`, `arity`, lambda `return`, proc non-local `return`
+- Kernel: `puts`, `print`, `p`, `raise`, `lambda`, `rand`, `exit`
 - Globals and constants
 
 Known limitations:
 
 - This is not Ruby-compatible enough for real-world code yet
-- Modules, file loading, lambdas/procs, and IO are still missing
-- Exceptions work, but they still need backtraces, richer exception objects, and more Ruby-complete rescue syntax
+- Modules, file loading, and IO are still missing
+- Exceptions work, but they still need richer exception objects, broader standard exception coverage, and more Ruby-complete rescue syntax
+- Proc/lambda semantics exist, but there are still edge cases around control flow and argument handling that are not Ruby-complete
 - Compatibility around edge-case parsing and method semantics is still being tightened
 
 ## Architecture

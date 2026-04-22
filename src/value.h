@@ -57,6 +57,7 @@ typedef struct Value {
         struct {             /* VAL_BLOCK */
             struct Node *block_node;
             struct Env  *closure;
+            int          is_lambda;
         } block;
 
         struct Value *wrapped; /* VAL_RETURN, VAL_BREAK, VAL_NEXT: carried value */
@@ -113,6 +114,7 @@ void  val_array_push(Value *arr, Value elem);
 
 Value val_method(struct Node *def, struct Env *closure);
 Value val_block(struct Node *blk, struct Env *closure);
+Value val_lambda(struct Node *blk, struct Env *closure);
 
 Value val_hash_new(Arena *a);
 void  val_hash_set(RubyHash *h, Value key, Value val);

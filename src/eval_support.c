@@ -222,6 +222,107 @@ const char *eval_rope(Eval *ev, Env *env, RopeNode *r) {
     return result;
 }
 
+static void bind_pattern(Eval *ev, Env *env, Node *pattern, Value val) {
+    if (!pattern) return;
+
+    if (pattern->kind == NODE_PARAM) {
+        if (pattern->param.name)
+            env_set(ev->arena, env, pattern->param.name, val);
+        return;
+    }
+
+    if (pattern->kind != NODE_ARRAY) return;
+
+    size_t len = 0;
+    size_t splat_index = (size_t)-1;
+    for (NodeList *l = pattern->array.elements; l; l = l->next, len++) {
+        if (l->node && l->node->kind == NODE_PARAM && l->node->param.splat)
+            splat_index = len;
+    }
+
+    size_t idx = 0;
+    for (NodeList *l = pattern->array.elements; l; l = l->next, idx++) {
+        if (l->node && l->node->kind == NODE_PARAM && l->node->param.splat) {
+            Value rest = val_array_new();
+            size_t tail_count = len - idx - 1;
+            size_t available = 0;
+            if (val.kind == VAL_ARRAY && val.array)
+                available = val.array->len;
+            else if (idx == 0)
+                available = 1;
+
+            size_t rest_end = available > tail_count ? available - tail_count : 0;
+            for (size_t j = idx; j < rest_end; j++) {
+                Value elem = val_nil();
+                if (val.kind == VAL_ARRAY && val.array && j < val.array->len)
+                    elem = val.array->elems[j];
+                else if (j == 0 && val.kind != VAL_ARRAY)
+                    elem = val;
+                val_array_push(&rest, elem);
+            }
+            bind_pattern(ev, env, l->node, rest);
+            continue;
+        }
+
+        Value elem = val_nil();
+        if (splat_index != (size_t)-1 && idx > splat_index) {
+            size_t tail_offset = len - idx;
+            if (val.kind == VAL_ARRAY && val.array && val.array->len >= tail_offset)
+                elem = val.array->elems[val.array->len - tail_offset];
+        } else if (val.kind == VAL_ARRAY && val.array && idx < val.array->len) {
+            elem = val.array->elems[idx];
+        } else if (idx == 0 && val.kind != VAL_ARRAY) {
+            elem = val;
+        }
+        bind_pattern(ev, env, l->node, elem);
+    }
+}
+
+int count_required_params(NodeList *params) {
+    int count = 0;
+    for (NodeList *l = params; l; l = l->next) {
+        Node *p = l->node;
+        if (!p) continue;
+        if (p->kind == NODE_PARAM) {
+            if (!p->param.splat && !p->param.block_param)
+                count++;
+        } else if (p->kind == NODE_ARRAY) {
+            count++;
+        }
+    }
+    return count;
+}
+
+int has_splat_param(NodeList *params) {
+    for (NodeList *l = params; l; l = l->next) {
+        Node *p = l->node;
+        if (!p) continue;
+        if (p->kind == NODE_PARAM && p->param.splat) return 1;
+        if (p->kind == NODE_ARRAY && has_splat_param(p->array.elements)) return 1;
+    }
+    return 0;
+}
+
+void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc) {
+    int pi = 0;
+    for (NodeList *pl = params; pl; pl = pl->next, pi++) {
+        Node *p = pl->node;
+        if (!p) continue;
+        if (p->kind == NODE_PARAM && p->param.splat) {
+            Value rest = val_array_new();
+            for (int j = pi; j < argc; j++) val_array_push(&rest, args[j]);
+            bind_pattern(ev, env, p, rest);
+            break;
+        }
+
+        Value pval = pi < argc ? args[pi]
+                   : (p->kind == NODE_PARAM && p->param.default_val
+                      ? eval_node(ev, env, p->param.default_val)
+                      : val_nil());
+        bind_pattern(ev, env, p, pval);
+    }
+}
+
 Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site) {
     if (blk.kind != VAL_BLOCK)
         return eval_raise_class(ev, call_site, "LocalJumpError", "no block given");
@@ -231,16 +332,16 @@ Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site) {
     Env *frame    = env_new(ev->arena, closure, 0);
     NodeList *pl  = bn->block.params;
 
-    for (int i = 0; pl && i < argc; i++, pl = pl->next) {
-        Node *p = pl->node;
-        if (p && p->kind == NODE_PARAM && p->param.name)
-            env_set(ev->arena, frame, p->param.name, args[i]);
-    }
+    if (blk.block.is_lambda && !has_splat_param(pl) && argc != count_required_params(pl))
+        return eval_raise_class(ev, call_site, "ArgumentError", "wrong number of arguments");
+
+    bind_params(ev, frame, pl, args, argc);
 
     eval_push_frame(ev, call_site ? call_site->span.line : 0,
                     call_site ? call_site->span.col : 0, "block");
     Value result = eval_node(ev, frame, bn->block.body);
     eval_pop_frame(ev);
+    if (blk.block.is_lambda && result.kind == VAL_RETURN) return *result.wrapped;
     if (result.kind == VAL_NEXT) return *result.wrapped;
     return result;
 }

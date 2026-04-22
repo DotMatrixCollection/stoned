@@ -10,6 +10,76 @@ static void assign_lvar(Eval *ev, Env *env, const char *name, Value val) {
         env_set(ev->arena, env, name, val);
 }
 
+static void assign_target(Eval *ev, Env *env, Node *target, Value val) {
+    if (!target) return;
+
+    if (target->kind == NODE_ARRAY) {
+        size_t len = 0;
+        size_t splat_index = (size_t)-1;
+        for (NodeList *l = target->array.elements; l; l = l->next, len++) {
+            if (l->node && l->node->kind == NODE_PARAM && l->node->param.splat)
+                splat_index = len;
+        }
+
+        size_t idx = 0;
+        for (NodeList *l = target->array.elements; l; l = l->next, idx++) {
+            if (l->node && l->node->kind == NODE_PARAM && l->node->param.splat) {
+                Value rest = val_array_new();
+                size_t tail_count = len - idx - 1;
+                size_t available = 0;
+                if (val.kind == VAL_ARRAY && val.array)
+                    available = val.array->len;
+                else if (idx == 0)
+                    available = 1;
+
+                size_t rest_end = available > tail_count ? available - tail_count : 0;
+                for (size_t j = idx; j < rest_end; j++) {
+                    Value elem = val_nil();
+                    if (val.kind == VAL_ARRAY && val.array && j < val.array->len)
+                        elem = val.array->elems[j];
+                    else if (j == 0 && val.kind != VAL_ARRAY)
+                        elem = val;
+                    val_array_push(&rest, elem);
+                }
+                assign_target(ev, env, l->node, rest);
+                continue;
+            }
+
+            Value elem = val_nil();
+            if (splat_index != (size_t)-1 && idx > splat_index) {
+                size_t tail_offset = len - idx;
+                if (val.kind == VAL_ARRAY && val.array && val.array->len >= tail_offset)
+                    elem = val.array->elems[val.array->len - tail_offset];
+            } else if (val.kind == VAL_ARRAY && val.array && idx < val.array->len) {
+                elem = val.array->elems[idx];
+            } else if (idx == 0 && val.kind != VAL_ARRAY) {
+                elem = val;
+            }
+            assign_target(ev, env, l->node, elem);
+        }
+        return;
+    }
+
+    if (target->kind == NODE_PARAM && target->param.name) {
+        assign_lvar(ev, env, target->param.name, val);
+        return;
+    }
+
+    if (target->kind == NODE_LVAR) {
+        assign_lvar(ev, env, target->sval, val);
+    } else if (target->kind == NODE_IVAR) {
+        Value self;
+        if (env_get(env, "self", &self) && self.kind == VAL_OBJECT)
+            val_object_set_ivar(ev->arena, self, target->sval, val);
+        else
+            global_set(ev->arena, &ev->globals, target->sval, val);
+    } else if (target->kind == NODE_GVAR) {
+        global_set(ev->arena, &ev->globals, target->sval, val);
+    } else if (target->kind == NODE_CONST) {
+        env_set(ev->arena, ev->top_env, target->sval, val);
+    }
+}
+
 static int exception_is_a(Eval *ev, Value klass) {
     if (klass.kind != VAL_CLASS || ev->current_exception.kind != VAL_OBJECT) return 0;
     RubyClass *k = ev->current_exception.obj->klass.klass;
@@ -75,20 +145,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         case NODE_ASSIGN: {
             Value val = eval_node(ev, env, node->assign.value);
             CHECK(val);
-            Node *target = node->assign.target;
-            if (target->kind == NODE_LVAR)
-                assign_lvar(ev, env, target->sval, val);
-            else if (target->kind == NODE_IVAR) {
-                Value self;
-                if (env_get(env, "self", &self) && self.kind == VAL_OBJECT)
-                    val_object_set_ivar(ev->arena, self, target->sval, val);
-                else
-                    global_set(ev->arena, &ev->globals, target->sval, val);
-            } else if (target->kind == NODE_GVAR) {
-                global_set(ev->arena, &ev->globals, target->sval, val);
-            } else if (target->kind == NODE_CONST) {
-                env_set(ev->arena, ev->top_env, target->sval, val);
-            }
+            assign_target(ev, env, node->assign.target, val);
             return val;
         }
 

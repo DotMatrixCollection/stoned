@@ -17,6 +17,9 @@ uint32_t exception_value_col(Value exc);
 Value exception_value_backtrace(Value exc);
 void eval_push_frame(Eval *ev, uint32_t line, uint32_t col, const char *label);
 void eval_pop_frame(Eval *ev);
+void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc);
+int count_required_params(NodeList *params);
+int has_splat_param(NodeList *params);
 const char *eval_rope(Eval *ev, Env *env, RopeNode *r);
 Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site);
 Value dispatch_method(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,

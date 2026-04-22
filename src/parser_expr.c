@@ -275,30 +275,76 @@ Node *parse_block(Parser *p) {
     return n;
 }
 
+static Node *parse_lambda_literal(Parser *p, Span s) {
+    Node *block = node_new(p->arena, NODE_BLOCK, s);
+
+    if (match(p, TOK_LPAREN)) {
+        block->block.params = parse_params(p);
+        expect(p, TOK_RPAREN, "expected ')'");
+    }
+
+    Token t = peek(p);
+    int brace = (t.kind == TOK_LBRACE);
+    if (!brace && t.kind != TOK_DO) {
+        error(p, "expected '{' or 'do' after lambda parameters", t.line, t.col);
+        return NULL;
+    }
+    advance(p);
+    skip_terminators(p);
+    block->block.body = parse_body(p, brace);
+    if (brace) expect(p, TOK_RBRACE, "expected '}'");
+    else expect(p, TOK_END, "expected 'end'");
+
+    Node *call = node_new(p->arena, NODE_CALL, s);
+    call->call.recv = NULL;
+    call->call.method = "lambda";
+    call->call.args = NULL;
+    call->call.block = block;
+    return call;
+}
+
+static Node *parse_param_node(Parser *p, int allow_default) {
+    Token t = peek(p);
+    Span s = tok_span(t);
+
+    if (t.kind == TOK_LPAREN) {
+        advance(p);
+        Node *group = node_new(p->arena, NODE_ARRAY, s);
+        NodeList *elems = NULL;
+        while (!check(p, TOK_RPAREN) && !check(p, TOK_EOF)) {
+            Node *elem = parse_param_node(p, 0);
+            if (elem) elems = nodelist_append(p->arena, elems, elem);
+            if (!match(p, TOK_COMMA)) break;
+        }
+        expect(p, TOK_RPAREN, "expected ')'");
+        group->array.elements = elems;
+        return group;
+    }
+
+    Node *param = node_new(p->arena, NODE_PARAM, s);
+    if (t.kind == TOK_STAR) {
+        advance(p);
+        param->param.splat = 1;
+        t = advance(p);
+        param->param.name = t.sval;
+    } else if (t.kind == TOK_AMP) {
+        advance(p);
+        param->param.block_param = 1;
+        t = advance(p);
+        param->param.name = t.sval;
+    } else {
+        advance(p);
+        param->param.name = t.sval;
+        if (allow_default && match(p, TOK_EQ))
+            param->param.default_val = parse_expr(p, 0);
+    }
+    return param;
+}
+
 NodeList *parse_params(Parser *p) {
     NodeList *params = NULL;
     while (!check(p, TOK_PIPE) && !check(p, TOK_RPAREN) && !check(p, TOK_EOF)) {
-        Token t = peek(p);
-        Span s = tok_span(t);
-        Node *param = node_new(p->arena, NODE_PARAM, s);
-
-        if (t.kind == TOK_STAR) {
-            advance(p);
-            param->param.splat = 1;
-            t = advance(p);
-            param->param.name = t.sval;
-        } else if (t.kind == TOK_AMP) {
-            advance(p);
-            param->param.block_param = 1;
-            t = advance(p);
-            param->param.name = t.sval;
-        } else {
-            advance(p);
-            param->param.name = t.sval;
-            if (match(p, TOK_EQ))
-                param->param.default_val = parse_expr(p, 0);
-        }
-
+        Node *param = parse_param_node(p, 1);
         params = nodelist_append(p->arena, params, param);
         if (!match(p, TOK_COMMA)) break;
     }
@@ -420,6 +466,9 @@ Node *parse_primary(Parser *p) {
             }
             return n;
         }
+        case TOK_LAMBDA:
+            advance(p);
+            return parse_lambda_literal(p, s);
         case TOK_LPAREN: {
             advance(p);
             Node *inner = parse_expr(p, 0);

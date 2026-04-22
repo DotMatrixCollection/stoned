@@ -6,6 +6,14 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                    Value *blk, Node *site, Value *out) {
     (void)env;
     if (recv.kind != VAL_CLASS) return 0;
+    if (strcmp(recv.klass->name, "Proc") == 0 && strcmp(name, "new") == 0) {
+        if (!blk) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "Proc.new requires a block");
+        } else {
+            *out = val_block(blk->block.block_node, blk->block.closure);
+        }
+        return 1;
+    }
     if (strcmp(name, "new") == 0) {
         Value obj = val_object(ev->arena, recv);
         RubyClass *klass = recv.klass;
@@ -18,9 +26,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 Value klass_val; klass_val.kind = VAL_CLASS; klass_val.klass = klass;
                 env_set(ev->arena, method_env, "__class__", klass_val);
                 if (blk) method_env->block_arg = blk;
-                NodeList *params = init_method.method.def_node->def.params;
-                for (int i = 0; i < argc && params; i++, params = params->next)
-                    env_set(ev->arena, method_env, params->node->param.name, args[i]);
+                bind_params(ev, method_env, init_method.method.def_node->def.params, args, argc);
                 ev->call_depth++;
                 eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, "initialize");
                 Value result = eval_node(ev, method_env, init_method.method.def_node->def.body);
@@ -49,9 +55,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             Value kv; kv.kind = VAL_CLASS; kv.klass = cklass;
             env_set(ev->arena, method_env, "__class__", kv);
             if (blk) method_env->block_arg = blk;
-            NodeList *params = cm.method.def_node->def.params;
-            for (int i = 0; i < argc && params; i++, params = params->next)
-                env_set(ev->arena, method_env, params->node->param.name, args[i]);
+            bind_params(ev, method_env, cm.method.def_node->def.params, args, argc);
             ev->call_depth++;
             eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
             Value result = eval_node(ev, method_env, cm.method.def_node->def.body);
@@ -99,9 +103,7 @@ int dispatch_object(Eval *ev, Value recv, const char *name, Value *args, int arg
             Value klass_val; klass_val.kind = VAL_CLASS; klass_val.klass = klass;
             env_set(ev->arena, method_env, "__class__", klass_val);
             if (blk) method_env->block_arg = blk;
-            NodeList *params = method.method.def_node->def.params;
-            for (int i = 0; i < argc && params; i++, params = params->next)
-                env_set(ev->arena, method_env, params->node->param.name, args[i]);
+            bind_params(ev, method_env, method.method.def_node->def.params, args, argc);
             ev->call_depth++;
             eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
             Value result = eval_node(ev, method_env, method.method.def_node->def.body);

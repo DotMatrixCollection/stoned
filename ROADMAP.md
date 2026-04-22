@@ -8,7 +8,6 @@ This reflects the current checked-in interpreter state, not the original prototy
 The current priority is making the implemented subset more Ruby-like and less surprising:
 
 - tighten command-style call parsing in more edge cases
-- tighten block/yield semantics and block argument handling
 - expand regression coverage for arrays, hashes, and method dispatch
 - reduce remaining differences between parenthesized and unparenthesized call forms
 - keep exception behavior coherent as more Ruby-like forms land
@@ -19,13 +18,14 @@ Core reflection exists in part, but it should be made more consistent across val
 - `is_a?`, `kind_of?`, `instance_of?`, `class`, `nil?`, `respond_to?`
 - align behavior across primitives, objects, classes, arrays, and hashes
 
-### Multiple assignment
-`a, b = 1, 2` and `a, b = b, a`. Splat on the left: `first, *rest = arr`. Parser already tokenizes the pieces, but assignment needs a real multi-target representation.
-
 ## Medium term
 
 ### Proc / lambda
-`Proc.new { |x| x }`, `lambda { |x| x }`, `-> (x) { x }`. Mostly reuses the existing `VAL_BLOCK` machinery; the main delta is: lambdas check arity strictly and `return` from a lambda exits the lambda (not the enclosing method).
+The core callable forms now exist, but the remaining work is semantic cleanup:
+
+- Ruby-complete proc/lambda control-flow edge cases
+- fuller arity behavior and argument coercion
+- better integration with method/block conversion patterns
 
 ### Modules and `include` / `extend`
 `module Foo ... end`, `include Foo` in a class body. Method lookup needs to walk the full ancestor chain (class → included modules in reverse order → superclass → ...).
@@ -50,7 +50,6 @@ Hook called when method lookup fails on an object. Enables metaprogramming patte
 ### Exception polish
 The core exception path now exists, but it still needs:
 
-- backtraces on uncaught exceptions
 - richer exception objects beyond class/message/origin
 - more rescue syntax (`rescue => e` is in; typed lists and fuller Ruby forms are not)
 - better typed runtime errors throughout the evaluator
@@ -80,6 +79,10 @@ These were previously roadmap items and are now implemented in the current tree:
 - `begin` / `rescue` / `ensure`
 - typed rescue clauses and rescue variable binding
 - re-raise and exception object basics
+- uncaught exception backtraces
+- broader typed runtime errors (`ArgumentError`, `TypeError`, `NoMethodError`, `ZeroDivisionError`, `LocalJumpError`, `KeyError`)
+- multiple assignment, splat capture, and destructuring
+- `Proc.new`, `lambda`, and `->` literals with callable proc/lambda values
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files
