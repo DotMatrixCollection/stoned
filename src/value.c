@@ -88,6 +88,15 @@ void val_array_push(Value *arr, Value elem) {
     arr->array->elems[arr->array->len++] = elem;
 }
 
+Value val_range(Arena *a, Value begin_val, Value end_val, int exclusive) {
+    RubyRange *r = arena_alloc(a, sizeof(RubyRange));
+    r->begin_val = begin_val;
+    r->end_val   = end_val;
+    r->exclusive = exclusive;
+    Value v; v.kind = VAL_RANGE; v.range = r;
+    return v;
+}
+
 Value val_hash_new(Arena *a) {
     RubyHash *h = arena_alloc(a, sizeof(RubyHash));
     h->keys = NULL;
@@ -234,6 +243,17 @@ const char *val_to_s(Arena *a, Value v) {
             strcat(buf, "}");
             return buf;
         }
+        case VAL_RANGE: {
+            const char *bs = val_inspect(a, v.range->begin_val);
+            const char *es = val_inspect(a, v.range->end_val);
+            const char *dots = v.range->exclusive ? "..." : "..";
+            size_t blen = strlen(bs), elen = strlen(es), dlen = strlen(dots);
+            char *rbuf = arena_alloc(a, blen + dlen + elen + 1);
+            memcpy(rbuf, bs, blen);
+            memcpy(rbuf + blen, dots, dlen);
+            memcpy(rbuf + blen + dlen, es, elen + 1);
+            return rbuf;
+        }
         case VAL_METHOD: return "#<Method>";
         case VAL_BLOCK:  return "#<Proc>";
         case VAL_CLASS:
@@ -276,6 +296,7 @@ const char *val_kind_name(ValueKind k) {
         case VAL_SYMBOL: return "Symbol";
         case VAL_ARRAY:  return "Array";
         case VAL_HASH:   return "Hash";
+        case VAL_RANGE:  return "Range";
         case VAL_CLASS:  return "Class";
         case VAL_OBJECT: return "Object";
         case VAL_METHOD: return "Method";

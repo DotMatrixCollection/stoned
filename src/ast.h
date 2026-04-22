@@ -30,6 +30,7 @@ typedef enum {
     NODE_ARRAY,
     NODE_HASH,
     NODE_PAIR,          /* key => value inside a hash */
+    NODE_RANGE,         /* begin..end or begin...end */
 
     /* Variables */
     NODE_LVAR,          /* local */
@@ -211,6 +212,13 @@ struct Node {
             Node *key;
             Node *value;
         } pair;
+
+        /* NODE_RANGE */
+        struct {
+            Node *begin;
+            Node *end;
+            int   exclusive;
+        } range;
 
         /* NODE_SUPER */
         struct {

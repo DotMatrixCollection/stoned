@@ -46,11 +46,11 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `98 passed, 0 failed, 98 total`.
+Current coverage in the tree: `101 passed, 0 failed, 101 total`.
 
 What is working today:
 
-- Core values: `nil`, booleans, integers, floats, UTF-8 strings with interpolation, symbols, arrays, hashes
+- Core values: `nil`, booleans, integers, floats, UTF-8 strings with interpolation, symbols, arrays, hashes, ranges
 - Operators: arithmetic, comparison, bitwise, string/array `+`, array `<<`, `**`, `<=>`, `&&`, `||`
 - Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return`
 - Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, typed rescue lists, rescue variable binding, `retry`, re-raise, uncaught backtraces, typed runtime failures including `NameError`, `NoMethodError`, `TypeError`, `SystemStackError`, `EncodingError`, and existing core error classes; exception instances support `new(message)`, `message`, `to_s`, `inspect`, `exception`, `backtrace`, and `set_backtrace`
@@ -63,6 +63,7 @@ What is working today:
 - Dispatch hooks: `method_missing` and `respond_to_missing?` for objects, classes, and primitive-backed reopened classes; class/module reflection is now consistent across `class`, `is_a?`, and `instance_of?`, with stricter arity enforcement on core reflection built-ins and user-defined methods
 - Operator method defs like `def <=>` and generic operator dispatch for user-defined operator methods
 - Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`
+- Range: `..` and `...` literals; `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `min`, `max`, `sum`, `step`, `map`, `select`, `reject`, `reduce`, `any?`/`all?`/`none?`; `Range` includes `Enumerable`; integer and string ranges supported
 - Hash syntax: both `{:a => 1}` and modern label syntax like `{a: 1}`
 - Assignment: parallel assignment, swap, splat capture, nested destructuring, destructured method and block params
 - Proc/lambda: `Proc.new {}`, `lambda {}`, `-> (...) {}`, `call`, `[]`, `lambda?`, `arity`, lambda `return`, proc non-local `return`
@@ -76,6 +77,7 @@ What is working today:
 
 Known limitations:
 
+- `puts (expr)` and `p (expr)` parse as `puts(expr)` — the space before `(` does not prevent the parser from treating it as a call paren. `puts(expr).method` chains on the return value of `puts` (nil), not on `expr`. Use a local variable or write `puts expr` without parentheses to avoid this.
 - This is not Ruby-compatible enough for real-world code yet
 - Text is UTF-8-only across source loading and runtime strings; invalid UTF-8 is rejected in source, `require`, `File.read`, and stdin text reads
 - File/IO coverage is path-backed and stream-mode basic; no socket IO, no binary mode, no seek/tell

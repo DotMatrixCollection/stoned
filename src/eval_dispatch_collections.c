@@ -532,3 +532,274 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     *out = eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for Hash", name);
     return 1;
 }
+
+static int range_include_value(Eval *ev, Env *env, RubyRange *r, Value v, Node *site) {
+    /* Fast path for integer ranges */
+    if (r->begin_val.kind == VAL_INT && r->end_val.kind == VAL_INT && v.kind == VAL_INT) {
+        return v.ival >= r->begin_val.ival &&
+               (r->exclusive ? v.ival < r->end_val.ival : v.ival <= r->end_val.ival);
+    }
+    /* General: use <=> comparison */
+    Value cmp_lo = dispatch_method(ev, env, v, "<=>", &r->begin_val, 1, NULL, site, 0, 1);
+    if (cmp_lo.kind != VAL_INT || cmp_lo.ival < 0) return 0;
+    Value cmp_hi = dispatch_method(ev, env, v, "<=>", &r->end_val, 1, NULL, site, 0, 1);
+    if (cmp_hi.kind != VAL_INT) return 0;
+    return r->exclusive ? cmp_hi.ival < 0 : cmp_hi.ival <= 0;
+}
+
+int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
+                   Value *blk, Node *site, Value *out) {
+    if (recv.kind != VAL_RANGE) return 0;
+    RubyRange *r = recv.range;
+
+    if (strcmp(name, "begin") == 0) {
+        if (argc > 0) {
+            /* first(n) semantics */
+            if (r->begin_val.kind != VAL_INT)
+                { *out = eval_raise_class(ev, site, "TypeError", "Range#first(n) requires Integer range"); return 1; }
+            int64_t n = args[0].kind == VAL_INT ? args[0].ival : 0;
+            Value arr = val_array_new();
+            int64_t hi = r->end_val.kind == VAL_INT ? r->end_val.ival : INT64_MAX;
+            for (int64_t i = r->begin_val.ival; i < r->begin_val.ival + n; i++) {
+                if (r->exclusive ? i >= hi : i > hi) break;
+                val_array_push(&arr, val_int(i));
+            }
+            *out = arr; return 1;
+        }
+        *out = r->begin_val; return 1;
+    }
+    if (strcmp(name, "first") == 0) {
+        if (argc > 0) {
+            if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+                { *out = eval_raise_class(ev, site, "TypeError", "Range#first(n) requires Integer range"); return 1; }
+            int64_t n = args[0].kind == VAL_INT ? args[0].ival : 0;
+            Value arr = val_array_new();
+            int64_t hi = r->end_val.ival;
+            for (int64_t i = r->begin_val.ival; i < r->begin_val.ival + n; i++) {
+                if (r->exclusive ? i >= hi : i > hi) break;
+                val_array_push(&arr, val_int(i));
+            }
+            *out = arr; return 1;
+        }
+        *out = r->begin_val; return 1;
+    }
+    if (strcmp(name, "end") == 0) {
+        if (argc > 0) {
+            if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+                { *out = eval_raise_class(ev, site, "TypeError", "Range#last(n) requires Integer range"); return 1; }
+            int64_t n = args[0].kind == VAL_INT ? args[0].ival : 0;
+            int64_t hi = r->exclusive ? r->end_val.ival - 1 : r->end_val.ival;
+            Value arr = val_array_new();
+            int64_t lo = hi - n + 1;
+            for (int64_t i = lo; i <= hi; i++) val_array_push(&arr, val_int(i));
+            *out = arr; return 1;
+        }
+        *out = r->end_val; return 1;
+    }
+    if (strcmp(name, "last") == 0) {
+        if (argc > 0) {
+            if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+                { *out = eval_raise_class(ev, site, "TypeError", "Range#last(n) requires Integer range"); return 1; }
+            int64_t n = args[0].kind == VAL_INT ? args[0].ival : 0;
+            int64_t hi = r->exclusive ? r->end_val.ival - 1 : r->end_val.ival;
+            Value arr = val_array_new();
+            int64_t lo = hi - n + 1;
+            for (int64_t i = lo; i <= hi; i++) val_array_push(&arr, val_int(i));
+            *out = arr; return 1;
+        }
+        *out = r->end_val; return 1;
+    }
+    if (strcmp(name, "exclude_end?") == 0) { *out = val_bool(r->exclusive); return 1; }
+
+    if (strcmp(name, "include?") == 0 || strcmp(name, "member?") == 0 ||
+        strcmp(name, "cover?") == 0 || strcmp(name, "===") == 0) {
+        if (argc < 1)
+            { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        *out = val_bool(range_include_value(ev, env, r, args[0], site));
+        return 1;
+    }
+
+    if (strcmp(name, "each") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#each requires a block"); return 1; }
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#each requires Integer range"); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
+            Value arg = val_int(i);
+            Value res = call_block(ev, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(res, out)) return 1;
+        }
+        *out = recv; return 1;
+    }
+
+    if (strcmp(name, "each_with_index") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#each_with_index requires a block"); return 1; }
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#each_with_index requires Integer range"); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        int64_t idx = 0;
+        for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++, idx++) {
+            Value bargs[2] = { val_int(i), val_int(idx) };
+            Value res = call_block(ev, *blk, bargs, 2, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(res, out)) return 1;
+        }
+        *out = recv; return 1;
+    }
+
+    if (strcmp(name, "to_a") == 0 || strcmp(name, "entries") == 0) {
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#to_a requires Integer range"); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        Value arr = val_array_new();
+        for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++)
+            val_array_push(&arr, val_int(i));
+        *out = arr; return 1;
+    }
+
+    if (strcmp(name, "size") == 0 || strcmp(name, "count") == 0 || strcmp(name, "length") == 0) {
+        if (argc > 0 && strcmp(name, "count") == 0) {
+            /* count with block — fall through to Enumerable */
+            return 0;
+        }
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = val_nil(); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        int64_t sz = r->exclusive ? (hi > lo ? hi - lo : 0) : (hi >= lo ? hi - lo + 1 : 0);
+        *out = val_int(sz); return 1;
+    }
+
+    if (strcmp(name, "min") == 0) {
+        if (blk) return 0; /* min with block — fall through to Enumerable */
+        *out = r->begin_val; return 1;
+    }
+    if (strcmp(name, "max") == 0) {
+        if (blk) return 0; /* max with block — fall through to Enumerable */
+        if (r->exclusive && r->begin_val.kind == VAL_INT && r->end_val.kind == VAL_INT)
+            *out = val_int(r->end_val.ival - 1);
+        else
+            *out = r->end_val;
+        return 1;
+    }
+
+    if (strcmp(name, "sum") == 0) {
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#sum requires Integer range"); return 1; }
+        int64_t lo = r->begin_val.ival;
+        int64_t hi = r->exclusive ? r->end_val.ival - 1 : r->end_val.ival;
+        int64_t init = argc > 0 && args[0].kind == VAL_INT ? args[0].ival : 0;
+        if (hi < lo) { *out = val_int(init); return 1; }
+        *out = val_int(init + (hi - lo + 1) * (lo + hi) / 2); return 1;
+    }
+
+    if (strcmp(name, "step") == 0) {
+        if (argc < 1)
+            { *out = eval_raise_class(ev, site, "ArgumentError", "Range#step requires a step value"); return 1; }
+        if (!blk)
+            { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#step requires a block"); return 1; }
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT || args[0].kind != VAL_INT)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#step requires Integer range and step"); return 1; }
+        int64_t step = args[0].ival;
+        if (step <= 0)
+            { *out = eval_raise_class(ev, site, "ArgumentError", "step must be positive"); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i += step) {
+            Value arg = val_int(i);
+            Value res = call_block(ev, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(res, out)) return 1;
+        }
+        *out = recv; return 1;
+    }
+
+    if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#map requires a block"); return 1; }
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#map requires Integer range"); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        Value result = val_array_new();
+        for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
+            Value arg = val_int(i);
+            Value res = call_block(ev, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(res, out)) return 1;
+            val_array_push(&result, res);
+        }
+        *out = result; return 1;
+    }
+
+    if (strcmp(name, "select") == 0 || strcmp(name, "filter") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#select requires a block"); return 1; }
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#select requires Integer range"); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        Value result = val_array_new();
+        for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
+            Value arg = val_int(i);
+            Value res = call_block(ev, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(res, out)) return 1;
+            if (val_truthy(res)) val_array_push(&result, arg);
+        }
+        *out = result; return 1;
+    }
+
+    if (strcmp(name, "reject") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#reject requires a block"); return 1; }
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#reject requires Integer range"); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        Value result = val_array_new();
+        for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
+            Value arg = val_int(i);
+            Value res = call_block(ev, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(res, out)) return 1;
+            if (!val_truthy(res)) val_array_push(&result, arg);
+        }
+        *out = result; return 1;
+    }
+
+    if (strcmp(name, "reduce") == 0 || strcmp(name, "inject") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#reduce requires a block"); return 1; }
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#reduce requires Integer range"); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        int64_t start = lo;
+        Value acc = argc > 0 ? args[0] : val_int(start++);
+        for (int64_t i = start; r->exclusive ? i < hi : i <= hi; i++) {
+            Value bargs[2] = { acc, val_int(i) };
+            Value res = call_block(ev, *blk, bargs, 2, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(res, out)) return 1;
+            acc = res;
+        }
+        *out = acc; return 1;
+    }
+
+    if (strcmp(name, "any?") == 0 || strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#any? requires a block"); return 1; }
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range iteration requires Integer range"); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        *out = (strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) ? val_true() : val_false();
+        for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
+            Value arg = val_int(i);
+            Value res = call_block(ev, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (res.kind == VAL_EXCEPTION) { *out = res; return 1; }
+            if (strcmp(name, "any?") == 0 && val_truthy(res)) { *out = val_true(); return 1; }
+            if (strcmp(name, "all?") == 0 && !val_truthy(res)) { *out = val_false(); return 1; }
+            if (strcmp(name, "none?") == 0 && val_truthy(res)) { *out = val_false(); return 1; }
+        }
+        return 1;
+    }
+
+    if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0)
+        { *out = val_string(ev->arena, val_to_s(ev->arena, recv)); return 1; }
+
+    if (strcmp(name, "nil?") == 0) { *out = val_false(); return 1; }
+
+    return 0;
+}

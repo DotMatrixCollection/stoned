@@ -98,6 +98,7 @@ static BP infix_bp(TokenKind k) {
         case TOK_QUESTION: return (BP){8, 7};
         case TOK_PIPE2: return (BP){10, 11};
         case TOK_AMP2: return (BP){12, 13};
+        case TOK_DOT2: case TOK_DOT3: return (BP){8, 9};
         case TOK_EQ2: case TOK_NEQ: case TOK_EQ3: case TOK_MATCH: case TOK_NMATCH:
             return (BP){14, 15};
         case TOK_LT: case TOK_LEQ: case TOK_GT: case TOK_GEQ: case TOK_SPACESHIP:
@@ -295,6 +296,16 @@ Node *parse_expr(Parser *p, int min_bp) {
             if (check(p, TOK_LBRACE) || (check(p, TOK_DO) && p->command_arg_depth <= 1))
                 call->call.block = parse_block(p);
             left = call;
+            continue;
+        }
+
+        if (op.kind == TOK_DOT2 || op.kind == TOK_DOT3) {
+            Node *right = parse_expr(p, bp.rbp);
+            Node *n = node_new(p->arena, NODE_RANGE, left->span);
+            n->range.begin = left;
+            n->range.end   = right;
+            n->range.exclusive = (op.kind == TOK_DOT3);
+            left = n;
             continue;
         }
 

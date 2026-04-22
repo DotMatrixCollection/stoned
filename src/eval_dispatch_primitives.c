@@ -399,6 +399,11 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     if (recv.kind != VAL_STRING) return 0;
     const char *s = recv.sval ? recv.sval : "";
     if (strcmp(name, "to_s") == 0) { *out = recv; return 1; }
+    if (strcmp(name, "<=>") == 0) {
+        if (argc < 1 || args[0].kind != VAL_STRING) { *out = val_nil(); return 1; }
+        int c = strcmp(s, args[0].sval ? args[0].sval : "");
+        *out = val_int(c < 0 ? -1 : c > 0 ? 1 : 0); return 1;
+    }
     if (strcmp(name, "to_i") == 0) { *out = val_int(atoll(s)); return 1; }
     if (strcmp(name, "to_f") == 0) { *out = val_float(atof(s)); return 1; }
     if (strcmp(name, "to_sym") == 0) { *out = val_symbol(s); return 1; }

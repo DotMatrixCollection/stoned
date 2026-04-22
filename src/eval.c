@@ -438,6 +438,14 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             return mod;
         }
 
+        case NODE_RANGE: {
+            Value begin = eval_node(ev, env, node->range.begin);
+            CHECK(begin);
+            Value end = eval_node(ev, env, node->range.end);
+            CHECK(end);
+            return val_range(ev->arena, begin, end, node->range.exclusive);
+        }
+
         case NODE_ARRAY: {
             Value arr = val_array_new();
             for (NodeList *l = node->array.elements; l; l = l->next) {
@@ -498,7 +506,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     static const char *builtins[] = {
         "Object", "BasicObject", "Numeric",
         "Integer", "Float", "String", "Symbol",
-        "Array", "Hash", "NilClass", "TrueClass", "FalseClass", "IO", "File",
+        "Array", "Hash", "Range", "NilClass", "TrueClass", "FalseClass", "IO", "File",
         "Class", "Module", "Method", "Proc", "Comparable", "Enumerable",
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NameError", "NoMethodError",
@@ -656,6 +664,9 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         "  include Enumerable\n"
         "end\n"
         "class Hash\n"
+        "  include Enumerable\n"
+        "end\n"
+        "class Range\n"
         "  include Enumerable\n"
         "end\n";
 

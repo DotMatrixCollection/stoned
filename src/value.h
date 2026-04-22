@@ -18,6 +18,7 @@ typedef enum {
     VAL_SYMBOL,
     VAL_ARRAY,
     VAL_HASH,       /* key-value map, insertion-order preserving */
+    VAL_RANGE,      /* begin..end or begin...end */
     VAL_CLASS,      /* user-defined class */
     VAL_OBJECT,     /* instance of a class */
     VAL_METHOD,     /* user-defined: Node* + closure Env* */
@@ -41,6 +42,7 @@ typedef struct RubyArray  RubyArray;
 typedef struct RubyClass  RubyClass;
 typedef struct RubyObject RubyObject;
 typedef struct RubyHash   RubyHash;
+typedef struct RubyRange  RubyRange;
 typedef struct RubyModuleInclusion RubyModuleInclusion;
 
 typedef struct Value {
@@ -54,6 +56,7 @@ typedef struct Value {
         RubyArray  *array;     /* VAL_ARRAY */
 
         RubyHash   *hash;      /* VAL_HASH */
+        RubyRange  *range;     /* VAL_RANGE */
         RubyClass  *klass;     /* VAL_CLASS */
         RubyObject *obj;       /* VAL_OBJECT */
 
@@ -114,6 +117,12 @@ struct RubyHash {
     size_t  cap;
 };
 
+struct RubyRange {
+    Value begin_val;
+    Value end_val;
+    int   exclusive; /* 1 for ..., 0 for .. */
+};
+
 /* ------------------------------------------------------------------ */
 /* Constructors                                                         */
 /* ------------------------------------------------------------------ */
@@ -138,6 +147,8 @@ Value val_hash_new(Arena *a);
 void  val_hash_set(RubyHash *h, Value key, Value val);
 int   val_hash_get(RubyHash *h, Value key, Value *out);
 int   val_hash_delete(RubyHash *h, Value key);
+
+Value val_range(Arena *a, Value begin_val, Value end_val, int exclusive);
 
 Value val_return(Arena *a, Value inner);
 Value val_break(Arena *a, Value inner);
@@ -185,6 +196,10 @@ static inline int val_equal(Value a, Value b) {
             while (a.sval[i] && b.sval[i] && a.sval[i] == b.sval[i]) i++;
             return a.sval[i] == b.sval[i];
         }
+        case VAL_RANGE:
+            return a.range->exclusive == b.range->exclusive &&
+                   val_equal(a.range->begin_val, b.range->begin_val) &&
+                   val_equal(a.range->end_val, b.range->end_val);
         default: return 0;
     }
 }

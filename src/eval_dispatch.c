@@ -141,6 +141,7 @@ static const char *prim_class_name(Value v) {
         case VAL_SYMBOL: return "Symbol";
         case VAL_ARRAY:  return "Array";
         case VAL_HASH:   return "Hash";
+        case VAL_RANGE:  return "Range";
         case VAL_NIL:    return "NilClass";
         case VAL_BOOL:   return v.bval ? "TrueClass" : "FalseClass";
         case VAL_CLASS:  return "Class";
@@ -184,6 +185,8 @@ static int val_is_a(Value v, Value klass_arg) {
     }
     if (strcmp(kname, "Numeric") == 0)
         return v.kind == VAL_INT || v.kind == VAL_FLOAT;
+    if (strcmp(kname, "Enumerable") == 0)
+        return v.kind == VAL_RANGE;
     return strcmp(prim_class_name(v), kname) == 0;
 }
 
@@ -240,6 +243,14 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     static const char *proc_methods[] = {
         "call", "[]", "lambda?", "arity", "to_s", "inspect", NULL
     };
+    static const char *range_methods[] = {
+        "begin", "first", "end", "last", "exclude_end?",
+        "include?", "member?", "cover?", "===",
+        "each", "each_with_index", "to_a", "entries",
+        "size", "count", "length", "min", "max", "step",
+        "map", "collect", "select", "filter", "reject",
+        "to_s", "inspect", NULL
+    };
     static const char *nil_methods[] = {
         "nil?", "to_s", "inspect", NULL
     };
@@ -253,6 +264,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     else if (recv.kind == VAL_STRING) methods = str_methods;
     else if (recv.kind == VAL_ARRAY) methods = arr_methods;
     else if (recv.kind == VAL_HASH) methods = hash_methods;
+    else if (recv.kind == VAL_RANGE) methods = range_methods;
     else if (recv.kind == VAL_BLOCK) methods = proc_methods;
     else if (recv.kind == VAL_NIL) methods = nil_methods;
     else if (recv.kind == VAL_BOOL) methods = bool_methods;
@@ -699,6 +711,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (dispatch_string(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (recv.kind == VAL_ARRAY && dispatch_array(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (recv.kind == VAL_HASH && dispatch_hash(ev, env, recv, name, args, argc, blk, site, &out)) return out;
+    if (recv.kind == VAL_RANGE && dispatch_range(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (recv.kind == VAL_NIL && dispatch_nil(ev, recv, name, site, &out)) return out;
     if (dispatch_bool(ev, recv, name, site, &out)) return out;
 
