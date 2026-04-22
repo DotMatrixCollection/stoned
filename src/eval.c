@@ -109,9 +109,76 @@ static Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_s
 static Value eval_call(Eval *ev, Env *env, Node *node);
 
 /* ------------------------------------------------------------------ */
+/* attr_reader / attr_writer synthesis helpers                         */
+/* ------------------------------------------------------------------ */
+static void define_attr_reader(Eval *ev, Value klass, const char *attr) {
+    if (klass.kind != VAL_CLASS) return;
+    Arena *a = ev->arena;
+
+    Node *ivar_node = arena_alloc(a, sizeof(Node));
+    memset(ivar_node, 0, sizeof(Node));
+    ivar_node->kind = NODE_IVAR; ivar_node->sval = attr; /* lexer strips '@' */
+
+    NodeList *stmts = arena_alloc(a, sizeof(NodeList));
+    stmts->node = ivar_node; stmts->next = NULL;
+
+    Node *body = arena_alloc(a, sizeof(Node));
+    memset(body, 0, sizeof(Node));
+    body->kind = NODE_BODY; body->body.stmts = stmts;
+
+    Node *def = arena_alloc(a, sizeof(Node));
+    memset(def, 0, sizeof(Node));
+    def->kind = NODE_DEF; def->def.name = attr; def->def.body = body;
+
+    env_define(a, klass.klass->class_env, attr, val_method(def, ev->top_env));
+}
+
+static void define_attr_writer(Eval *ev, Value klass, const char *attr) {
+    if (klass.kind != VAL_CLASS) return;
+    Arena *a = ev->arena;
+    size_t alen = strlen(attr);
+
+    char *method_name = arena_alloc(a, alen + 2);
+    memcpy(method_name, attr, alen); method_name[alen] = '='; method_name[alen + 1] = '\0';
+
+    Node *param = arena_alloc(a, sizeof(Node));
+    memset(param, 0, sizeof(Node));
+    param->kind = NODE_PARAM; param->param.name = "value";
+    NodeList *params = arena_alloc(a, sizeof(NodeList));
+    params->node = param; params->next = NULL;
+
+    Node *ivar_target = arena_alloc(a, sizeof(Node));
+    memset(ivar_target, 0, sizeof(Node));
+    ivar_target->kind = NODE_IVAR; ivar_target->sval = attr; /* lexer strips '@' */
+
+    Node *value_node = arena_alloc(a, sizeof(Node));
+    memset(value_node, 0, sizeof(Node));
+    value_node->kind = NODE_LVAR; value_node->sval = "value";
+
+    Node *assign = arena_alloc(a, sizeof(Node));
+    memset(assign, 0, sizeof(Node));
+    assign->kind = NODE_ASSIGN;
+    assign->assign.target = ivar_target; assign->assign.value = value_node;
+
+    NodeList *stmts = arena_alloc(a, sizeof(NodeList));
+    stmts->node = assign; stmts->next = NULL;
+
+    Node *body = arena_alloc(a, sizeof(Node));
+    memset(body, 0, sizeof(Node));
+    body->kind = NODE_BODY; body->body.stmts = stmts;
+
+    Node *def = arena_alloc(a, sizeof(Node));
+    memset(def, 0, sizeof(Node));
+    def->kind = NODE_DEF; def->def.name = method_name;
+    def->def.params = params; def->def.body = body;
+
+    env_define(a, klass.klass->class_env, method_name, val_method(def, ev->top_env));
+}
+
+/* ------------------------------------------------------------------ */
 /* Built-in method dispatch                                             */
 /* ------------------------------------------------------------------ */
-static Value builtin_kernel(Eval *ev, Env *env __attribute__((unused)), const char *name,
+static Value builtin_kernel(Eval *ev, Env *env, const char *name,
                              Value *args, int argc, Value *blk, Node *site) {
     if (strcmp(name, "puts") == 0) {
         if (argc == 0) { fprintf(ev->out, "\n"); return val_nil(); }
@@ -152,6 +219,22 @@ static Value builtin_kernel(Eval *ev, Env *env __attribute__((unused)), const ch
     if (strcmp(name, "exit") == 0) {
         int code = argc > 0 ? (int)args[0].ival : 0;
         exit(code);
+    }
+    if (strcmp(name, "attr_reader") == 0 || strcmp(name, "attr_writer") == 0 ||
+        strcmp(name, "attr_accessor") == 0) {
+        Value self;
+        if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
+            ERR(site, "%s must be called in a class body", name);
+        for (int i = 0; i < argc; i++) {
+            const char *attr = (args[i].kind == VAL_SYMBOL || args[i].kind == VAL_STRING)
+                               ? args[i].sval : NULL;
+            if (!attr) continue;
+            if (strcmp(name, "attr_reader") == 0 || strcmp(name, "attr_accessor") == 0)
+                define_attr_reader(ev, self, attr);
+            if (strcmp(name, "attr_writer") == 0 || strcmp(name, "attr_accessor") == 0)
+                define_attr_writer(ev, self, attr);
+        }
+        return val_nil();
     }
     (void)blk;
     return val_nil();  /* unknown — caller handles */
@@ -896,6 +979,34 @@ static Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value r
             }
             return obj;
         }
+        /* class methods: look for "self.name" in class_env hierarchy */
+        {
+            size_t nlen = strlen(name);
+            char *key = arena_alloc(ev->arena, nlen + 6);
+            memcpy(key, "self.", 5); memcpy(key + 5, name, nlen + 1);
+            RubyClass *cklass = recv.klass;
+            while (cklass) {
+                Value cm;
+                if (env_get(cklass->class_env, key, &cm) && cm.kind == VAL_METHOD) {
+                    Env *method_env = env_new(ev->arena, cm.method.closure, 1);
+                    env_set(ev->arena, method_env, "self", recv);
+                    env_set(ev->arena, method_env, "__method__", val_symbol(name));
+                    Value kv; kv.kind = VAL_CLASS; kv.klass = cklass;
+                    env_set(ev->arena, method_env, "__class__", kv);
+                    if (blk) method_env->block_arg = blk;
+                    NodeList *params = cm.method.def_node->def.params;
+                    for (int i = 0; i < argc && params; i++, params = params->next)
+                        env_set(ev->arena, method_env, params->node->param.name, args[i]);
+                    ev->call_depth++;
+                    Value result = eval_node(ev, method_env, cm.method.def_node->def.body);
+                    ev->call_depth--;
+                    if (ev->errored) return val_nil();
+                    if (result.kind == VAL_RETURN) result = *result.wrapped;
+                    return result;
+                }
+                cklass = cklass->superclass.kind == VAL_CLASS ? cklass->superclass.klass : NULL;
+            }
+        }
     }
 
     /* ---- Object ---- */
@@ -1085,7 +1196,8 @@ static Value eval_call(Eval *ev, Env *env, Node *node) {
 
         /* Check kernel methods first (highest priority) */
         static const char *kernel_names[] = {
-            "puts", "print", "p", "raise", "rand", "exit", NULL
+            "puts", "print", "p", "raise", "rand", "exit",
+            "attr_reader", "attr_writer", "attr_accessor", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
             if (strcmp(name, kernel_names[i]) == 0) {
@@ -1122,6 +1234,34 @@ static Value eval_call(Eval *ev, Env *env, Node *node) {
                     return result;
                 }
                 klass = klass->superclass.kind == VAL_CLASS ? klass->superclass.klass : NULL;
+            }
+        }
+
+        /* Class method context — self is a class (class body or def self.foo body) */
+        if (env_get(env, "self", &self) && self.kind == VAL_CLASS) {
+            size_t nlen = strlen(name);
+            char *key = arena_alloc(ev->arena, nlen + 6);
+            memcpy(key, "self.", 5); memcpy(key + 5, name, nlen + 1);
+            RubyClass *cklass = self.klass;
+            while (cklass) {
+                if (env_get(cklass->class_env, key, &fn) && fn.kind == VAL_METHOD) {
+                    Env *method_env = env_new(ev->arena, fn.method.closure, 1);
+                    env_set(ev->arena, method_env, "self", self);
+                    env_set(ev->arena, method_env, "__method__", val_symbol(name));
+                    Value kv; kv.kind = VAL_CLASS; kv.klass = cklass;
+                    env_set(ev->arena, method_env, "__class__", kv);
+                    if (blk) method_env->block_arg = blk;
+                    NodeList *params = fn.method.def_node->def.params;
+                    for (int i = 0; i < argc && params; i++, params = params->next)
+                        env_set(ev->arena, method_env, params->node->param.name, args[i]);
+                    ev->call_depth++;
+                    Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
+                    ev->call_depth--;
+                    if (ev->errored) return val_nil();
+                    if (result.kind == VAL_RETURN) result = *result.wrapped;
+                    return result;
+                }
+                cklass = cklass->superclass.kind == VAL_CLASS ? cklass->superclass.klass : NULL;
             }
         }
 
@@ -1481,9 +1621,22 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
 
         /* ---- Definition ---- */
         case NODE_DEF:
-            /* def always defines in the current frame (never updates a parent).
-               Closes over top_env — Ruby's def doesn't capture enclosing method locals. */
-            env_define(ev->arena, env, node->def.name, val_method(node, ev->top_env));
+            if (node->def.recv) {
+                /* def self.foo or def recv.foo — singleton/class method */
+                Value recv = eval_node(ev, env, node->def.recv);
+                CHECK(recv);
+                if (recv.kind != VAL_CLASS)
+                    ERR(node, "can only define singleton methods on a class");
+                size_t nlen = strlen(node->def.name);
+                char *key = arena_alloc(ev->arena, nlen + 6);
+                memcpy(key, "self.", 5); memcpy(key + 5, node->def.name, nlen + 1);
+                env_define(ev->arena, recv.klass->class_env, key,
+                           val_method(node, ev->top_env));
+            } else {
+                /* def always defines in the current frame (never updates a parent).
+                   Closes over top_env — Ruby's def doesn't capture enclosing method locals. */
+                env_define(ev->arena, env, node->def.name, val_method(node, ev->top_env));
+            }
             return val_nil();
 
         /* ---- Class Definition ---- */
@@ -1510,6 +1663,8 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 klass.klass->class_env = env_new(ev->arena, ev->top_env, 1);
             }
 
+            /* bind self = klass so attr_reader/def self.foo/etc can find it */
+            env_set(ev->arena, klass.klass->class_env, "self", klass);
             if (node->klass.body)
                 eval_node(ev, klass.klass->class_env, node->klass.body);
             if (ev->errored) return val_nil();

@@ -213,6 +213,16 @@ static Node *parse_expr(Parser *p, int min_bp) {
                 left->call.args   = nodelist_append(p->arena, left->call.args, right);
                 continue;
             }
+            /* attr-writer: recv.attr = val  →  recv.attr=(val) */
+            if (left->kind == NODE_CALL && left->call.recv && !left->call.args) {
+                size_t nlen = strlen(left->call.method);
+                char *new_name = arena_alloc(p->arena, nlen + 2);
+                memcpy(new_name, left->call.method, nlen);
+                new_name[nlen] = '='; new_name[nlen + 1] = '\0';
+                left->call.method = new_name;
+                left->call.args   = nodelist_append(p->arena, NULL, right);
+                continue;
+            }
             Node *n = node_new(p->arena, NODE_ASSIGN, left->span);
             n->assign.target = left;
             n->assign.value  = right;
@@ -399,9 +409,7 @@ static Node *parse_primary(Parser *p) {
 
         case TOK_IDENT: {
             advance(p);
-            /* method call without parens: foo bar, baz */
-            /* method call with parens: foo(bar, baz)   */
-            /* bare local variable                      */
+            /* method call with parens: foo(bar, baz) */
             if (check(p, TOK_LPAREN)) {
                 advance(p);
                 NodeList *args = parse_args(p);
@@ -415,6 +423,49 @@ static Node *parse_primary(Parser *p) {
                 n->call.args   = args;
                 n->call.block  = block;
                 return n;
+            }
+            /* command-style call: foo arg, arg  (same line, arg-starting token) */
+            {
+                Token nxt = peek(p);
+                /* '[' is subscript when tight (no space), command arg when spaced */
+                int lbracket_as_arg = (nxt.kind == TOK_LBRACKET &&
+                                       nxt.col > t.col + t.len);
+                /* tokens that unambiguously start an argument expression */
+                int can_be_arg =
+                    lbracket_as_arg                ||
+                    nxt.kind == TOK_SYMBOL         ||
+                    nxt.kind == TOK_STRING         ||
+                    nxt.kind == TOK_INTERP_BEG     ||
+                    nxt.kind == TOK_INT            ||
+                    nxt.kind == TOK_FLOAT          ||
+                    nxt.kind == TOK_NIL            ||
+                    nxt.kind == TOK_TRUE           ||
+                    nxt.kind == TOK_FALSE          ||
+                    nxt.kind == TOK_SELF           ||
+                    nxt.kind == TOK_IVAR           ||
+                    nxt.kind == TOK_GVAR           ||
+                    nxt.kind == TOK_CONST          ||
+                    nxt.kind == TOK_IDENT          ||
+                    nxt.kind == TOK_BANG           ||
+                    nxt.kind == TOK_TILDE;
+                if (can_be_arg && nxt.line == t.line) {
+                    NodeList *args = NULL;
+                    Node *first = parse_expr(p, 0);
+                    if (first) args = nodelist_append(p->arena, args, first);
+                    while (match(p, TOK_COMMA)) {
+                        Node *arg = parse_expr(p, 0);
+                        if (arg) args = nodelist_append(p->arena, args, arg);
+                    }
+                    Node *block = NULL;
+                    if (check(p, TOK_LBRACE) || check(p, TOK_DO))
+                        block = parse_block(p);
+                    Node *n = node_new(p->arena, NODE_CALL, s);
+                    n->call.recv   = NULL;
+                    n->call.method = t.sval;
+                    n->call.args   = args;
+                    n->call.block  = block;
+                    return n;
+                }
             }
             /* bare ident — could be local var or zero-arg method call;
                the semantic pass will distinguish */
@@ -669,11 +720,41 @@ static Node *parse_stmt(Parser *p) {
     if (t.kind == TOK_DEF) {
         advance(p);
         Token name_tok = advance(p);
+        Node *n = node_new(p->arena, NODE_DEF, s);
+        n->def.recv = NULL;
+
+        /* def self.method or def recv.method */
+        if (check(p, TOK_DOT)) {
+            /* name_tok is the receiver */
+            Node *recv_node = NULL;
+            if (name_tok.kind == TOK_SELF) {
+                recv_node = node_new(p->arena, NODE_SELF, tok_span(name_tok));
+            } else if (name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) {
+                recv_node = node_new(p->arena, NODE_LVAR, tok_span(name_tok));
+                recv_node->sval = name_tok.sval;
+            } else {
+                error(p, "unexpected receiver in def", name_tok.line, name_tok.col);
+                return NULL;
+            }
+            n->def.recv = recv_node;
+            advance(p); /* consume '.' */
+            name_tok = advance(p);
+        }
+
         if (name_tok.kind != TOK_IDENT && name_tok.kind != TOK_CONST) {
             error(p, "expected method name after 'def'", name_tok.line, name_tok.col);
             return NULL;
         }
-        Node *n = node_new(p->arena, NODE_DEF, s);
+        /* allow trailing ? and ! in method names */
+        if (check(p, TOK_QUESTION) || check(p, TOK_BANG)) {
+            Token suffix = advance(p);
+            size_t nlen = strlen(name_tok.sval);
+            char *buf = arena_alloc(p->arena, nlen + 2);
+            memcpy(buf, name_tok.sval, nlen);
+            buf[nlen] = suffix.kind == TOK_QUESTION ? '?' : '!';
+            buf[nlen + 1] = '\0';
+            name_tok.sval = buf;
+        }
         n->def.name = name_tok.sval;
 
         /* params */
