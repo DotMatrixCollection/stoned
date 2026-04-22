@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `71 passed, 0 failed, 71 total`.
+Current coverage in the tree: `72 passed, 0 failed, 72 total`.
 
 What is working today:
 
@@ -66,6 +66,7 @@ What is working today:
 - Hash syntax: both `{:a => 1}` and modern label syntax like `{a: 1}`
 - Assignment: parallel assignment, swap, splat capture, nested destructuring, destructured method and block params
 - Proc/lambda: `Proc.new {}`, `lambda {}`, `-> (...) {}`, `call`, `[]`, `lambda?`, `arity`, lambda `return`, proc non-local `return`
+- String: `chomp`, `chop`, `lstrip`, `rstrip`, `capitalize`, `swapcase`, `ljust`, `rjust`, `center`, `ord`, `hex`, `oct`, `bytes`, `<<`, `index`, `rindex`, `[]`/`slice`, `lines`, `each_line`, `tr`, `count`, `delete`, `squeeze`, `scan`, `sub`, `gsub` (string and block forms), `inspect`
 - Kernel: `puts`, `print`, `p`, `raise`, `lambda`, `rand`, `exit`
 - IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`; `$stdin.gets` / `$stdin.read`
 - File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`; file objects with `read`, `write`, `print`, `puts`, `path`, `mode`, `close`, `closed?`; modes `r`, `w`, `a` enforced

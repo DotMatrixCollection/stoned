@@ -54,8 +54,8 @@ The core loading path now exists, but it still needs:
 - stronger path canonicalization / platform handling
 - cleaner load-time error reporting beyond the current basic `LoadError` path
 
-### String: more completeness
-`gsub`, `sub`, `match`, `=~`, `scan`, `tr`, `squeeze`, `center`, `ljust`, `rjust`, `bytes`, `encode`. Regex support needs an external library (PCRE2 or similar) or a hand-rolled NFA.
+### String: regex-dependent methods
+`match`, `=~`, `gsub`/`sub`/`scan` with regex patterns. Planned as a 3-tier hybrid with Onigmo fallback for complex backtracking cases. The non-regex surface is now complete.
 
 ### Dispatch hook polish
 The core hook path now exists, but it still needs:
@@ -116,3 +116,4 @@ These were previously roadmap items and are now implemented in the current tree:
 - `File.read`, `File.write`, `File.open` (block and non-block forms), `File.delete`, `File.exist?`
 - file objects: `read`, `write`, `print`, `puts`, `path`, `mode`, `close`, `closed?`; modes `r` / `w` / `a` enforced; `w` truncates on open
 - `IO` class with `$stdout`, `$stderr`, `$stdin` / `STDOUT`, `STDERR`, `STDIN`; instance methods `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `tty?`; `$stdin.gets` / `$stdin.read`
+- String non-regex completeness: `chomp`, `chop`, `lstrip`, `rstrip`, `capitalize`, `swapcase`, `ljust`, `rjust`, `center`, `ord`, `hex`, `oct`, `bytes`, `<<`, `index`, `rindex`, `[]`/`slice`, `lines`, `each_line`, `tr` (with range expansion), `count`, `delete`, `squeeze`, `scan`, `sub`, `gsub` (string and block forms), `inspect`
