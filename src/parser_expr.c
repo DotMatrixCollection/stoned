@@ -326,8 +326,25 @@ NodeList *parse_args(Parser *p) {
     int saved_allow_commas = p->allow_command_arg_commas;
     p->allow_command_arg_commas = 0;
     while (!check(p, TOK_RPAREN) && !check(p, TOK_EOF)) {
-        Node *arg = parse_arg_expr(p);
-        if (arg) args = nodelist_append(p->arena, args, arg);
+        if (check(p, TOK_AMP)) {
+            Span ss = tok_span(peek(p));
+            advance(p);
+            Node *bp = node_new(p->arena, NODE_BLOCK_PASS, ss);
+            bp->block_pass.expr = parse_expr(p, 0);
+            args = nodelist_append(p->arena, args, bp);
+            break; /* & must be last arg */
+        }
+        if (check(p, TOK_STAR)) {
+            Span ss = tok_span(peek(p));
+            advance(p);
+            Node *splat = node_new(p->arena, NODE_UNOP, ss);
+            splat->unop.op = "*";
+            splat->unop.operand = parse_expr(p, 0);
+            args = nodelist_append(p->arena, args, splat);
+        } else {
+            Node *arg = parse_arg_expr(p);
+            if (arg) args = nodelist_append(p->arena, args, arg);
+        }
         if (!match(p, TOK_COMMA)) break;
         skip_terminators(p);
     }

@@ -81,8 +81,6 @@ The core exception path now exists, but it still needs:
 - `StopIteration` and broader standard exception coverage
 
 ### Frozen objects and string mutability
-
-### Frozen objects and string mutability
 `freeze`, `frozen?`, `dup`, `clone`. Strings in Ruby are mutable by default; frozen strings raise `FrozenError` on mutation. Requires a `frozen` flag on string/object values.
 
 ### Numeric polish
@@ -129,6 +127,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - built-in `Comparable` / `Enumerable` plus operator method defs like `def <=>`
 - `Range`: `..` / `...` literals, `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `min`, `max`, `sum`, `step`, `map`, `select`, `reject`, `reduce`, `any?`/`all?`/`none?`; `Range` includes `Enumerable`; integer and string ranges supported; `String#<=>` added as a dispatch method
 - `case`/`when`: value equality, range membership, class membership (`===`), multi-pattern `when`, optional `else`, caseless form, `then` keyword; `case` is an expression; `Class#===` added
+- `Symbol#to_proc`, `&:symbol` and `&proc` block-pass in calls, `*arr` splat args in calls, `proc {}` kernel method, `block_given?`, `Object#itself`; arithmetic/comparison operators (`+`, `-`, `*`, `/`, `%`, `**`, `<`, `<=`, `>`, `>=`, `<=>`, `<<`, `>>`, `&`, `|`, `^`) now dispatchable as methods; operator symbols (`:+`, `:-`, etc.) now valid symbol literals
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files

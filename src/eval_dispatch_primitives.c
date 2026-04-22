@@ -155,6 +155,44 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     if (strcmp(name, "to_f") == 0) { *out = val_float((double)n); return 1; }
     if (strcmp(name, "to_i") == 0 || strcmp(name, "to_int") == 0) { *out = recv; return 1; }
     if (strcmp(name, "to_r") == 0) { *out = recv; return 1; } /* simplification: n/1 */
+    if (argc == 1) {
+        Value r = args[0];
+        int both_int = (r.kind == VAL_INT);
+        double lf = (double)n, rf = both_int ? (double)r.ival : (r.kind == VAL_FLOAT ? r.fval : 0.0);
+        if (strcmp(name, "+") == 0) { *out = both_int ? val_int(n + r.ival) : val_float(lf + rf); return 1; }
+        if (strcmp(name, "-") == 0) { *out = both_int ? val_int(n - r.ival) : val_float(lf - rf); return 1; }
+        if (strcmp(name, "*") == 0) { *out = both_int ? val_int(n * r.ival) : val_float(lf * rf); return 1; }
+        if (strcmp(name, "/") == 0) {
+            if (both_int) {
+                if (r.ival == 0) { *out = eval_raise_class(ev, site, "ZeroDivisionError", "divided by 0"); return 1; }
+                *out = val_int(n / r.ival); return 1;
+            }
+            *out = val_float(lf / rf); return 1;
+        }
+        if (strcmp(name, "%") == 0) {
+            if (both_int) {
+                if (r.ival == 0) { *out = eval_raise_class(ev, site, "ZeroDivisionError", "divided by 0"); return 1; }
+                *out = val_int(n % r.ival); return 1;
+            }
+            *out = val_float(fmod(lf, rf)); return 1;
+        }
+        if (strcmp(name, "**") == 0) {
+            *out = (both_int && r.ival >= 0) ? val_int((int64_t)pow(lf, rf)) : val_float(pow(lf, rf));
+            return 1;
+        }
+        if (strcmp(name, "<")   == 0) { *out = val_bool(lf <  rf); return 1; }
+        if (strcmp(name, "<=")  == 0) { *out = val_bool(lf <= rf); return 1; }
+        if (strcmp(name, ">")   == 0) { *out = val_bool(lf >  rf); return 1; }
+        if (strcmp(name, ">=")  == 0) { *out = val_bool(lf >= rf); return 1; }
+        if (strcmp(name, "<=>") == 0) { *out = val_int(lf < rf ? -1 : lf > rf ? 1 : 0); return 1; }
+        if (both_int) {
+            if (strcmp(name, "&")  == 0) { *out = val_int(n & r.ival); return 1; }
+            if (strcmp(name, "|")  == 0) { *out = val_int(n | r.ival); return 1; }
+            if (strcmp(name, "^")  == 0) { *out = val_int(n ^ r.ival); return 1; }
+            if (strcmp(name, "<<") == 0) { *out = val_int(n << r.ival); return 1; }
+            if (strcmp(name, ">>") == 0) { *out = val_int(n >> r.ival); return 1; }
+        }
+    }
     if (strcmp(name, "abs") == 0)      { *out = val_int(n < 0 ? -n : n); return 1; }
     if (strcmp(name, "abs2") == 0)     { *out = val_int(n * n); return 1; }
     if (strcmp(name, "even?") == 0)    { *out = val_bool(n % 2 == 0); return 1; }
@@ -316,6 +354,21 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "to_r") == 0)   { *out = recv; return 1; } /* simplification */
+    if (argc == 1) {
+        double rf = (args[0].kind == VAL_FLOAT) ? args[0].fval
+                  : (args[0].kind == VAL_INT)   ? (double)args[0].ival : 0.0;
+        if (strcmp(name, "+")   == 0) { *out = val_float(f + rf); return 1; }
+        if (strcmp(name, "-")   == 0) { *out = val_float(f - rf); return 1; }
+        if (strcmp(name, "*")   == 0) { *out = val_float(f * rf); return 1; }
+        if (strcmp(name, "/")   == 0) { *out = val_float(f / rf); return 1; }
+        if (strcmp(name, "%")   == 0) { *out = val_float(fmod(f, rf)); return 1; }
+        if (strcmp(name, "**")  == 0) { *out = val_float(pow(f, rf)); return 1; }
+        if (strcmp(name, "<")   == 0) { *out = val_bool(f <  rf); return 1; }
+        if (strcmp(name, "<=")  == 0) { *out = val_bool(f <= rf); return 1; }
+        if (strcmp(name, ">")   == 0) { *out = val_bool(f >  rf); return 1; }
+        if (strcmp(name, ">=")  == 0) { *out = val_bool(f >= rf); return 1; }
+        if (strcmp(name, "<=>") == 0) { *out = val_int(f < rf ? -1 : f > rf ? 1 : 0); return 1; }
+    }
     if (strcmp(name, "abs") == 0)    { *out = val_float(f < 0 ? -f : f); return 1; }
     if (strcmp(name, "abs2") == 0)   { *out = val_float(f * f); return 1; }
     if (strcmp(name, "zero?") == 0)  { *out = val_bool(f == 0.0); return 1; }

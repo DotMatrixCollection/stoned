@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `105 passed, 0 failed, 105 total`.
+Current coverage in the tree: `107 passed, 0 failed, 107 total`.
 
 What is working today:
 
@@ -66,7 +66,7 @@ What is working today:
 - Range: `..` and `...` literals; `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `min`, `max`, `sum`, `step`, `map`, `select`, `reject`, `reduce`, `any?`/`all?`/`none?`; `Range` includes `Enumerable`; integer and string ranges supported
 - Hash syntax: both `{:a => 1}` and modern label syntax like `{a: 1}`
 - Assignment: parallel assignment, swap, splat capture, nested destructuring, destructured method and block params
-- Proc/lambda: `Proc.new {}`, `lambda {}`, `-> (...) {}`, `call`, `[]`, `lambda?`, `arity`, lambda `return`, proc non-local `return`
+- Proc/lambda: `Proc.new {}`, `proc {}`, `lambda {}`, `-> (...) {}`, `call`, `[]`, `lambda?`, `arity`, lambda `return`, proc non-local `return`; `Symbol#to_proc` and `&:symbol` block-pass in calls; `&proc` block-pass; `*arr` splat args in calls; `block_given?`; `Object#itself`
 - Integer: `gcd`, `lcm`, `pow` (with optional modulus), `divmod`, `digits`, `chr`, `succ`/`pred`, `ceil`/`floor`/`round`/`truncate`, `positive?`/`negative?`/`nonzero?`/`integer?`, `abs2`, `between?`, `clamp`, `step`, `to_s(base)`
 - Float: `nan?`, `infinite?`, `finite?`, `divmod`, `ceil`/`floor`/`round`/`truncate` with optional ndigits, `positive?`/`negative?`/`nonzero?`/`integer?`, `abs2`, `between?`, `clamp`, `step`; `0.0/0.0` now returns `NaN` (IEEE 754)
 - String: UTF-8-only strings; codepoint-aware `length`/`size`, `chars`, `split("")`, `each_char`, `reverse`, `ord`, `index`, `rindex`, `[]`/`slice`, `chop`, `strip`, `lstrip`, `rstrip`, `ljust`, `rjust`, `center`, `upcase`, `downcase`, `capitalize`, `swapcase`, `succ`, `tr`, `count`, `delete`, `squeeze`; plus `chomp`, `hex`, `oct`, `bytes`, `<<`, `lines`, `each_line`, `scan`, `sub`, `gsub` (string and block forms), `inspect`. Current Unicode semantics are codepoint-based with simple case mapping rather than full locale- or grapheme-aware behavior.

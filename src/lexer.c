@@ -231,6 +231,37 @@ static Token scan_symbol(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
         while (isalnum(peek_ch(l)) || peek_ch(l) == '_') advance(l);
         /* allow trailing ? or ! */
         if (peek_ch(l) == '?' || peek_ch(l) == '!') advance(l);
+    } else {
+        /* operator symbols: :+ :- :* :/ :% :** :<< :>> :<=> :<= :>= :< :> :== :!= :=== :[] :[]= :& :| :^ :~ :! */
+        char c = peek_ch(l);
+        if (c == '+' || c == '-' || c == '%' || c == '~' || c == '&' || c == '|' || c == '^') {
+            advance(l);
+        } else if (c == '*') {
+            advance(l);
+            if (peek_ch(l) == '*') advance(l);
+        } else if (c == '/') {
+            advance(l);
+        } else if (c == '<') {
+            advance(l);
+            if (peek_ch(l) == '<') advance(l);
+            else if (peek_ch(l) == '=') { advance(l); if (peek_ch(l) == '>') advance(l); }
+        } else if (c == '>') {
+            advance(l);
+            if (peek_ch(l) == '>') advance(l);
+            else if (peek_ch(l) == '=') advance(l);
+        } else if (c == '=') {
+            advance(l);
+            if (peek_ch(l) == '=') { advance(l); if (peek_ch(l) == '=') advance(l); }
+        } else if (c == '!') {
+            advance(l);
+            if (peek_ch(l) == '=') advance(l);
+        } else if (c == '[') {
+            advance(l);
+            if (peek_ch(l) == ']') {
+                advance(l);
+                if (peek_ch(l) == '=') advance(l);
+            }
+        }
     }
     Token t = make_tok(l, TOK_SYMBOL, start, sline, scol);
     t.sval = intern(l, l->src + sym_start, l->pos - sym_start);
@@ -499,10 +530,15 @@ static Token scan(Lexer *l) {
 
         case ':':
             if (peek_ch(l) == ':') { advance(l); SIMPLE(TOK_COLON2); }
-            /* symbol if followed by ident char or quote */
-            if (isalpha(peek_ch(l)) || peek_ch(l) == '_' ||
-                peek_ch(l) == '"'   || peek_ch(l) == '\'') {
-                return scan_symbol(l, start, sline, scol);
+            /* symbol if followed by ident char, quote, or operator char */
+            {
+                char pc = peek_ch(l);
+                if (isalpha(pc) || pc == '_' || pc == '"' || pc == '\'' ||
+                    pc == '+' || pc == '-' || pc == '*' || pc == '/' || pc == '%' ||
+                    pc == '<' || pc == '>' || pc == '=' || pc == '!' ||
+                    pc == '&' || pc == '|' || pc == '^' || pc == '~' || pc == '[') {
+                    return scan_symbol(l, start, sline, scol);
+                }
             }
             SIMPLE(TOK_COLON);
 

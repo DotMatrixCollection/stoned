@@ -498,6 +498,10 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         }
         return eval_raise_class(ev, site, class_name, "%s", msg);
     }
+    if (strcmp(name, "proc") == 0) {
+        if (!blk) return eval_raise_class(ev, site, "ArgumentError", "proc requires a block");
+        return val_block(blk->block.block_node, blk->block.closure);
+    }
     if (strcmp(name, "lambda") == 0) {
         if (!blk) return eval_raise_class(ev, site, "ArgumentError", "lambda requires a block");
         return val_lambda(blk->block.block_node, blk->block.closure);
@@ -629,6 +633,8 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     return val_nil();
 }
 
+static Value make_symbol_proc(Eval *ev, const char *method_name);
+
 Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                       const char *name, Value *args, int argc,
                       Value *blk, Node *site, int public_only, int explicit_receiver);
@@ -678,6 +684,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     }
     if (strcmp(name, "freeze") == 0) return recv;
     if (strcmp(name, "frozen?") == 0) return val_false();
+    if (strcmp(name, "itself") == 0) return recv;
     if (strcmp(name, "object_id") == 0) {
         if (recv.kind == VAL_OBJECT) return val_int((int64_t)(uintptr_t)recv.obj);
         if (recv.kind == VAL_INT) return val_int(recv.ival * 2 + 1);
@@ -694,6 +701,22 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (strcmp(name, "===") == 0 && recv.kind != VAL_CLASS && recv.kind != VAL_RANGE) {
         if (argc < 1) return val_false();
         return val_bool(val_equal(recv, args[0]));
+    }
+    if (recv.kind == VAL_SYMBOL) {
+        if (strcmp(name, "to_s") == 0 || strcmp(name, "id2name") == 0)
+            return val_string(ev->arena, recv.sval ? recv.sval : "");
+        if (strcmp(name, "inspect") == 0) {
+            const char *s = recv.sval ? recv.sval : "";
+            size_t n = strlen(s);
+            char *buf = arena_alloc(ev->arena, n + 2);
+            buf[0] = ':';
+            memcpy(buf + 1, s, n + 1);
+            return val_string(ev->arena, buf);
+        }
+        if (strcmp(name, "to_sym") == 0) return recv;
+        if (strcmp(name, "to_proc") == 0) return make_symbol_proc(ev, recv.sval ? recv.sval : "");
+        if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0)
+            return val_int((int64_t)(recv.sval ? strlen(recv.sval) : 0));
     }
     if (strcmp(name, "send") == 0 || strcmp(name, "__send__") == 0)
         return dispatch_dynamic_send(ev, env, recv, name, args, argc, blk, site, 0);
@@ -859,23 +882,78 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
     return op_result;
 }
 
+static Value make_symbol_proc(Eval *ev, const char *method_name) {
+    Arena *a = ev->arena;
+    Span s = {0, 0, 0};
+    Node *recv_p = node_new(a, NODE_PARAM, s);
+    recv_p->param.name = "__sym_recv__";
+    Node *rest_p = node_new(a, NODE_PARAM, s);
+    rest_p->param.splat = 1;
+    rest_p->param.name = "__sym_rest__";
+    NodeList *params = nodelist_append(a, NULL, recv_p);
+    params = nodelist_append(a, params, rest_p);
+    Node *rest_var = node_new(a, NODE_LVAR, s);
+    rest_var->sval = "__sym_rest__";
+    Node *splat_arg = node_new(a, NODE_UNOP, s);
+    splat_arg->unop.op = "*";
+    splat_arg->unop.operand = rest_var;
+    Node *recv_var = node_new(a, NODE_LVAR, s);
+    recv_var->sval = "__sym_recv__";
+    Node *call_node = node_new(a, NODE_CALL, s);
+    call_node->call.recv = recv_var;
+    call_node->call.method = method_name;
+    call_node->call.args = nodelist_append(a, NULL, splat_arg);
+    call_node->call.block = NULL;
+    Node *body = node_new(a, NODE_BODY, s);
+    body->body.stmts = nodelist_append(a, NULL, call_node);
+    Node *block_node = node_new(a, NODE_BLOCK, s);
+    block_node->block.params = params;
+    block_node->block.body = body;
+    return val_block(block_node, ev->top_env);
+}
+
 Value eval_call(Eval *ev, Env *env, Node *node) {
     if (ev->call_depth > EVAL_MAX_DEPTH)
         return eval_raise_class(ev, node, "SystemStackError", "stack level too deep");
+
+    Value args[64];
+    int argc = 0;
+    Node *block_pass_node = NULL;
+    for (NodeList *l = node->call.args; l && argc < 64; l = l->next) {
+        if (!l->node) continue;
+        if (l->node->kind == NODE_BLOCK_PASS) { block_pass_node = l->node; continue; }
+        if (l->node->kind == NODE_UNOP && strcmp(l->node->unop.op, "*") == 0) {
+            Value splat = eval_node(ev, env, l->node->unop.operand);
+            CHECK(splat);
+            if (splat.kind == VAL_ARRAY) {
+                for (size_t i = 0; i < splat.array->len && argc < 64; i++)
+                    args[argc++] = splat.array->elems[i];
+            } else {
+                args[argc++] = splat;
+            }
+            continue;
+        }
+        Value a = eval_node(ev, env, l->node);
+        CHECK(a);
+        args[argc++] = a;
+    }
 
     Value blk_val;
     Value *blk = NULL;
     if (node->call.block) {
         blk_val = val_block(node->call.block, env);
         blk = &blk_val;
-    }
-
-    Value args[64];
-    int argc = 0;
-    for (NodeList *l = node->call.args; l && argc < 64; l = l->next) {
-        Value a = eval_node(ev, env, l->node);
-        CHECK(a);
-        args[argc++] = a;
+    } else if (block_pass_node) {
+        Value bp = eval_node(ev, env, block_pass_node->block_pass.expr);
+        if (val_is_signal(bp)) return bp;
+        if (bp.kind == VAL_SYMBOL) {
+            blk_val = make_symbol_proc(ev, bp.sval);
+            blk = &blk_val;
+        } else if (bp.kind == VAL_BLOCK) {
+            blk_val = bp;
+            blk = &blk_val;
+        }
+        /* nil/false block pass → no block */
     }
 
     if (!node->call.recv) {
@@ -890,9 +968,16 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             if (!block_arg) return eval_raise_class(ev, node, "LocalJumpError", "no block given (yield)");
             return call_block(ev, *block_arg, args, argc, node);
         }
+        if (strcmp(name, "block_given?") == 0) {
+            for (Env *sc = env; sc; sc = sc->parent) {
+                if (sc->block_arg) return val_true();
+                if (sc->is_def) break;
+            }
+            return val_false();
+        }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "raise", "lambda", "rand", "exit", "include", "prepend", "extend",
+            "puts", "print", "p", "raise", "proc", "lambda", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", NULL

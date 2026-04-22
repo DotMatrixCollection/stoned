@@ -76,6 +76,9 @@ typedef enum {
     /* Super call */
     NODE_SUPER,
 
+    /* Block pass — &expr in call args */
+    NODE_BLOCK_PASS,
+
     /* Interpolated string (rope) */
     NODE_ROPE,
 
@@ -242,6 +245,11 @@ struct Node {
             NodeList *args;
             int       forward_args; /* 1 = bare super, forward current args */
         } super_call;
+
+        /* NODE_BLOCK_PASS */
+        struct {
+            Node *expr;
+        } block_pass;
 
         /* NODE_ROPE */
         struct {
