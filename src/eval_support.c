@@ -233,12 +233,12 @@ int method_visibility_allows_call(Eval *ev, Env *env, Value recv, RubyClass *own
     if (explicit_receiver < 0) return 1;
     if (visibility == METHOD_PUBLIC) return 1;
     if (public_only) return 0;
+    if (visibility == METHOD_PRIVATE && explicit_receiver) return 0;
 
     Value current_self = val_nil();
     int has_current_self = env && env_get(env, "self", &current_self);
 
     if (visibility == METHOD_PRIVATE) {
-        if (explicit_receiver) return 0;
         if (!has_current_self) return 0;
         if (current_self.kind != recv.kind) return 0;
         if (recv.kind == VAL_OBJECT) return current_self.obj == recv.obj;

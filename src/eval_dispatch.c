@@ -266,6 +266,88 @@ static int val_responds_to(Eval *ev, Value recv, const char *name) {
     return 0;
 }
 
+Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass *owner,
+                        const char *name, Value *args, int argc, Value *blk, Node *site) {
+    (void)env;
+    Env *method_env = env_new(ev->arena, method.method.closure, 1);
+    env_set(ev->arena, method_env, "self", recv);
+    env_set(ev->arena, method_env, "__method__", val_symbol(name));
+    Value owner_val = recv.kind == VAL_OBJECT ? recv.obj->klass : val_nil();
+    if (owner) {
+        owner_val.kind = VAL_CLASS;
+        owner_val.klass = owner;
+    }
+    env_set(ev->arena, method_env, "__class__", owner_val);
+    if (blk) method_env->block_arg = blk;
+    bind_params(ev, method_env, method.method.def_node->def.params, args, argc);
+    ev->call_depth++;
+    eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
+    Value result = eval_node(ev, method_env, method.method.def_node->def.body);
+    eval_pop_frame(ev);
+    ev->call_depth--;
+    if (result.kind == VAL_RETURN) return *result.wrapped;
+    return result;
+}
+
+static Value dispatch_respond_to_missing(Eval *ev, Env *env, Value recv, const char *name, Node *site) {
+    if (recv.kind == VAL_OBJECT) {
+        RubyClass *owner = NULL;
+        Value method;
+        if (ruby_class_find_instance_method(recv.obj->klass.klass, "respond_to_missing?", &method, &owner)) {
+            Value args[2];
+            args[0] = val_symbol(name);
+            args[1] = val_false();
+            Value result = call_method_value(ev, env, recv, method, owner, "respond_to_missing?", args, 2, NULL, site);
+            if (val_is_signal(result)) return result;
+            return val_bool(val_truthy(result));
+        }
+    } else if (recv.kind == VAL_CLASS) {
+        size_t nlen = strlen("respond_to_missing?");
+        char *key = arena_alloc(ev->arena, nlen + 6);
+        memcpy(key, "self.", 5);
+        memcpy(key + 5, "respond_to_missing?", nlen + 1);
+        for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+            Value method;
+            if (env_get(k->class_env, key, &method) && method.kind == VAL_METHOD) {
+                Value args[2];
+                args[0] = val_symbol(name);
+                args[1] = val_false();
+                Value result = call_method_value(ev, env, recv, method, k, "respond_to_missing?", args, 2, NULL, site);
+                if (val_is_signal(result)) return result;
+                return val_bool(val_truthy(result));
+            }
+        }
+    }
+    return val_false();
+}
+
+static Value dispatch_method_missing(Eval *ev, Env *env, Value recv, const char *name,
+                                     Value *args, int argc, Value *blk, Node *site) {
+    if (recv.kind == VAL_OBJECT) {
+        RubyClass *owner = NULL;
+        Value method;
+        if (ruby_class_find_instance_method(recv.obj->klass.klass, "method_missing", &method, &owner)) {
+            Value mm_args[65];
+            mm_args[0] = val_symbol(name);
+            for (int i = 0; i < argc && i < 64; i++) mm_args[i + 1] = args[i];
+            return call_method_value(ev, env, recv, method, owner, "method_missing", mm_args, argc + 1, blk, site);
+        }
+    } else if (recv.kind == VAL_CLASS) {
+        char *key = arena_alloc(ev->arena, strlen("method_missing") + 6);
+        memcpy(key, "self.method_missing", strlen("self.method_missing") + 1);
+        for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+            Value method;
+            if (env_get(k->class_env, key, &method) && method.kind == VAL_METHOD) {
+                Value mm_args[65];
+                mm_args[0] = val_symbol(name);
+                for (int i = 0; i < argc && i < 64; i++) mm_args[i + 1] = args[i];
+                return call_method_value(ev, env, recv, method, k, "method_missing", mm_args, argc + 1, blk, site);
+            }
+        }
+    }
+    return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", name, val_kind_name(recv.kind));
+}
+
 static Value builtin_kernel(Eval *ev, Env *env, const char *name,
                             Value *args, int argc, Value *blk, Node *site) {
     if (strcmp(name, "puts") == 0) {
@@ -417,6 +499,30 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         }
         return val_nil();
     }
+    if (strcmp(name, "private_class_method") == 0 ||
+        strcmp(name, "public_class_method") == 0 ||
+        strcmp(name, "protected_class_method") == 0) {
+        Value self;
+        if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
+            return eval_error(ev, site, "%s must be called in a class or module body", name);
+        if (argc < 1)
+            return eval_raise_class(ev, site, "ArgumentError", "%s requires at least one method name", name);
+
+        MethodVisibility visibility = METHOD_PUBLIC;
+        if (strcmp(name, "private_class_method") == 0) visibility = METHOD_PRIVATE;
+        if (strcmp(name, "protected_class_method") == 0) visibility = METHOD_PROTECTED;
+
+        for (int i = 0; i < argc; i++) {
+            const char *mname = (args[i].kind == VAL_SYMBOL || args[i].kind == VAL_STRING) ? args[i].sval : NULL;
+            if (!mname) continue;
+            size_t nlen = strlen(mname);
+            char *key = arena_alloc(ev->arena, nlen + 6);
+            memcpy(key, "self.", 5);
+            memcpy(key + 5, mname, nlen + 1);
+            update_method_visibility(env, key, visibility, 1);
+        }
+        return val_nil();
+    }
     (void)blk;
     return val_nil();
 }
@@ -450,7 +556,8 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING)
                             ? args[0].sval : NULL;
         if (!mname) return val_false();
-        return val_bool(val_responds_to(ev, recv, mname));
+        if (val_responds_to(ev, recv, mname)) return val_true();
+        return dispatch_respond_to_missing(ev, env, recv, mname, site);
     }
     if (strcmp(name, "extend") == 0)
         return builtin_extend(ev, recv, args, argc, site);
@@ -500,6 +607,8 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (dispatch_class(ev, env, recv, name, args, argc, blk, site, &out, public_only, explicit_receiver)) return out;
     if (dispatch_object(ev, env, recv, name, args, argc, blk, site, &out, public_only, explicit_receiver)) return out;
 
+    if (strcmp(name, "method_missing") != 0)
+        return dispatch_method_missing(ev, env, recv, name, args, argc, blk, site);
     return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", name, val_kind_name(recv.kind));
 }
 
@@ -648,6 +757,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         static const char *kernel_names[] = {
             "puts", "print", "p", "raise", "lambda", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
+            "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {

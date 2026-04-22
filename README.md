@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `58 passed, 0 failed, 58 total`.
+Current coverage in the tree: `60 passed, 0 failed, 60 total`.
 
 What is working today:
 
@@ -56,9 +56,10 @@ What is working today:
 - Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, rescue variable binding, re-raise, uncaught backtraces
 - Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls, `send`, `__send__`, `public_send`
 - Classes: instance methods, `def self.foo`, inheritance, `initialize`, instance variables, `super`, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
-- Visibility: `public`, `private`, `protected`, public-only `respond_to?`, explicit receiver restrictions, protected same-family receiver calls
+- Visibility: `public`, `private`, `protected`, `private_class_method`/`public_class_method`/`protected_class_method`, public-only `respond_to?`, explicit receiver restrictions, protected same-family receiver calls
 - Modules: `module Foo ... end`, `include`, `prepend`, `extend`, instance method lookup through included and prepended modules, `super` through module ancestors
 - File loading: `require_relative`, minimal `require`, duplicate-load skipping, `LoadError` on load failures
+- Dispatch hooks: `method_missing` and `respond_to_missing?` for objects and classes
 - Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`
 - Hash syntax: both `{:a => 1}` and modern label syntax like `{a: 1}`
 - Assignment: parallel assignment, swap, splat capture, nested destructuring, destructured method and block params
@@ -73,7 +74,6 @@ Known limitations:
 - Exceptions work, but they still need broader standard exception coverage and more Ruby-complete rescue syntax
 - Proc/lambda semantics exist, but there are still edge cases around control flow and argument handling that are not Ruby-complete
 - Compatibility around edge-case parsing and method semantics is still being tightened
-- Class-method visibility helpers like `private_class_method` are not implemented yet
 - `require` still has only a minimal search path, not a real `$LOAD_PATH`
 
 ## Architecture

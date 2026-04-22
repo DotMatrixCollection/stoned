@@ -36,7 +36,6 @@ The core module path now exists, but the next semantic gaps are:
 ### Method visibility polish
 The core visibility model now exists, but it still needs:
 
-- `private_class_method`, `public_class_method`, `protected_class_method`
 - fuller Ruby compatibility around visibility edge cases
 - any remaining `respond_to?` / dispatch inconsistencies as more metaprogramming features land
 
@@ -55,8 +54,12 @@ The core loading path now exists, but it still needs:
 ### String: more completeness
 `gsub`, `sub`, `match`, `=~`, `scan`, `tr`, `squeeze`, `center`, `ljust`, `rjust`, `bytes`, `encode`. Regex support needs an external library (PCRE2 or similar) or a hand-rolled NFA.
 
-### `method_missing` / `respond_to_missing?`
-Hook called when method lookup fails on an object. Enables metaprogramming patterns like `OpenStruct`, `Proxy`, `DelegateClass`.
+### Dispatch hook polish
+The core hook path now exists, but it still needs:
+
+- broader coverage across more receiver kinds
+- closer Ruby compatibility around `respond_to_missing?` edge cases
+- integration with future metaprogramming features
 
 ### Exception polish
 The core exception path now exists, but it still needs:
@@ -96,7 +99,9 @@ These were previously roadmap items and are now implemented in the current tree:
 - `Proc.new`, `lambda`, and `->` literals with callable proc/lambda values
 - `module`, `include`, `prepend`, `extend`, and `super` through module ancestors
 - `send`, `__send__`, `public_send`, and method visibility (`public`, `private`, `protected`)
+- class-method visibility helpers (`private_class_method`, `public_class_method`, `protected_class_method`)
 - `require_relative`, minimal `require`, load guards, and `LoadError`
+- `method_missing` / `respond_to_missing?` for objects and classes
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files

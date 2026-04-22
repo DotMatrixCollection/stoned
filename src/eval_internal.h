@@ -31,6 +31,8 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site);
 Value eval_require_relative(Eval *ev, Env *env, const char *path, Node *site);
 int ruby_class_find_instance_method(RubyClass *klass, const char *name, Value *out, RubyClass **owner);
 int ruby_class_find_super_method(RubyClass *start, RubyClass *after, const char *name, Value *out, RubyClass **owner);
+Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass *owner,
+                        const char *name, Value *args, int argc, Value *blk, Node *site);
 Value dispatch_method(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                       Value *blk, Node *site, int public_only, int explicit_receiver);
 Value eval_binop(Eval *ev, Env *env, Node *node);

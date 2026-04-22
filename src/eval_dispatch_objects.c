@@ -50,25 +50,13 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     while (cklass) {
         Value cm;
         if (env_get(cklass->class_env, key, &cm) && cm.kind == VAL_METHOD) {
-            if (!method_visibility_allows_call(ev, env, recv, cklass, cm.method.visibility,
-                                               public_only, explicit_receiver))
-                continue;
-            Env *method_env = env_new(ev->arena, cm.method.closure, 1);
-            env_set(ev->arena, method_env, "self", recv);
-            env_set(ev->arena, method_env, "__method__", val_symbol(name));
-            Value kv; kv.kind = VAL_CLASS; kv.klass = cklass;
-            env_set(ev->arena, method_env, "__class__", kv);
-            if (blk) method_env->block_arg = blk;
-            bind_params(ev, method_env, cm.method.def_node->def.params, args, argc);
-            ev->call_depth++;
-            eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
-            Value result = eval_node(ev, method_env, cm.method.def_node->def.body);
-            eval_pop_frame(ev);
-            ev->call_depth--;
-            if (result.kind == VAL_RETURN) result = *result.wrapped;
-            else if (val_is_signal(result)) { *out = result; return 1; }
-            *out = result;
-            return 1;
+            if (method_visibility_allows_call(ev, env, recv, cklass, cm.method.visibility,
+                                              public_only, explicit_receiver)) {
+                Value result = call_method_value(ev, env, recv, cm, cklass, name, args, argc, blk, site);
+                if (val_is_signal(result)) { *out = result; return 1; }
+                *out = result;
+                return 1;
+            }
         }
         cklass = cklass->superclass.kind == VAL_CLASS ? cklass->superclass.klass : NULL;
     }
@@ -104,19 +92,8 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             if (!method_visibility_allows_call(ev, env, recv, owner, method.method.visibility,
                                                public_only, explicit_receiver))
                 return 0;
-            Env *method_env = env_new(ev->arena, method.method.closure, 1);
-            env_set(ev->arena, method_env, "self", recv);
-            env_set(ev->arena, method_env, "__method__", val_symbol(name));
-            env_set(ev->arena, method_env, "__class__", recv.obj->klass);
-            if (blk) method_env->block_arg = blk;
-            bind_params(ev, method_env, method.method.def_node->def.params, args, argc);
-            ev->call_depth++;
-            eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
-            Value result = eval_node(ev, method_env, method.method.def_node->def.body);
-            eval_pop_frame(ev);
-            ev->call_depth--;
-            if (result.kind == VAL_RETURN) result = *result.wrapped;
-            else if (val_is_signal(result)) { *out = result; return 1; }
+            Value result = call_method_value(ev, env, recv, method, owner, name, args, argc, blk, site);
+            if (val_is_signal(result)) { *out = result; return 1; }
             *out = result;
             return 1;
         }
@@ -129,20 +106,8 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             if (!method_visibility_allows_call(ev, env, recv, owner, method.method.visibility,
                                                public_only, explicit_receiver))
                 return 0;
-            Env *method_env = env_new(ev->arena, method.method.closure, 1);
-            env_set(ev->arena, method_env, "self", recv);
-            env_set(ev->arena, method_env, "__method__", val_symbol(name));
-            Value klass_val; klass_val.kind = VAL_CLASS; klass_val.klass = owner;
-            env_set(ev->arena, method_env, "__class__", klass_val);
-            if (blk) method_env->block_arg = blk;
-            bind_params(ev, method_env, method.method.def_node->def.params, args, argc);
-            ev->call_depth++;
-            eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
-            Value result = eval_node(ev, method_env, method.method.def_node->def.body);
-            eval_pop_frame(ev);
-            ev->call_depth--;
-            if (result.kind == VAL_RETURN) result = *result.wrapped;
-            else if (val_is_signal(result)) { *out = result; return 1; }
+            Value result = call_method_value(ev, env, recv, method, owner, name, args, argc, blk, site);
+            if (val_is_signal(result)) { *out = result; return 1; }
             *out = result;
             return 1;
         }
