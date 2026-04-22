@@ -51,7 +51,6 @@ The core built-in mixins now exist, but the next gaps are:
 ### File loading polish
 The core loading path now exists, but it still needs:
 
-- a real `$LOAD_PATH`
 - stronger path canonicalization / platform handling
 - cleaner load-time error reporting beyond the current basic `LoadError` path
 
@@ -104,7 +103,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - `module`, `include`, `prepend`, `extend`, and `super` through module ancestors
 - `send`, `__send__`, `public_send`, and method visibility (`public`, `private`, `protected`)
 - class-method visibility helpers (`private_class_method`, `public_class_method`, `protected_class_method`)
-- `require_relative`, minimal `require`, load guards, and `LoadError`
+- `require_relative`, `require`, `$LOAD_PATH`, load guards, and `LoadError`
 - `method_missing` / `respond_to_missing?` for objects and classes
 - built-in `Comparable` / `Enumerable` plus operator method defs like `def <=>`
 - regression test suite wired into `make test`

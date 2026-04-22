@@ -101,6 +101,24 @@ static const char *resolve_relative_path(Arena *a, const char *base_file, const 
     return copy;
 }
 
+static const char *resolve_from_dir(Arena *a, const char *dir, const char *rel) {
+    if (!dir || !rel) return NULL;
+    size_t dir_len = strlen(dir);
+    size_t rel_len = strlen(rel);
+    int needs_rb = rel_len < 3 || strcmp(rel + rel_len - 3, ".rb") != 0;
+    size_t total = dir_len + (dir_len ? 1 : 0) + rel_len + (needs_rb ? 3 : 0) + 1;
+    char *joined = malloc(total);
+    if (!joined) return NULL;
+    memcpy(joined, dir, dir_len);
+    if (dir_len) joined[dir_len] = '/';
+    memcpy(joined + dir_len + (dir_len ? 1 : 0), rel, rel_len);
+    joined[dir_len + (dir_len ? 1 : 0) + rel_len] = '\0';
+    if (needs_rb) strcat(joined, ".rb");
+    const char *copy = normalize_path(a, joined);
+    free(joined);
+    return copy;
+}
+
 static int eval_has_loaded_file(Eval *ev, const char *path) {
     for (LoadedFile *entry = ev->loaded_files; entry; entry = entry->next) {
         if (strcmp(entry->path, path) == 0)
@@ -172,8 +190,16 @@ static const char *resolve_require_path(Arena *a, const char *base_file, const c
         return copy;
     }
 
-    const char *base = current_dir ? "./entry.rb" : base_file;
-    return resolve_relative_path(a, base, path);
+    if (current_dir)
+        return resolve_from_dir(a, ".", path);
+    return resolve_from_dir(a, base_file, path);
+}
+
+static Value eval_load_path(Eval *ev) {
+    Value load_path;
+    if (global_get(&ev->globals, "LOAD_PATH", &load_path) && load_path.kind == VAL_ARRAY)
+        return load_path;
+    return val_array_new();
 }
 
 static void format_exception_summary(Eval *ev, const char *class_name, const char *msg) {
@@ -705,12 +731,18 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         }
     }
 
-    resolved = resolve_require_path(ev->arena, NULL, path, 1);
-    if (resolved) {
-        FILE *f = fopen(resolved, "rb");
-        if (f) {
-            fclose(f);
-            return eval_require_path(ev, resolved, site);
+    Value load_path = eval_load_path(ev);
+    if (load_path.kind == VAL_ARRAY) {
+        for (size_t i = 0; i < load_path.array->len; i++) {
+            Value entry = load_path.array->elems[i];
+            if (entry.kind != VAL_STRING) continue;
+            resolved = resolve_require_path(ev->arena, entry.sval, path, 0);
+            if (!resolved) continue;
+            FILE *f = fopen(resolved, "rb");
+            if (f) {
+                fclose(f);
+                return eval_require_path(ev, resolved, site);
+            }
         }
     }
 

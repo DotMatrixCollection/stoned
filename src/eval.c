@@ -487,6 +487,17 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     ev->top_env = env_new(arena, NULL, 1);
     ev->current_file = current_file;
 
+    Value load_path = val_array_new();
+    val_array_push(&load_path, val_string(arena, "."));
+    if (current_file) {
+        const char *slash = strrchr(current_file, '/');
+        if (slash) {
+            size_t len = (size_t)(slash - current_file);
+            val_array_push(&load_path, val_string_n(arena, current_file, len));
+        }
+    }
+    global_set(arena, &ev->globals, "LOAD_PATH", load_path);
+
     static const char *builtins[] = {
         "Object", "BasicObject", "Numeric",
         "Integer", "Float", "String", "Symbol",

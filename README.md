@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `61 passed, 0 failed, 61 total`.
+Current coverage in the tree: `62 passed, 0 failed, 62 total`.
 
 What is working today:
 
@@ -59,7 +59,7 @@ What is working today:
 - Visibility: `public`, `private`, `protected`, `private_class_method`/`public_class_method`/`protected_class_method`, public-only `respond_to?`, explicit receiver restrictions, protected same-family receiver calls
 - Modules: `module Foo ... end`, `include`, `prepend`, `extend`, instance method lookup through included and prepended modules, `super` through module ancestors
 - Built-in mixins: `Comparable` (`between?`, `clamp`) and `Enumerable` (`find`, `detect`, `count`, `entries`, `first`, `take`, `drop`)
-- File loading: `require_relative`, minimal `require`, duplicate-load skipping, `LoadError` on load failures
+- File loading: `require_relative`, `require`, `$LOAD_PATH` search, duplicate-load skipping, `LoadError` on load failures
 - Dispatch hooks: `method_missing` and `respond_to_missing?` for objects and classes
 - Operator method defs like `def <=>` and generic operator dispatch for user-defined operator methods
 - Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`
@@ -76,7 +76,7 @@ Known limitations:
 - Exceptions work, but they still need broader standard exception coverage and more Ruby-complete rescue syntax
 - Proc/lambda semantics exist, but there are still edge cases around control flow and argument handling that are not Ruby-complete
 - Compatibility around edge-case parsing and method semantics is still being tightened
-- `require` still has only a minimal search path, not a real `$LOAD_PATH`
+- file loading still needs stronger path canonicalization and more Ruby-complete search behavior
 
 ## Architecture
 
