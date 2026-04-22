@@ -1,3 +1,5 @@
 src/*.o
+src/*.d
 stoned
 a.out
+.codex

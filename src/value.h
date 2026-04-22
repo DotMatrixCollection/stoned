@@ -29,6 +29,7 @@ typedef enum {
 } ValueKind;
 
 /* Forward typedefs for class, object, and hash structures */
+typedef struct RubyArray  RubyArray;
 typedef struct RubyClass  RubyClass;
 typedef struct RubyObject RubyObject;
 typedef struct RubyHash   RubyHash;
@@ -41,11 +42,7 @@ typedef struct Value {
         double      fval;    /* VAL_FLOAT */
         const char *sval;    /* VAL_STRING, VAL_SYMBOL */
 
-        struct {             /* VAL_ARRAY */
-            struct Value  *elems;   /* flat array of Value, grows with realloc */
-            size_t         len;
-            size_t         cap;
-        } array;
+        RubyArray  *array;     /* VAL_ARRAY */
 
         RubyHash   *hash;      /* VAL_HASH */
         RubyClass  *klass;     /* VAL_CLASS */
@@ -66,6 +63,12 @@ typedef struct Value {
 } Value;
 
 /* Class and Object runtime structures (defined after Value) */
+struct RubyArray {
+    Value  *elems;
+    size_t  len;
+    size_t  cap;
+};
+
 typedef struct IVarEntry {
     const char *name;
     Value      val;

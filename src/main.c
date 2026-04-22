@@ -80,7 +80,6 @@ int main(int argc, char **argv) {
 
     Eval eval;
     eval_init(&eval, &arena, stdout);
-    eval.top_env = env_new(&arena, NULL, 1);
     eval_node(&eval, eval.top_env, tree);
 
     if (eval.errored) {

@@ -1,0 +1,3 @@
+parse error:1:9: unexpected token in expression
+parse error:1:10: expected '}'
+parse error:1:11: unexpected token in expression

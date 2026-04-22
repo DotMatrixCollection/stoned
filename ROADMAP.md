@@ -1,39 +1,41 @@
 # Roadmap
 
-Roughly priority order. Items within a section are not strictly ordered.
+This reflects the current checked-in interpreter state, not the original prototype plan. Items within a section are roughly prioritized.
 
 ## Near term
 
-### Hash
-`{}` literals currently evaluate to `nil`. Needs: parser already handles `NODE_HASH`/`NODE_PAIR`, evaluator needs to build a hash value, and a `VAL_HASH` type (or use sorted arrays of pairs). Built-in methods: `[]`, `[]=`, `each`, `map`, `select`, `reject`, `keys`, `values`, `merge`, `has_key?`, `fetch`, `to_a`.
+### Semantics hardening
+The current priority is making the implemented subset more Ruby-like and less surprising:
 
-### `attr_reader` / `attr_writer` / `attr_accessor`
-Kernel-level macros that define getter/setter methods at class-definition time. Straightforward once classes are solid: intercept these calls in the class body eval and synthesize VAL_METHOD nodes (or define them as Ruby methods backed by ivar access).
+- tighten command-style call parsing in more edge cases
+- tighten block/yield semantics and block argument handling
+- expand regression coverage for arrays, hashes, and method dispatch
+- reduce remaining differences between parenthesized and unparenthesized call forms
 
-### Class methods (`def self.foo`)
-The parser already stores `Node.def.recv`. The evaluator needs to: detect `recv == self` in a class body, and store the method in the class's own env under a distinguished namespace (or directly on the class object) rather than in the instance method table.
+### Type introspection consistency
+Core reflection exists in part, but it should be made more consistent across value kinds:
 
-### Type introspection
-`is_a?`, `kind_of?`, `instance_of?`, `class`, `nil?`, `respond_to?` on all value types. Currently `nil?` exists on nil and bool only.
+- `is_a?`, `kind_of?`, `instance_of?`, `class`, `nil?`, `respond_to?`
+- align behavior across primitives, objects, classes, arrays, and hashes
+
+### Multiple assignment
+`a, b = 1, 2` and `a, b = b, a`. Splat on the left: `first, *rest = arr`. Parser already tokenizes the pieces, but assignment needs a real multi-target representation.
 
 ## Medium term
 
 ### `begin` / `rescue` / `ensure`
 Exception handling. Requires: a new `VAL_EXCEPTION` signal type (parallel to VAL_RETURN), `raise` producing it, `begin`/`rescue` catching it by class match, `ensure` always running. The parser will need `NODE_BEGIN` with rescue/ensure clauses.
 
-### Multiple assignment
-`a, b = 1, 2` and `a, b = b, a`. Splat on the left: `first, *rest = arr`. Parser already tokenises `NODE_ASSIGN`; needs a multi-target LHS node or a convention for NodeList targets.
-
 ### Proc / lambda
 `Proc.new { |x| x }`, `lambda { |x| x }`, `-> (x) { x }`. Mostly reuses the existing `VAL_BLOCK` machinery; the main delta is: lambdas check arity strictly and `return` from a lambda exits the lambda (not the enclosing method).
 
-### `puts` / `print` / `p` without parentheses
-The parser currently drops arguments to bare method calls without parentheses. Requires teaching the parser to greedily consume comma-separated argument expressions after a bare identifier when not followed by an operator or terminator.
-
-## Longer term
-
 ### Modules and `include` / `extend`
 `module Foo ... end`, `include Foo` in a class body. Method lookup needs to walk the full ancestor chain (class → included modules in reverse order → superclass → ...).
+
+### `send` / `public_send`
+Dynamic method dispatch by name. Needed for metaprogramming and for closing a lot of Ruby surface-area gaps cleanly now that method lookup is more centralized.
+
+## Longer term
 
 ### `Comparable` and `Enumerable`
 Implement as built-in modules once module infrastructure exists. `Comparable` needs `<=>` defined; `Enumerable` needs `each` defined.
@@ -46,9 +48,6 @@ File loading. `require_relative` is straightforward — resolve path relative to
 
 ### `method_missing` / `respond_to_missing?`
 Hook called when method lookup fails on an object. Enables metaprogramming patterns like `OpenStruct`, `Proxy`, `DelegateClass`.
-
-### `send` / `public_send`
-Dynamic method dispatch by name. Needed for metaprogramming; straightforward once method lookup is centralised.
 
 ### Exception hierarchy
 `RuntimeError`, `ArgumentError`, `TypeError`, `NoMethodError`, `StopIteration` etc. as actual class values so `rescue TypeError` works correctly.
@@ -63,3 +62,16 @@ Dynamic method dispatch by name. Needed for metaprogramming; straightforward onc
 
 ### I/O
 `File.read`, `File.write`, `File.open`, `IO` basics. Required for any non-trivial program.
+
+## Already landed
+
+These were previously roadmap items and are now implemented in the current tree:
+
+- hash values and hash built-ins
+- `attr_reader`, `attr_writer`, `attr_accessor`
+- class methods via `def self.foo`
+- bare `puts` / `print` / `p` and command-style calls
+- block calls and `yield`
+- regression test suite wired into `make test`
+- evaluator split into smaller files
+- parser split into expression/statement files

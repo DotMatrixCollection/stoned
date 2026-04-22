@@ -3,6 +3,7 @@
 
 Node *node_new(Arena *a, NodeKind kind, Span span) {
     Node *n = arena_alloc(a, sizeof(Node));
+    memset(n, 0, sizeof(Node));
     n->kind = kind;
     n->span = span;
     return n;

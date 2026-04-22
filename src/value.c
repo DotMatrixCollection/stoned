@@ -64,21 +64,24 @@ Value val_string_n(Arena *a, const char *s, size_t len) {
 }
 
 Value val_array_new(void) {
+    RubyArray *arr = malloc(sizeof(RubyArray));
+    arr->elems = NULL;
+    arr->len   = 0;
+    arr->cap   = 0;
     Value v; v.kind = VAL_ARRAY;
-    v.array.elems = NULL;
-    v.array.len   = 0;
-    v.array.cap   = 0;
+    v.array = arr;
     return v;
 }
 
 void val_array_push(Value *arr, Value elem) {
-    if (arr->array.len >= arr->array.cap) {
-        size_t new_cap = arr->array.cap == 0 ? 8 : arr->array.cap * 2;
-        arr->array.elems = realloc(arr->array.elems,
-                                   new_cap * sizeof(arr->array.elems[0]));
-        arr->array.cap = new_cap;
+    if (arr->kind != VAL_ARRAY || !arr->array) return;
+    if (arr->array->len >= arr->array->cap) {
+        size_t new_cap = arr->array->cap == 0 ? 8 : arr->array->cap * 2;
+        arr->array->elems = realloc(arr->array->elems,
+                                   new_cap * sizeof(arr->array->elems[0]));
+        arr->array->cap = new_cap;
     }
-    arr->array.elems[arr->array.len++] = elem;
+    arr->array->elems[arr->array->len++] = elem;
 }
 
 Value val_hash_new(Arena *a) {
@@ -178,15 +181,15 @@ const char *val_to_s(Arena *a, Value v) {
         case VAL_ARRAY: {
             /* "[elem, elem, ...]" */
             size_t total = 3;
-            for (size_t i = 0; i < v.array.len; i++) {
-                const char *s = val_inspect(a, v.array.elems[i]);
+            for (size_t i = 0; i < v.array->len; i++) {
+                const char *s = val_inspect(a, v.array->elems[i]);
                 total += strlen(s) + 2;
             }
             buf = arena_alloc(a, total);
             buf[0] = '['; buf[1] = '\0';
-            for (size_t i = 0; i < v.array.len; i++) {
+            for (size_t i = 0; i < v.array->len; i++) {
                 if (i) strcat(buf, ", ");
-                strcat(buf, val_inspect(a, v.array.elems[i]));
+                strcat(buf, val_inspect(a, v.array->elems[i]));
             }
             strcat(buf, "]");
             return buf;
@@ -210,11 +213,8 @@ const char *val_to_s(Arena *a, Value v) {
         }
         case VAL_METHOD: return "#<Method>";
         case VAL_BLOCK:  return "#<Proc>";
-        case VAL_CLASS: {
-            char *buf = arena_alloc(a, strlen(v.klass->name) + 20);
-            snprintf(buf, strlen(v.klass->name) + 20, "#<Class:%s>", v.klass->name);
-            return buf;
-        }
+        case VAL_CLASS:
+            return v.klass->name;
         case VAL_OBJECT: {
             const char *class_name = v.obj->klass.kind == VAL_CLASS ? v.obj->klass.klass->name : "?";
             char *buf = arena_alloc(a, strlen(class_name) + 30);
