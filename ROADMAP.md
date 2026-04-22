@@ -7,7 +7,7 @@ This reflects the current checked-in interpreter state, not the original prototy
 ### Semantics hardening
 The current priority is making the implemented subset more Ruby-like and less surprising:
 
-- tighten command-style call parsing in the remaining edge cases beyond current keyword-hash and multiline-arg parity
+- tighten command-style call parsing in the remaining edge cases beyond current keyword-hash, multiline-arg, and nested-comma precedence parity
 - expand regression coverage for arrays, hashes, and method dispatch
 - reduce the remaining differences between parenthesized and unparenthesized call forms
 - keep exception behavior coherent as more Ruby-like forms land

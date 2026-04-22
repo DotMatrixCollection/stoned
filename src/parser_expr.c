@@ -65,12 +65,17 @@ static Node *parse_command_arg(Parser *p) {
 
 static NodeList *parse_command_args(Parser *p) {
     NodeList *args = NULL;
+    int saved_allow_commas = p->allow_command_arg_commas;
+    p->allow_command_arg_commas = 0;
     Node *first = parse_command_arg(p);
+    p->allow_command_arg_commas = saved_allow_commas;
     if (first) args = nodelist_append(p->arena, args, first);
 
-    while (p->allow_command_arg_commas && match(p, TOK_COMMA)) {
+    while (saved_allow_commas && match(p, TOK_COMMA)) {
         skip_terminators(p);
+        p->allow_command_arg_commas = 0;
         Node *arg = parse_command_arg(p);
+        p->allow_command_arg_commas = saved_allow_commas;
         if (arg) args = nodelist_append(p->arena, args, arg);
     }
 
