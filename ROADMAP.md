@@ -15,7 +15,7 @@ The current priority is making the implemented subset more Ruby-like and less su
 ### Type introspection consistency
 Core reflection exists in part, but it should be made more consistent across value kinds:
 
-- finish aligning `is_a?`, `kind_of?`, `instance_of?`, `class`, `nil?`, `respond_to?`
+- keep tightening `is_a?`, `kind_of?`, `instance_of?`, `class`, `nil?`, `respond_to?`
 - keep behavior coherent across primitives, objects, classes, modules, arrays, and hashes
 
 ## Medium term

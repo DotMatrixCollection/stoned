@@ -606,14 +606,16 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                       Value *blk, Node *site, int public_only, int explicit_receiver) {
     Value out;
 
-    if (strcmp(name, "nil?") == 0)
+    if (strcmp(name, "nil?") == 0) {
+        if (argc != 0) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         return val_bool(recv.kind == VAL_NIL);
+    }
     if (strcmp(name, "is_a?") == 0 || strcmp(name, "kind_of?") == 0) {
-        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "%s requires a class argument", name);
+        if (argc != 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         return val_bool(val_is_a(recv, args[0]));
     }
     if (strcmp(name, "instance_of?") == 0) {
-        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "instance_of? requires a class argument");
+        if (argc != 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         if (args[0].kind != VAL_CLASS) return val_false();
         if (recv.kind == VAL_OBJECT)
             return val_bool(recv.obj->klass.klass == args[0].klass);
@@ -621,10 +623,12 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             return val_bool(strcmp(recv.klass->is_module ? "Module" : "Class", args[0].klass->name) == 0);
         return val_bool(strcmp(prim_class_name(recv), args[0].klass->name) == 0);
     }
-    if (strcmp(name, "class") == 0)
+    if (strcmp(name, "class") == 0) {
+        if (argc != 0) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         return val_class_of(ev, recv);
+    }
     if (strcmp(name, "respond_to?") == 0) {
-        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "respond_to? requires an argument");
+        if (argc < 1 || argc > 2) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         int include_private = argc >= 2 && val_truthy(args[1]);
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING)
                             ? args[0].sval : NULL;
