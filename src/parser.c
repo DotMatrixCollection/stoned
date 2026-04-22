@@ -133,6 +133,7 @@ static BP infix_bp(TokenKind k) {
 
         case TOK_DOT:       return (BP){40, 41};
         case TOK_COLON2:    return (BP){40, 41};
+        case TOK_LBRACKET:  return (BP){42, 43};  /* subscript */
 
         default: return (BP){0, 0};
     }
@@ -181,9 +182,37 @@ static Node *parse_expr(Parser *p, int min_bp) {
 
         advance(p);
 
+        /* subscript: recv[args] */
+        if (op.kind == TOK_LBRACKET) {
+            NodeList *args = NULL;
+            if (!check(p, TOK_RBRACKET)) {
+                Node *first = parse_expr(p, 0);
+                if (first) args = nodelist_append(p->arena, args, first);
+                while (match(p, TOK_COMMA)) {
+                    Node *arg = parse_expr(p, 0);
+                    if (arg) args = nodelist_append(p->arena, args, arg);
+                }
+            }
+            expect(p, TOK_RBRACKET, "expected ']'");
+            Node *call = node_new(p->arena, NODE_CALL, left->span);
+            call->call.recv   = left;
+            call->call.method = "[]";
+            call->call.args   = args;
+            call->call.block  = NULL;
+            left = call;
+            continue;
+        }
+
         /* assignment */
         if (op.kind == TOK_EQ) {
             Node *right = parse_expr(p, bp.rbp);
+            /* subscript assignment: recv[key] = val  →  recv.[]=(key, val) */
+            if (left->kind == NODE_CALL && strcmp(left->call.method, "[]") == 0
+                    && left->call.recv) {
+                left->call.method = "[]=";
+                left->call.args   = nodelist_append(p->arena, left->call.args, right);
+                continue;
+            }
             Node *n = node_new(p->arena, NODE_ASSIGN, left->span);
             n->assign.target = left;
             n->assign.value  = right;

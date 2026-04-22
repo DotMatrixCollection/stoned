@@ -81,6 +81,48 @@ void val_array_push(Value *arr, Value elem) {
     arr->array.elems[arr->array.len++] = elem;
 }
 
+Value val_hash_new(Arena *a) {
+    RubyHash *h = arena_alloc(a, sizeof(RubyHash));
+    h->keys = NULL;
+    h->vals = NULL;
+    h->len  = 0;
+    h->cap  = 0;
+    return val_hash_val(h);
+}
+
+void val_hash_set(RubyHash *h, Value key, Value val) {
+    for (size_t i = 0; i < h->len; i++) {
+        if (val_equal(h->keys[i], key)) { h->vals[i] = val; return; }
+    }
+    if (h->len >= h->cap) {
+        h->cap  = h->cap == 0 ? 8 : h->cap * 2;
+        h->keys = realloc(h->keys, h->cap * sizeof(Value));
+        h->vals = realloc(h->vals, h->cap * sizeof(Value));
+    }
+    h->keys[h->len] = key;
+    h->vals[h->len] = val;
+    h->len++;
+}
+
+int val_hash_get(RubyHash *h, Value key, Value *out) {
+    for (size_t i = 0; i < h->len; i++) {
+        if (val_equal(h->keys[i], key)) { *out = h->vals[i]; return 1; }
+    }
+    return 0;
+}
+
+int val_hash_delete(RubyHash *h, Value key) {
+    for (size_t i = 0; i < h->len; i++) {
+        if (val_equal(h->keys[i], key)) {
+            memmove(h->keys + i, h->keys + i + 1, (h->len - i - 1) * sizeof(Value));
+            memmove(h->vals + i, h->vals + i + 1, (h->len - i - 1) * sizeof(Value));
+            h->len--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 Value val_method(struct Node *def, struct Env *closure) {
     Value v; v.kind = VAL_METHOD;
     v.method.def_node = def;
@@ -149,6 +191,23 @@ const char *val_to_s(Arena *a, Value v) {
             strcat(buf, "]");
             return buf;
         }
+        case VAL_HASH: {
+            RubyHash *h = v.hash;
+            size_t total = 3;
+            for (size_t i = 0; i < h->len; i++)
+                total += strlen(val_inspect(a, h->keys[i])) + 4
+                       + strlen(val_inspect(a, h->vals[i]));
+            buf = arena_alloc(a, total);
+            buf[0] = '{'; buf[1] = '\0';
+            for (size_t i = 0; i < h->len; i++) {
+                if (i) strcat(buf, ", ");
+                strcat(buf, val_inspect(a, h->keys[i]));
+                strcat(buf, "=>");
+                strcat(buf, val_inspect(a, h->vals[i]));
+            }
+            strcat(buf, "}");
+            return buf;
+        }
         case VAL_METHOD: return "#<Method>";
         case VAL_BLOCK:  return "#<Proc>";
         case VAL_CLASS: {
@@ -193,7 +252,8 @@ const char *val_kind_name(ValueKind k) {
         case VAL_STRING: return "String";
         case VAL_SYMBOL: return "Symbol";
         case VAL_ARRAY:  return "Array";
-        case VAL_CLASS: return "Class";
+        case VAL_HASH:   return "Hash";
+        case VAL_CLASS:  return "Class";
         case VAL_OBJECT: return "Object";
         case VAL_METHOD: return "Method";
         case VAL_BLOCK:  return "Proc";

@@ -17,6 +17,7 @@ typedef enum {
     VAL_STRING,
     VAL_SYMBOL,
     VAL_ARRAY,
+    VAL_HASH,       /* key-value map, insertion-order preserving */
     VAL_CLASS,      /* user-defined class */
     VAL_OBJECT,     /* instance of a class */
     VAL_METHOD,     /* user-defined: Node* + closure Env* */
@@ -27,9 +28,10 @@ typedef enum {
     VAL_NEXT,
 } ValueKind;
 
-/* Forward typedefs for class and object structures */
-typedef struct RubyClass RubyClass;
+/* Forward typedefs for class, object, and hash structures */
+typedef struct RubyClass  RubyClass;
 typedef struct RubyObject RubyObject;
+typedef struct RubyHash   RubyHash;
 
 typedef struct Value {
     ValueKind kind;
@@ -45,6 +47,7 @@ typedef struct Value {
             size_t         cap;
         } array;
 
+        RubyHash   *hash;      /* VAL_HASH */
         RubyClass  *klass;     /* VAL_CLASS */
         RubyObject *obj;       /* VAL_OBJECT */
 
@@ -80,6 +83,14 @@ typedef struct RubyObject {
     IVarEntry  *ivars;       /* Instance variables */
 } RubyObject;
 
+/* Insertion-order-preserving hash map (keys/vals malloc'd, struct arena'd) */
+struct RubyHash {
+    Value  *keys;
+    Value  *vals;
+    size_t  len;
+    size_t  cap;
+};
+
 /* ------------------------------------------------------------------ */
 /* Constructors                                                         */
 /* ------------------------------------------------------------------ */
@@ -98,6 +109,11 @@ void  val_array_push(Value *arr, Value elem);
 
 Value val_method(struct Node *def, struct Env *closure);
 Value val_block(struct Node *blk, struct Env *closure);
+
+Value val_hash_new(Arena *a);
+void  val_hash_set(RubyHash *h, Value key, Value val);
+int   val_hash_get(RubyHash *h, Value key, Value *out);
+int   val_hash_delete(RubyHash *h, Value key);
 
 Value val_return(Arena *a, Value inner);
 Value val_break(Arena *a, Value inner);
@@ -119,6 +135,9 @@ static inline int val_truthy(Value v) {
 }
 static inline int val_is_signal(Value v) {
     return v.kind == VAL_RETURN || v.kind == VAL_BREAK || v.kind == VAL_NEXT;
+}
+static inline Value val_hash_val(RubyHash *h) {
+    Value v; v.kind = VAL_HASH; v.hash = h; return v;
 }
 static inline int val_equal(Value a, Value b) {
     if (a.kind != b.kind) {

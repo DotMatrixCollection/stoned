@@ -607,6 +607,250 @@ static Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value r
         }
     }
 
+    /* ---- Hash ---- */
+    if (recv.kind == VAL_HASH) {
+        RubyHash *h = recv.hash;
+        if (strcmp(name, "[]") == 0) {
+            if (argc < 1) ERR(site, "Hash#[] requires a key");
+            Value out;
+            return val_hash_get(h, args[0], &out) ? out : val_nil();
+        }
+        if (strcmp(name, "[]=") == 0) {
+            if (argc < 2) ERR(site, "Hash#[]= requires key and value");
+            val_hash_set(h, args[0], args[1]);
+            return args[1];
+        }
+        if (strcmp(name, "fetch") == 0) {
+            if (argc < 1) ERR(site, "Hash#fetch requires a key");
+            Value out;
+            if (val_hash_get(h, args[0], &out)) return out;
+            if (argc > 1) return args[1];
+            if (blk) return call_block(ev, *blk, &args[0], 1, site);
+            ERR(site, "Hash#fetch: key not found");
+        }
+        if (strcmp(name, "has_key?") == 0 || strcmp(name, "key?")     == 0 ||
+            strcmp(name, "include?") == 0 || strcmp(name, "member?")   == 0) {
+            if (argc < 1) ERR(site, "Hash#has_key? requires a key");
+            Value out;
+            return val_bool(val_hash_get(h, args[0], &out));
+        }
+        if (strcmp(name, "has_value?") == 0 || strcmp(name, "value?") == 0) {
+            if (argc < 1) ERR(site, "Hash#has_value? requires a value");
+            for (size_t i = 0; i < h->len; i++)
+                if (val_equal(h->vals[i], args[0])) return val_true();
+            return val_false();
+        }
+        if (strcmp(name, "delete") == 0) {
+            if (argc < 1) ERR(site, "Hash#delete requires a key");
+            Value out;
+            int found = val_hash_get(h, args[0], &out);
+            val_hash_delete(h, args[0]);
+            if (found) return out;
+            if (blk) return call_block(ev, *blk, &args[0], 1, site);
+            return val_nil();
+        }
+        if (strcmp(name, "keys")   == 0) {
+            Value arr = val_array_new();
+            for (size_t i = 0; i < h->len; i++) val_array_push(&arr, h->keys[i]);
+            return arr;
+        }
+        if (strcmp(name, "values") == 0) {
+            Value arr = val_array_new();
+            for (size_t i = 0; i < h->len; i++) val_array_push(&arr, h->vals[i]);
+            return arr;
+        }
+        if (strcmp(name, "length") == 0 || strcmp(name, "size")  == 0 ||
+            strcmp(name, "count")  == 0)
+            return val_int((int64_t)h->len);
+        if (strcmp(name, "empty?") == 0)
+            return val_bool(h->len == 0);
+        if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0)
+            return val_string(ev->arena, val_to_s(ev->arena, recv));
+        if (strcmp(name, "to_a") == 0) {
+            Value arr = val_array_new();
+            for (size_t i = 0; i < h->len; i++) {
+                Value pair = val_array_new();
+                val_array_push(&pair, h->keys[i]);
+                val_array_push(&pair, h->vals[i]);
+                val_array_push(&arr, pair);
+            }
+            return arr;
+        }
+        if (strcmp(name, "merge") == 0) {
+            if (argc < 1 || args[0].kind != VAL_HASH) ERR(site, "Hash#merge requires a Hash");
+            Value result = val_hash_new(ev->arena);
+            for (size_t i = 0; i < h->len; i++)
+                val_hash_set(result.hash, h->keys[i], h->vals[i]);
+            RubyHash *other = args[0].hash;
+            for (size_t i = 0; i < other->len; i++)
+                val_hash_set(result.hash, other->keys[i], other->vals[i]);
+            return result;
+        }
+        if (strcmp(name, "merge!") == 0 || strcmp(name, "update") == 0) {
+            if (argc < 1 || args[0].kind != VAL_HASH) ERR(site, "Hash#merge! requires a Hash");
+            RubyHash *other = args[0].hash;
+            for (size_t i = 0; i < other->len; i++)
+                val_hash_set(h, other->keys[i], other->vals[i]);
+            return recv;
+        }
+        if (strcmp(name, "each") == 0 || strcmp(name, "each_pair") == 0) {
+            if (!blk) ERR(site, "Hash#each requires a block");
+            for (size_t i = 0; i < h->len; i++) {
+                Value bargs[2] = { h->keys[i], h->vals[i] };
+                Value r = call_block(ev, *blk, bargs, 2, site);
+                if (ev->errored) return val_nil();
+                if (r.kind == VAL_BREAK)  return *r.wrapped;
+                if (r.kind == VAL_RETURN) return r;
+            }
+            return recv;
+        }
+        if (strcmp(name, "each_key") == 0) {
+            if (!blk) ERR(site, "Hash#each_key requires a block");
+            for (size_t i = 0; i < h->len; i++) {
+                Value r = call_block(ev, *blk, &h->keys[i], 1, site);
+                if (ev->errored) return val_nil();
+                if (r.kind == VAL_BREAK)  return *r.wrapped;
+                if (r.kind == VAL_RETURN) return r;
+            }
+            return recv;
+        }
+        if (strcmp(name, "each_value") == 0) {
+            if (!blk) ERR(site, "Hash#each_value requires a block");
+            for (size_t i = 0; i < h->len; i++) {
+                Value r = call_block(ev, *blk, &h->vals[i], 1, site);
+                if (ev->errored) return val_nil();
+                if (r.kind == VAL_BREAK)  return *r.wrapped;
+                if (r.kind == VAL_RETURN) return r;
+            }
+            return recv;
+        }
+        if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
+            if (!blk) ERR(site, "Hash#map requires a block");
+            Value result = val_array_new();
+            for (size_t i = 0; i < h->len; i++) {
+                Value bargs[2] = { h->keys[i], h->vals[i] };
+                Value r = call_block(ev, *blk, bargs, 2, site);
+                if (ev->errored) return val_nil();
+                if (r.kind == VAL_BREAK)  return *r.wrapped;
+                if (r.kind == VAL_RETURN) return r;
+                val_array_push(&result, r);
+            }
+            return result;
+        }
+        if (strcmp(name, "select") == 0 || strcmp(name, "filter") == 0) {
+            if (!blk) ERR(site, "Hash#select requires a block");
+            Value result = val_hash_new(ev->arena);
+            for (size_t i = 0; i < h->len; i++) {
+                Value bargs[2] = { h->keys[i], h->vals[i] };
+                Value r = call_block(ev, *blk, bargs, 2, site);
+                if (ev->errored) return val_nil();
+                if (r.kind == VAL_BREAK)  return *r.wrapped;
+                if (r.kind == VAL_RETURN) return r;
+                if (val_truthy(r)) val_hash_set(result.hash, h->keys[i], h->vals[i]);
+            }
+            return result;
+        }
+        if (strcmp(name, "reject") == 0) {
+            if (!blk) ERR(site, "Hash#reject requires a block");
+            Value result = val_hash_new(ev->arena);
+            for (size_t i = 0; i < h->len; i++) {
+                Value bargs[2] = { h->keys[i], h->vals[i] };
+                Value r = call_block(ev, *blk, bargs, 2, site);
+                if (ev->errored) return val_nil();
+                if (r.kind == VAL_BREAK)  return *r.wrapped;
+                if (r.kind == VAL_RETURN) return r;
+                if (!val_truthy(r)) val_hash_set(result.hash, h->keys[i], h->vals[i]);
+            }
+            return result;
+        }
+        if (strcmp(name, "any?") == 0) {
+            if (!blk) ERR(site, "Hash#any? requires a block");
+            for (size_t i = 0; i < h->len; i++) {
+                Value bargs[2] = { h->keys[i], h->vals[i] };
+                Value r = call_block(ev, *blk, bargs, 2, site);
+                if (ev->errored) return val_nil();
+                if (val_truthy(r)) return val_true();
+            }
+            return val_false();
+        }
+        if (strcmp(name, "all?") == 0) {
+            if (!blk) ERR(site, "Hash#all? requires a block");
+            for (size_t i = 0; i < h->len; i++) {
+                Value bargs[2] = { h->keys[i], h->vals[i] };
+                Value r = call_block(ev, *blk, bargs, 2, site);
+                if (ev->errored) return val_nil();
+                if (!val_truthy(r)) return val_false();
+            }
+            return val_true();
+        }
+        if (strcmp(name, "min_by") == 0 || strcmp(name, "max_by") == 0 ||
+            strcmp(name, "sort_by") == 0) {
+            /* delegate to array form */
+            Value as_arr = val_array_new();
+            for (size_t i = 0; i < h->len; i++) {
+                Value pair = val_array_new();
+                val_array_push(&pair, h->keys[i]);
+                val_array_push(&pair, h->vals[i]);
+                val_array_push(&as_arr, pair);
+            }
+            return dispatch_method(ev, env, as_arr, name, args, argc, blk, site);
+        }
+        if (strcmp(name, "flat_map") == 0) {
+            if (!blk) ERR(site, "Hash#flat_map requires a block");
+            Value result = val_array_new();
+            for (size_t i = 0; i < h->len; i++) {
+                Value bargs[2] = { h->keys[i], h->vals[i] };
+                Value r = call_block(ev, *blk, bargs, 2, site);
+                if (ev->errored) return val_nil();
+                if (r.kind == VAL_ARRAY)
+                    for (size_t j = 0; j < r.array.len; j++)
+                        val_array_push(&result, r.array.elems[j]);
+                else
+                    val_array_push(&result, r);
+            }
+            return result;
+        }
+        if (strcmp(name, "reduce") == 0 || strcmp(name, "inject") == 0) {
+            if (!blk) ERR(site, "Hash#reduce requires a block");
+            if (h->len == 0) return argc > 0 ? args[0] : val_nil();
+            size_t start = 0;
+            Value acc;
+            if (argc > 0) { acc = args[0]; }
+            else {
+                Value pair = val_array_new();
+                val_array_push(&pair, h->keys[0]);
+                val_array_push(&pair, h->vals[0]);
+                acc = pair; start = 1;
+            }
+            for (size_t i = start; i < h->len; i++) {
+                Value pair = val_array_new();
+                val_array_push(&pair, h->keys[i]);
+                val_array_push(&pair, h->vals[i]);
+                Value bargs[2] = { acc, pair };
+                Value r = call_block(ev, *blk, bargs, 2, site);
+                if (ev->errored) return val_nil();
+                if (r.kind == VAL_BREAK)  return *r.wrapped;
+                if (r.kind == VAL_RETURN) return r;
+                acc = r;
+            }
+            return acc;
+        }
+        if (strcmp(name, "store") == 0) {
+            if (argc < 2) ERR(site, "Hash#store requires key and value");
+            val_hash_set(h, args[0], args[1]);
+            return args[1];
+        }
+        if (strcmp(name, "clear") == 0) { h->len = 0; return recv; }
+        if (strcmp(name, "dup")   == 0) {
+            Value result = val_hash_new(ev->arena);
+            for (size_t i = 0; i < h->len; i++)
+                val_hash_set(result.hash, h->keys[i], h->vals[i]);
+            return result;
+        }
+        if (strcmp(name, "nil?")  == 0) return val_false();
+        ERR(site, "undefined method '%s' for Hash", name);
+    }
+
     /* ---- nil ---- */
     if (recv.kind == VAL_NIL) {
         if (strcmp(name, "nil?") == 0 || strcmp(name, "to_s") == 0) return val_nil();
@@ -929,13 +1173,23 @@ static Value eval_call(Eval *ev, Env *env, Node *node) {
     Value recv = eval_node(ev, env, node->call.recv);
     CHECK(recv);
 
-    /* Array subscript */
-    if (strcmp(node->call.method, "[]") == 0 && recv.kind == VAL_ARRAY) {
-        if (argc < 1) ERR(node, "wrong number of args for []");
-        int64_t idx = args[0].ival;
-        if (idx < 0) idx = (int64_t)recv.array.len + idx;
-        if (idx < 0 || (size_t)idx >= recv.array.len) return val_nil();
-        return recv.array.elems[idx];
+    /* Subscript read/write handled inline for arrays */
+    if (recv.kind == VAL_ARRAY) {
+        if (strcmp(node->call.method, "[]") == 0) {
+            if (argc < 1) ERR(node, "wrong number of args for []");
+            int64_t idx = args[0].ival;
+            if (idx < 0) idx = (int64_t)recv.array.len + idx;
+            if (idx < 0 || (size_t)idx >= recv.array.len) return val_nil();
+            return recv.array.elems[idx];
+        }
+        if (strcmp(node->call.method, "[]=") == 0) {
+            if (argc < 2) ERR(node, "wrong number of args for []=");
+            int64_t idx = args[0].ival;
+            if (idx < 0) idx = (int64_t)recv.array.len + idx;
+            if (idx >= 0 && (size_t)idx < recv.array.len)
+                recv.array.elems[idx] = args[1];
+            return args[1];
+        }
     }
 
     return dispatch_method(ev, env, recv, node->call.method, args, argc, blk, node);
@@ -1276,9 +1530,19 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             return arr;
         }
 
-        case NODE_HASH:
-            /* TODO: proper hash; return nil for now */
-            return val_nil();
+        case NODE_HASH: {
+            Value h = val_hash_new(ev->arena);
+            for (NodeList *l = node->hash.pairs; l; l = l->next) {
+                Node *pair = l->node;
+                if (!pair || pair->kind != NODE_PAIR) continue;
+                Value key = eval_node(ev, env, pair->pair.key);
+                CHECK(key);
+                Value val = eval_node(ev, env, pair->pair.value);
+                CHECK(val);
+                val_hash_set(h.hash, key, val);
+            }
+            return h;
+        }
 
         /* ---- Body / Program ---- */
         case NODE_BODY:
