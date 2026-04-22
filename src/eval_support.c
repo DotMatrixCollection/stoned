@@ -1,9 +1,180 @@
 #include "eval_internal.h"
+#include "parser.h"
+#include "sema.h"
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static char *read_file_bytes(const char *path, size_t *out_len) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    size_t len = ftell(f);
+    rewind(f);
+    char *buf = malloc(len + 1);
+    if (!buf) {
+        fclose(f);
+        return NULL;
+    }
+    fread(buf, 1, len, f);
+    fclose(f);
+    buf[len] = '\0';
+    *out_len = len;
+    return buf;
+}
+
+static const char *normalize_path(Arena *a, const char *path) {
+    size_t len = strlen(path);
+    char *tmp = malloc(len + 1);
+    if (!tmp) return NULL;
+    memcpy(tmp, path, len + 1);
+
+    const char *segments[256];
+    int abs = path[0] == '/';
+    size_t count = 0;
+    char *cursor = tmp;
+    while (*cursor) {
+        while (*cursor == '/') cursor++;
+        if (!*cursor) break;
+        char *part = cursor;
+        while (*cursor && *cursor != '/') cursor++;
+        if (*cursor) *cursor++ = '\0';
+
+        if (strcmp(part, ".") == 0 || part[0] == '\0')
+            continue;
+        if (strcmp(part, "..") == 0) {
+            if (count > 0 && strcmp(segments[count - 1], "..") != 0) {
+                count--;
+            } else if (!abs) {
+                segments[count++] = part;
+            }
+            continue;
+        }
+        segments[count++] = part;
+    }
+
+    size_t total = abs ? 1 : 0;
+    if (count == 0 && !abs) total = 1;
+    for (size_t i = 0; i < count; i++)
+        total += strlen(segments[i]) + (i + 1 < count ? 1 : 0);
+
+    char *joined = arena_alloc(a, total + 1);
+    size_t pos = 0;
+    if (abs) joined[pos++] = '/';
+    if (count == 0 && !abs) joined[pos++] = '.';
+    for (size_t i = 0; i < count; i++) {
+        size_t slen = strlen(segments[i]);
+        memcpy(joined + pos, segments[i], slen);
+        pos += slen;
+        if (i + 1 < count) joined[pos++] = '/';
+    }
+    joined[pos] = '\0';
+    free(tmp);
+    return joined;
+}
+
+static const char *resolve_relative_path(Arena *a, const char *base_file, const char *rel) {
+    if (!base_file || !rel) return NULL;
+
+    const char *slash = strrchr(base_file, '/');
+    size_t dir_len = slash ? (size_t)(slash - base_file) : 0;
+    size_t rel_len = strlen(rel);
+    int needs_rb = rel_len < 3 || strcmp(rel + rel_len - 3, ".rb") != 0;
+    size_t total = dir_len + (dir_len ? 1 : 0) + rel_len + (needs_rb ? 3 : 0) + 1;
+    char *joined = malloc(total);
+    if (!joined) return NULL;
+
+    if (dir_len) {
+        memcpy(joined, base_file, dir_len);
+        joined[dir_len] = '/';
+        memcpy(joined + dir_len + 1, rel, rel_len);
+        joined[dir_len + 1 + rel_len] = '\0';
+    } else {
+        memcpy(joined, rel, rel_len + 1);
+    }
+    if (needs_rb) strcat(joined, ".rb");
+
+    const char *copy = normalize_path(a, joined);
+    free(joined);
+    return copy;
+}
+
+static int eval_has_loaded_file(Eval *ev, const char *path) {
+    for (LoadedFile *entry = ev->loaded_files; entry; entry = entry->next) {
+        if (strcmp(entry->path, path) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void eval_mark_loaded_file(Eval *ev, const char *path) {
+    LoadedFile *entry = arena_alloc(ev->arena, sizeof(LoadedFile));
+    entry->path = path;
+    entry->next = ev->loaded_files;
+    ev->loaded_files = entry;
+}
+
+static Value eval_require_path(Eval *ev, const char *resolved, Node *site) {
+    if (eval_has_loaded_file(ev, resolved))
+        return val_false();
+
+    size_t src_len = 0;
+    char *src = read_file_bytes(resolved, &src_len);
+    if (!src)
+        return eval_raise_class(ev, site, "LoadError", "cannot load such file -- %s", resolved);
+
+    Parser parser;
+    parser_init(&parser, src, src_len, ev->arena);
+    Node *tree = parse_program(&parser);
+    if (parser.error_count) {
+        Value err = eval_raise_class(ev, site, "LoadError", "parse error in %s: %s",
+                                     resolved, parser.errors[0].message);
+        free(src);
+        return err;
+    }
+
+    Sema sema;
+    sema_init(&sema, ev->arena);
+    sema_run(&sema, tree);
+    if (sema.error_count) {
+        Value err = eval_raise_class(ev, site, "LoadError", "sema error in %s: %s",
+                                     resolved, sema.errors[0].message);
+        free(src);
+        return err;
+    }
+
+    const char *previous_file = ev->current_file;
+    ev->current_file = resolved;
+    Value result = eval_node(ev, ev->top_env, tree);
+    ev->current_file = previous_file;
+    free(src);
+
+    if (val_is_signal(result)) return result;
+    eval_mark_loaded_file(ev, resolved);
+    return val_true();
+}
+
+static const char *resolve_require_path(Arena *a, const char *base_file, const char *path, int current_dir) {
+    if (!path) return NULL;
+    if (strchr(path, '/')) {
+        if (base_file)
+            return resolve_relative_path(a, base_file, path);
+        size_t len = strlen(path);
+        int needs_rb = len < 3 || strcmp(path + len - 3, ".rb") != 0;
+        char *joined = malloc(len + (needs_rb ? 3 : 0) + 1);
+        if (!joined) return NULL;
+        memcpy(joined, path, len + 1);
+        if (needs_rb) strcat(joined, ".rb");
+        const char *copy = normalize_path(a, joined);
+        free(joined);
+        return copy;
+    }
+
+    const char *base = current_dir ? "./entry.rb" : base_file;
+    return resolve_relative_path(a, base, path);
+}
 
 static void format_exception_summary(Eval *ev, const char *class_name, const char *msg) {
     size_t cls_len = strlen(class_name);
@@ -461,4 +632,41 @@ Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site) {
     if (blk.block.is_lambda && result.kind == VAL_RETURN) return *result.wrapped;
     if (result.kind == VAL_NEXT) return *result.wrapped;
     return result;
+}
+
+Value eval_require_relative(Eval *ev, Env *env, const char *path, Node *site) {
+    (void)env;
+    if (!ev->current_file)
+        return eval_raise_class(ev, site, "LoadError", "require_relative requires a current file");
+
+    const char *resolved = resolve_relative_path(ev->arena, ev->current_file, path);
+    if (!resolved)
+        return eval_raise_class(ev, site, "LoadError", "cannot resolve require_relative path '%s'", path);
+    return eval_require_path(ev, resolved, site);
+}
+
+Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
+    (void)env;
+    const char *resolved = NULL;
+
+    if (ev->current_file)
+        resolved = resolve_require_path(ev->arena, ev->current_file, path, 0);
+    if (resolved) {
+        FILE *f = fopen(resolved, "rb");
+        if (f) {
+            fclose(f);
+            return eval_require_path(ev, resolved, site);
+        }
+    }
+
+    resolved = resolve_require_path(ev->arena, NULL, path, 1);
+    if (resolved) {
+        FILE *f = fopen(resolved, "rb");
+        if (f) {
+            fclose(f);
+            return eval_require_path(ev, resolved, site);
+        }
+    }
+
+    return eval_raise_class(ev, site, "LoadError", "cannot load such file -- %s", path);
 }

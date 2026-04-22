@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
     }
 
     Eval eval;
-    eval_init(&eval, &arena, stdout);
+    eval_init(&eval, &arena, stdout, argc >= 2 ? argv[1] : NULL);
     Value result = eval_node(&eval, eval.top_env, tree);
 
     if (eval.errored) {

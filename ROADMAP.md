@@ -45,8 +45,12 @@ The core visibility model now exists, but it still needs:
 ### `Comparable` and `Enumerable`
 Implement as built-in modules once module infrastructure exists. `Comparable` needs `<=>` defined; `Enumerable` needs `each` defined.
 
-### `require` / `require_relative`
-File loading. `require_relative` is straightforward — resolve path relative to the current file and feed it through the same pipeline. `require` needs a load path and a loaded-files registry.
+### File loading polish
+The core loading path now exists, but it still needs:
+
+- a real `$LOAD_PATH`
+- stronger path canonicalization / platform handling
+- cleaner load-time error reporting beyond the current basic `LoadError` path
 
 ### String: more completeness
 `gsub`, `sub`, `match`, `=~`, `scan`, `tr`, `squeeze`, `center`, `ljust`, `rjust`, `bytes`, `encode`. Regex support needs an external library (PCRE2 or similar) or a hand-rolled NFA.
@@ -92,6 +96,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - `Proc.new`, `lambda`, and `->` literals with callable proc/lambda values
 - `module`, `include`, `prepend`, `extend`, and `super` through module ancestors
 - `send`, `__send__`, `public_send`, and method visibility (`public`, `private`, `protected`)
+- `require_relative`, minimal `require`, load guards, and `LoadError`
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files

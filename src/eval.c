@@ -478,11 +478,12 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
     }
 }
 
-void eval_init(Eval *ev, Arena *arena, FILE *out) {
+void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     memset(ev, 0, sizeof(*ev));
     ev->arena   = arena;
     ev->out     = out;
     ev->top_env = env_new(arena, NULL, 1);
+    ev->current_file = current_file;
 
     static const char *builtins[] = {
         "Object", "BasicObject", "Numeric",
@@ -491,7 +492,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out) {
         "Class", "Module", "Method", "Proc",
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NoMethodError",
-        "ZeroDivisionError", "LocalJumpError", "KeyError",
+        "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError",
         NULL
     };
     for (int i = 0; builtins[i]; i++) {
@@ -501,7 +502,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out) {
     }
 
     Value exception, standard_error, runtime_error, argument_error, type_error, no_method_error;
-    Value zero_division_error, local_jump_error, key_error;
+    Value zero_division_error, local_jump_error, key_error, load_error;
     if (env_get(ev->top_env, "Exception", &exception) && exception.kind == VAL_CLASS &&
         env_get(ev->top_env, "StandardError", &standard_error) && standard_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "RuntimeError", &runtime_error) && runtime_error.kind == VAL_CLASS &&
@@ -510,7 +511,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out) {
         env_get(ev->top_env, "NoMethodError", &no_method_error) && no_method_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "ZeroDivisionError", &zero_division_error) && zero_division_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "LocalJumpError", &local_jump_error) && local_jump_error.kind == VAL_CLASS &&
-        env_get(ev->top_env, "KeyError", &key_error) && key_error.kind == VAL_CLASS) {
+        env_get(ev->top_env, "KeyError", &key_error) && key_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "LoadError", &load_error) && load_error.kind == VAL_CLASS) {
         standard_error.klass->superclass = exception;
         runtime_error.klass->superclass = standard_error;
         argument_error.klass->superclass = standard_error;
@@ -519,5 +521,6 @@ void eval_init(Eval *ev, Arena *arena, FILE *out) {
         zero_division_error.klass->superclass = standard_error;
         local_jump_error.klass->superclass = standard_error;
         key_error.klass->superclass = standard_error;
+        load_error.klass->superclass = standard_error;
     }
 }

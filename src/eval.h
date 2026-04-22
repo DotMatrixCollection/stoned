@@ -14,6 +14,11 @@ typedef struct {
     const char *label;
 } EvalFrame;
 
+typedef struct LoadedFile {
+    const char *path;
+    struct LoadedFile *next;
+} LoadedFile;
+
 typedef struct {
     Arena       *arena;
     GlobalTable  globals;
@@ -30,9 +35,11 @@ typedef struct {
     char         exception_msg[512];
     EvalFrame    frames[EVAL_MAX_DEPTH];
     int          frame_count;
+    const char  *current_file;
+    LoadedFile  *loaded_files;
 } Eval;
 
-void  eval_init(Eval *ev, Arena *arena, FILE *out);
+void  eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file);
 Value eval_node(Eval *ev, Env *env, Node *node);
 
 #endif

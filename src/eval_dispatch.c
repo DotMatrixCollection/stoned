@@ -378,6 +378,22 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
             return eval_raise_class(ev, site, "TypeError", "extend requires an object");
         return builtin_extend(ev, self, args, argc, site);
     }
+    if (strcmp(name, "require_relative") == 0) {
+        if (argc < 1)
+            return eval_raise_class(ev, site, "ArgumentError", "require_relative requires a path");
+        const char *path = args[0].kind == VAL_STRING ? args[0].sval : NULL;
+        if (!path)
+            return eval_raise_class(ev, site, "TypeError", "require_relative path must be a String");
+        return eval_require_relative(ev, env, path, site);
+    }
+    if (strcmp(name, "require") == 0) {
+        if (argc < 1)
+            return eval_raise_class(ev, site, "ArgumentError", "require requires a path");
+        const char *path = args[0].kind == VAL_STRING ? args[0].sval : NULL;
+        if (!path)
+            return eval_raise_class(ev, site, "TypeError", "require path must be a String");
+        return eval_require(ev, env, path, site);
+    }
     if (strcmp(name, "public") == 0 || strcmp(name, "private") == 0 || strcmp(name, "protected") == 0) {
         Value self;
         if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
@@ -631,7 +647,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
 
         static const char *kernel_names[] = {
             "puts", "print", "p", "raise", "lambda", "rand", "exit", "include", "prepend", "extend",
-            "public", "private", "protected",
+            "require", "require_relative", "public", "private", "protected",
             "attr_reader", "attr_writer", "attr_accessor", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
