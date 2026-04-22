@@ -36,6 +36,20 @@ static int utf8_ascii_alnum(uint32_t cp) {
     return (cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
 }
 
+static int utf8_space(uint32_t cp) {
+    switch (cp) {
+        case 0x0009: case 0x000A: case 0x000B: case 0x000C: case 0x000D:
+        case 0x0020: case 0x0085: case 0x00A0: case 0x1680:
+        case 0x2000: case 0x2001: case 0x2002: case 0x2003: case 0x2004:
+        case 0x2005: case 0x2006: case 0x2007: case 0x2008: case 0x2009:
+        case 0x200A: case 0x2028: case 0x2029: case 0x202F: case 0x205F:
+        case 0x3000:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 typedef struct {
     uint32_t lo;
     uint32_t hi;
@@ -427,10 +441,24 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "strip") == 0) {
-        while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
         size_t len = strlen(s);
-        while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t' || s[len - 1] == '\n' || s[len - 1] == '\r')) len--;
-        *out = val_string_n(ev->arena, s, len);
+        size_t start = 0;
+        size_t end = len;
+        while (start < len) {
+            uint32_t cp = 0;
+            size_t width = 0;
+            utf8_decode_one(s + start, len - start, &cp, &width);
+            if (!utf8_space(cp)) break;
+            start += width;
+        }
+        while (end > start) {
+            size_t prev = utf8_prev_char_start(s, end);
+            uint32_t cp = 0;
+            utf8_decode_one(s + prev, end - prev, &cp, NULL);
+            if (!utf8_space(cp)) break;
+            end = prev;
+        }
+        *out = val_string_n(ev->arena, s + start, end - start);
         return 1;
     }
     if (strcmp(name, "chars") == 0) {
@@ -613,15 +641,27 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "lstrip") == 0) {
-        const char *p = s;
-        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
-        *out = val_string(ev->arena, p);
+        size_t len = strlen(s);
+        size_t start = 0;
+        while (start < len) {
+            uint32_t cp = 0;
+            size_t width = 0;
+            utf8_decode_one(s + start, len - start, &cp, &width);
+            if (!utf8_space(cp)) break;
+            start += width;
+        }
+        *out = val_string(ev->arena, s + start);
         return 1;
     }
     if (strcmp(name, "rstrip") == 0) {
         size_t len = strlen(s);
-        while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t' ||
-                            s[len - 1] == '\n' || s[len - 1] == '\r')) len--;
+        while (len > 0) {
+            size_t prev = utf8_prev_char_start(s, len);
+            uint32_t cp = 0;
+            utf8_decode_one(s + prev, len - prev, &cp, NULL);
+            if (!utf8_space(cp)) break;
+            len = prev;
+        }
         *out = val_string_n(ev->arena, s, len);
         return 1;
     }
