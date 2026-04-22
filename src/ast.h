@@ -69,6 +69,10 @@ typedef enum {
     NODE_MODULE,        /* module Foo ... end */
     NODE_PARAM,         /* single formal parameter */
 
+    /* case/when */
+    NODE_CASE,           /* case subject; when ...; end */
+    NODE_WHEN,           /* when pattern, ...; body */
+
     /* Super call */
     NODE_SUPER,
 
@@ -219,6 +223,19 @@ struct Node {
             Node *end;
             int   exclusive;
         } range;
+
+        /* NODE_CASE */
+        struct {
+            Node     *subject;   /* NULL for caseless form */
+            NodeList *whens;     /* list of NODE_WHEN */
+            Node     *else_body; /* NULL if absent */
+        } case_stmt;
+
+        /* NODE_WHEN */
+        struct {
+            NodeList *patterns;  /* one or more match expressions */
+            Node     *body;
+        } when_clause;
 
         /* NODE_SUPER */
         struct {

@@ -257,6 +257,42 @@ Node *parse_stmt(Parser *p) {
         return n;
     }
 
+    if (t.kind == TOK_CASE) {
+        advance(p);
+        Node *n = node_new(p->arena, NODE_CASE, s);
+        /* Optional subject — absent if next token is a terminator */
+        if (!check(p, TOK_NEWLINE) && !check(p, TOK_SEMICOLON) && !check(p, TOK_EOF))
+            n->case_stmt.subject = parse_expr(p, 0);
+        skip_terminators(p);
+
+        NodeList *whens = NULL;
+        while (check(p, TOK_WHEN)) {
+            Span ws = tok_span(peek(p));
+            advance(p);
+            Node *w = node_new(p->arena, NODE_WHEN, ws);
+            NodeList *patterns = NULL;
+            Node *pat = parse_expr(p, 0);
+            if (pat) patterns = nodelist_append(p->arena, patterns, pat);
+            while (match(p, TOK_COMMA)) {
+                skip_terminators(p);
+                Node *more = parse_expr(p, 0);
+                if (more) patterns = nodelist_append(p->arena, patterns, more);
+            }
+            w->when_clause.patterns = patterns;
+            if (!match(p, TOK_THEN)) skip_terminators(p);
+            w->when_clause.body = parse_body(p, 0);
+            whens = nodelist_append(p->arena, whens, w);
+        }
+        n->case_stmt.whens = whens;
+
+        if (match(p, TOK_ELSE)) {
+            skip_terminators(p);
+            n->case_stmt.else_body = parse_body(p, 0);
+        }
+        expect(p, TOK_END, "expected 'end'");
+        return n;
+    }
+
     if (t.kind == TOK_MODULE) {
         advance(p);
         Token name_tok = advance(p);
@@ -323,7 +359,8 @@ Node *parse_body(Parser *p, int stop_at_rbrace) {
         skip_terminators(p);
         Token t = peek(p);
         if (t.kind == TOK_EOF || t.kind == TOK_END || t.kind == TOK_ELSE ||
-            t.kind == TOK_ELSIF || t.kind == TOK_ENSURE || t.kind == TOK_RESCUE)
+            t.kind == TOK_ELSIF || t.kind == TOK_ENSURE || t.kind == TOK_RESCUE ||
+            t.kind == TOK_WHEN)
             break;
         if (stop_at_rbrace && t.kind == TOK_RBRACE)
             break;

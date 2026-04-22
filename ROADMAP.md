@@ -51,7 +51,6 @@ The core built-in mixins now exist, but the next gaps are:
 
 - broader `Enumerable` method coverage in the prelude (`map`, `select`, `reject`, etc. are only defined on `Array`, `Hash`, and `Range` natively, not via the shared prelude)
 - closer Ruby compatibility on edge cases
-- `case`/`when` with range `===` matching (requires `case` statement support)
 
 ### File loading polish
 The core loading path now exists, but it still needs:
@@ -81,8 +80,7 @@ The core exception path now exists, but it still needs:
 - fuller Ruby rescue syntax beyond the current `rescue => e`, typed clauses, typed lists, and `retry`
 - `StopIteration` and broader standard exception coverage
 
-### `case`/`when`
-Not yet implemented. Planned support: value equality, type (`Class ===`), and range membership (`Range#===`) in `when` clauses.
+### Frozen objects and string mutability
 
 ### Frozen objects and string mutability
 `freeze`, `frozen?`, `dup`, `clone`. Strings in Ruby are mutable by default; frozen strings raise `FrozenError` on mutation. Requires a `frozen` flag on string/object values.
@@ -130,6 +128,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - `method_missing` / `respond_to_missing?` for objects, classes, and primitive-backed reopened classes
 - built-in `Comparable` / `Enumerable` plus operator method defs like `def <=>`
 - `Range`: `..` / `...` literals, `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `min`, `max`, `sum`, `step`, `map`, `select`, `reject`, `reduce`, `any?`/`all?`/`none?`; `Range` includes `Enumerable`; integer and string ranges supported; `String#<=>` added as a dispatch method
+- `case`/`when`: value equality, range membership, class membership (`===`), multi-pattern `when`, optional `else`, caseless form, `then` keyword; `case` is an expression; `Class#===` added
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files

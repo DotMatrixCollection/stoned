@@ -18,6 +18,11 @@ static Value exception_arg_message(Eval *ev, Value recv, Value *args, int argc, 
 int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     if (recv.kind != VAL_CLASS) return 0;
+    if (strcmp(name, "===") == 0) {
+        if (argc < 1) { *out = val_false(); return 1; }
+        *out = val_bool(val_is_a(args[0], recv));
+        return 1;
+    }
     if (strcmp(recv.klass->name, "File") == 0) {
         if (strcmp(name, "read") == 0) {
             if (argc < 1) {

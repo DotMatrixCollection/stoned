@@ -166,7 +166,7 @@ static Value dispatch_dynamic_send(Eval *ev, Env *env, Value recv, const char *d
     return dispatch_method(ev, env, recv, mname, args + 1, argc - 1, blk, site, public_only, explicit_receiver);
 }
 
-static int val_is_a(Value v, Value klass_arg) {
+int val_is_a(Value v, Value klass_arg) {
     if (klass_arg.kind != VAL_CLASS) return 0;
     const char *kname = klass_arg.klass->name;
     if (strcmp(kname, "Object") == 0 || strcmp(kname, "BasicObject") == 0) return 1;
@@ -690,6 +690,10 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (strcmp(name, "!=") == 0) {
         if (argc < 1) return val_true();
         return val_bool(!val_equal(recv, args[0]));
+    }
+    if (strcmp(name, "===") == 0 && recv.kind != VAL_CLASS && recv.kind != VAL_RANGE) {
+        if (argc < 1) return val_false();
+        return val_bool(val_equal(recv, args[0]));
     }
     if (strcmp(name, "send") == 0 || strcmp(name, "__send__") == 0)
         return dispatch_dynamic_send(ev, env, recv, name, args, argc, blk, site, 0);

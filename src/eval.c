@@ -238,6 +238,36 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             return result;
         }
 
+        case NODE_CASE: {
+            Value subject = val_true(); /* caseless: each when tests truthiness */
+            int has_subject = (node->case_stmt.subject != NULL);
+            if (has_subject) {
+                subject = eval_node(ev, env, node->case_stmt.subject);
+                CHECK(subject);
+            }
+            for (NodeList *l = node->case_stmt.whens; l; l = l->next) {
+                Node *w = l->node;
+                if (!w || w->kind != NODE_WHEN) continue;
+                for (NodeList *pl = w->when_clause.patterns; pl; pl = pl->next) {
+                    Value pat = eval_node(ev, env, pl->node);
+                    CHECK(pat);
+                    int matched;
+                    if (has_subject) {
+                        Value result = dispatch_method(ev, env, pat, "===", &subject, 1, NULL, node, 0, 1);
+                        CHECK(result);
+                        matched = val_truthy(result);
+                    } else {
+                        matched = val_truthy(pat);
+                    }
+                    if (matched)
+                        return eval_node(ev, env, w->when_clause.body);
+                }
+            }
+            if (node->case_stmt.else_body)
+                return eval_node(ev, env, node->case_stmt.else_body);
+            return val_nil();
+        }
+
         case NODE_RETRY:
             return val_retry();
 

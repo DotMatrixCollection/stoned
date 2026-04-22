@@ -244,6 +244,7 @@ Node *parse_expr(Parser *p, int min_bp) {
                     case TOK_AND: case TOK_OR: case TOK_NOT:
                     case TOK_IN: case TOK_RESCUE: case TOK_ENSURE:
                     case TOK_BEGIN: case TOK_YIELD: case TOK_SUPER:
+                    case TOK_CASE: case TOK_WHEN:
                         method_name = name_tok.sval;
                         break;
                     default:
@@ -626,6 +627,9 @@ Node *parse_primary(Parser *p) {
             advance(p);
             return node_new(p->arena, NODE_RETRY, s);
         }
+        case TOK_IF: case TOK_UNLESS: case TOK_WHILE: case TOK_UNTIL:
+        case TOK_BEGIN: case TOK_CASE:
+            return parse_stmt(p);
         case TOK_SUPER: {
             advance(p);
             Node *n = node_new(p->arena, NODE_SUPER, s);

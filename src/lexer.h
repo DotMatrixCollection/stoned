@@ -55,6 +55,8 @@ typedef enum {
     TOK_YIELD,
     TOK_SUPER,
     TOK_RETRY,
+    TOK_CASE,
+    TOK_WHEN,
 
     /* Operators */
     TOK_PLUS,           /* + */
