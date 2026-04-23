@@ -8,4 +8,6 @@ false
 hidden
 token
 NoMethodError
+protected method 'token' called for an instance of Child
 NoMethodError
+protected method 'token' called for an instance of Child

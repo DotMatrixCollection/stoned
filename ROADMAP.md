@@ -170,7 +170,7 @@ A systematic test-probe of all three completed stages revealed the following con
 - ~~**`Integer(s)`** / **`Float(s)`** / **`String(v)`** / **`Array(v)`** kernel conversion functions: currently resolve to the class constant, not the conversion function~~ done
 - ~~**`String#%`** (sprintf-style format): `"%.2f" % 3.14` raises NoMethodError~~ done
 - ~~**`format`** / **`sprintf`** kernel methods: not defined~~ done
-- Protected method external-call error message says `"undefined method"` instead of `"protected method 'x' called for an instance of Foo"`
+- ~~Protected method external-call error message says `"undefined method"` instead of `"protected method 'x' called for an instance of Foo"`~~ done
 
 ### Group 3 — Parser additions (require lexer/parser changes)
 
@@ -218,6 +218,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - kernel `pp`, with `p`-like inspect output and return-value behavior
 - kernel conversion functions `Integer()`, `Float()`, `String()`, and `Array()`, including parser support for bare capitalized conversion calls
 - sprintf-style formatting via `String#%`, `format`, and `sprintf` with basic `%s`/`%d`/`%i`/`%f`, width, precision, and `%%`
+- protected method external-call `NoMethodError` messages now report protected-call failures instead of generic undefined-method text
 - `attr_reader`, `attr_writer`, `attr_accessor`
 - class methods via `def self.foo`
 - bare `puts` / `print` / `p` and command-style calls

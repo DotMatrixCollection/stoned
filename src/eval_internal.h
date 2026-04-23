@@ -43,6 +43,7 @@ Value eval_file_exist(Eval *ev, const char *path);
 Value eval_file_delete(Eval *ev, const char *path, Node *site);
 Value eval_file_touch_mode(Eval *ev, const char *path, const char *mode, Node *site);
 Value eval_format_string(Eval *ev, Env *env, const char *fmt, Value *args, int argc, Node *site);
+const char *value_class_name(Eval *ev, Value v);
 int value_has_module(Eval *ev, Value recv, const char *module_name);
 int val_is_a(Value v, Value klass_arg);
 int ruby_class_find_instance_method(RubyClass *klass, const char *name, Value *out, RubyClass **owner);

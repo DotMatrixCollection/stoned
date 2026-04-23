@@ -9,6 +9,7 @@
 #define CHECK(v) do { if (ev->errored || val_is_signal(v)) return (v); } while(0)
 
 static int val_responds_to(Eval *ev, Value recv, const char *name, int include_private);
+static Value val_class_of(Eval *ev, Value v);
 
 static void copy_module_methods(Eval *ev, Env *target, RubyClass *mod, int singleton_prefix) {
     if (!mod || !target) return;
@@ -160,8 +161,34 @@ static Value dispatch_dynamic_send(Eval *ev, Env *env, Value recv, const char *d
                         ? args[0].sval : NULL;
     if (!mname)
         return eval_raise_class(ev, site, "TypeError", "%s: method name must be a symbol or string", dispatch_name);
-    if (public_only && !val_responds_to(ev, recv, mname, 0) && val_responds_to(ev, recv, mname, 1))
+    if (public_only && !val_responds_to(ev, recv, mname, 0) && val_responds_to(ev, recv, mname, 1)) {
+        Value method = val_nil();
+        RubyClass *owner = NULL;
+        int found = 0;
+        if (recv.kind == VAL_OBJECT) {
+            if (recv.obj->singleton_env)
+                found = env_get(recv.obj->singleton_env, mname, &method) && method.kind == VAL_METHOD;
+            if (!found && recv.obj->klass.kind == VAL_CLASS)
+                found = ruby_class_find_instance_method(recv.obj->klass.klass, mname, &method, &owner);
+        } else if (recv.kind == VAL_CLASS) {
+            size_t nlen = strlen(mname);
+            char *key = arena_alloc(ev->arena, nlen + 6);
+            memcpy(key, "self.", 5);
+            memcpy(key + 5, mname, nlen + 1);
+            for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+                if (env_get(k->class_env, key, &method) && method.kind == VAL_METHOD) { found = 1; break; }
+            }
+        } else {
+            Value klass = val_class_of(ev, recv);
+            if (klass.kind == VAL_CLASS)
+                found = ruby_class_find_instance_method(klass.klass, mname, &method, &owner);
+        }
+        if (found && method.kind == VAL_METHOD && method.method.visibility == METHOD_PROTECTED)
+            return eval_raise_class(ev, site, "NoMethodError",
+                                    "protected method '%s' called for an instance of %s",
+                                    mname, value_class_name(ev, recv));
         return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", mname, val_kind_name(recv.kind));
+    }
     int explicit_receiver = public_only ? 0 : -1;
     return dispatch_method(ev, env, recv, mname, args + 1, argc - 1, blk, site, public_only, explicit_receiver);
 }
@@ -990,6 +1017,10 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                     if (val_is_signal(result)) return result;
                     return result;
                 }
+                if (method.method.visibility == METHOD_PROTECTED)
+                    return eval_raise_class(ev, site, "NoMethodError",
+                                            "protected method '%s' called for an instance of %s",
+                                            name, value_class_name(ev, recv));
             }
         }
     }

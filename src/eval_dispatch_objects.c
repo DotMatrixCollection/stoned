@@ -327,6 +327,12 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 *out = result;
                 return 1;
             }
+            if (cm.method.visibility == METHOD_PROTECTED) {
+                *out = eval_raise_class(ev, site, "NoMethodError",
+                                        "protected method '%s' called for an instance of %s",
+                                        name, value_class_name(ev, recv));
+                return 1;
+            }
         }
         cklass = cklass->superclass.kind == VAL_CLASS ? cklass->superclass.klass : NULL;
     }
@@ -672,8 +678,15 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         if (env_get(recv.obj->singleton_env, name, &method) && method.kind == VAL_METHOD) {
             RubyClass *owner = recv.obj->klass.kind == VAL_CLASS ? recv.obj->klass.klass : NULL;
             if (!method_visibility_allows_call(ev, env, recv, owner, method.method.visibility,
-                                               public_only, explicit_receiver))
+                                               public_only, explicit_receiver)) {
+                if (method.method.visibility == METHOD_PROTECTED) {
+                    *out = eval_raise_class(ev, site, "NoMethodError",
+                                            "protected method '%s' called for an instance of %s",
+                                            name, value_class_name(ev, recv));
+                    return 1;
+                }
                 return 0;
+            }
             Value result = call_method_value(ev, env, recv, method, owner, name, args, argc, blk, site);
             if (val_is_signal(result)) { *out = result; return 1; }
             *out = result;
@@ -686,8 +699,15 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         RubyClass *owner = NULL;
         if (ruby_class_find_instance_method(klass, name, &method, &owner)) {
             if (!method_visibility_allows_call(ev, env, recv, owner, method.method.visibility,
-                                               public_only, explicit_receiver))
+                                               public_only, explicit_receiver)) {
+                if (method.method.visibility == METHOD_PROTECTED) {
+                    *out = eval_raise_class(ev, site, "NoMethodError",
+                                            "protected method '%s' called for an instance of %s",
+                                            name, value_class_name(ev, recv));
+                    return 1;
+                }
                 return 0;
+            }
             Value result = call_method_value(ev, env, recv, method, owner, name, args, argc, blk, site);
             if (val_is_signal(result)) { *out = result; return 1; }
             *out = result;

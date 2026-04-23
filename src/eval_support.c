@@ -186,6 +186,31 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
     return result;
 }
 
+const char *value_class_name(Eval *ev, Value v) {
+    if (v.kind == VAL_OBJECT && v.obj->klass.kind == VAL_CLASS && v.obj->klass.klass && v.obj->klass.klass->name)
+        return v.obj->klass.klass->name;
+    if (v.kind == VAL_CLASS && v.klass && v.klass->name)
+        return v.klass->name;
+    switch (v.kind) {
+        case VAL_INT: return "Integer";
+        case VAL_FLOAT: return "Float";
+        case VAL_STRING: return "String";
+        case VAL_SYMBOL: return "Symbol";
+        case VAL_ARRAY: return "Array";
+        case VAL_HASH: return "Hash";
+        case VAL_RANGE: return "Range";
+        case VAL_NIL: return "NilClass";
+        case VAL_BOOL: return v.bval ? "TrueClass" : "FalseClass";
+        case VAL_METHOD: return "Method";
+        case VAL_BLOCK: return "Proc";
+        default: break;
+    }
+    Value klass;
+    if (env_get(ev->top_env, val_kind_name(v.kind), &klass) && klass.kind == VAL_CLASS && klass.klass->name)
+        return klass.klass->name;
+    return val_kind_name(v.kind);
+}
+
 static const char *normalize_path(Arena *a, const char *path) {
     size_t len = strlen(path);
     char *tmp = malloc(len + 1);

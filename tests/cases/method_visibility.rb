@@ -68,10 +68,12 @@ begin
   Child.new.token
 rescue NoMethodError => e
   puts e.class
+  puts e.message
 end
 
 begin
   Child.new.public_send(:token)
 rescue NoMethodError => e
   puts e.class
+  puts e.message
 end
