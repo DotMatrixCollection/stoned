@@ -39,6 +39,7 @@ static int token_can_start_expr(Token t) {
         case TOK_LPAREN:
         case TOK_LBRACKET:
         case TOK_LBRACE:
+        case TOK_DEFINED:
         case TOK_PLUS:
         case TOK_MINUS:
         case TOK_BANG:
@@ -682,6 +683,19 @@ Node *parse_primary(Parser *p) {
         case TOK_LAMBDA:
             advance(p);
             return parse_lambda_literal(p, s);
+        case TOK_DEFINED: {
+            advance(p);
+            Node *expr = NULL;
+            if (match(p, TOK_LPAREN)) {
+                expr = parse_expr(p, 0);
+                expect(p, TOK_RPAREN, "expected ')'");
+            } else {
+                expr = parse_expr(p, 30);
+            }
+            Node *n = node_new(p->arena, NODE_DEFINED, s);
+            n->defined_expr.expr = expr;
+            return n;
+        }
         case TOK_LPAREN: {
             advance(p);
             Node *inner = parse_expr(p, 0);

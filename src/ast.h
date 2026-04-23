@@ -79,6 +79,7 @@ typedef enum {
 
     /* Block pass — &expr in call args */
     NODE_BLOCK_PASS,
+    NODE_DEFINED,
 
     /* Interpolated string (rope) */
     NODE_ROPE,
@@ -257,6 +258,11 @@ struct Node {
         struct {
             Node *expr;
         } block_pass;
+
+        /* NODE_DEFINED */
+        struct {
+            Node *expr;
+        } defined_expr;
 
         /* NODE_ROPE */
         struct {

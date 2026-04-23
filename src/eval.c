@@ -98,6 +98,124 @@ static int exception_is_a(Eval *ev, Value klass) {
     return 0;
 }
 
+static int defined_simple_value(Eval *ev, Env *env, Node *node, Value *out) {
+    if (!node) return 0;
+
+    switch (node->kind) {
+        case NODE_NIL:
+            *out = val_nil();
+            return 1;
+        case NODE_TRUE:
+            *out = val_true();
+            return 1;
+        case NODE_FALSE:
+            *out = val_false();
+            return 1;
+        case NODE_SELF:
+            return env_get(env, "self", out);
+        case NODE_INT:
+            *out = val_int(node->ival);
+            return 1;
+        case NODE_FLOAT:
+            *out = val_float(node->fval);
+            return 1;
+        case NODE_STRING:
+            *out = val_string(ev->arena, node->sval);
+            return 1;
+        case NODE_SYMBOL:
+            *out = val_symbol(node->sval);
+            return 1;
+        case NODE_LVAR:
+            return env_get(env, node->sval, out);
+        case NODE_IVAR: {
+            Value self;
+            if (env_get(env, "self", &self) && self.kind == VAL_OBJECT)
+                return val_object_get_ivar(self, node->sval, out);
+            return global_get(&ev->globals, node->sval, out);
+        }
+        case NODE_GVAR:
+            return global_get(&ev->globals, node->sval, out);
+        case NODE_CONST:
+            return env_get(ev->top_env, node->sval, out);
+        default:
+            return 0;
+    }
+}
+
+static int defined_method(Eval *ev, Env *env, Value recv, const char *name, Node *site) {
+    Value args[2];
+    args[0] = val_symbol(name);
+    args[1] = val_true();
+    Value result = dispatch_method(ev, env, recv, "respond_to?", args, 2, NULL, site, 0, 1);
+    if (result.kind == VAL_EXCEPTION) {
+        eval_clear_exception(ev);
+        return 0;
+    }
+    return result.kind == VAL_BOOL && result.bval;
+}
+
+static const char *defined_expr(Eval *ev, Env *env, Node *node) {
+    if (!node) return NULL;
+
+    switch (node->kind) {
+        case NODE_LVAR: {
+            Value v;
+            if (env_get(env, node->sval, &v)) return "local-variable";
+            Value self;
+            if (env_get(env, "self", &self) && defined_method(ev, env, self, node->sval, node))
+                return "method";
+            return NULL;
+        }
+        case NODE_IVAR: {
+            Value v;
+            return defined_simple_value(ev, env, node, &v) ? "instance-variable" : NULL;
+        }
+        case NODE_CVAR:
+        case NODE_GVAR: {
+            Value v;
+            return defined_simple_value(ev, env, node, &v) ? "global-variable" : NULL;
+        }
+        case NODE_CONST: {
+            Value v;
+            return env_get(ev->top_env, node->sval, &v) ? "constant" : NULL;
+        }
+        case NODE_SELF:
+            return "self";
+        case NODE_NIL:
+            return "nil";
+        case NODE_TRUE:
+            return "true";
+        case NODE_FALSE:
+            return "false";
+        case NODE_INT:
+        case NODE_FLOAT:
+        case NODE_STRING:
+        case NODE_SYMBOL:
+        case NODE_ARRAY:
+        case NODE_HASH:
+        case NODE_RANGE:
+        case NODE_ROPE:
+            return "expression";
+        case NODE_CALL:
+            if (!node->call.recv) {
+                Value self;
+                if (env_get(env, "self", &self) && defined_method(ev, env, self, node->call.method, node))
+                    return "method";
+                return NULL;
+            }
+            {
+                Value recv;
+                if (!defined_simple_value(ev, env, node->call.recv, &recv))
+                    return NULL;
+                if (defined_method(ev, env, recv, node->call.method, node))
+                    return "method";
+                return NULL;
+            }
+        default:
+            return "expression";
+    }
+}
+
 Value eval_node(Eval *ev, Env *env, Node *node) {
     if (!node || ev->errored) return val_nil();
 
@@ -217,6 +335,11 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
 
         case NODE_CALL:
             return eval_call(ev, env, node);
+
+        case NODE_DEFINED: {
+            const char *kind = defined_expr(ev, env, node->defined_expr.expr);
+            return kind ? val_string(ev->arena, kind) : val_nil();
+        }
 
         case NODE_IF:
         case NODE_UNLESS: {

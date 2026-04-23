@@ -57,6 +57,7 @@ static struct { const char *word; TokenKind kind; } KEYWORDS[] = {
     {"retry",   TOK_RETRY},
     {"case",    TOK_CASE},
     {"when",    TOK_WHEN},
+    {"defined?", TOK_DEFINED},
     {NULL, 0}
 };
 
@@ -676,6 +677,7 @@ const char *token_kind_name(TokenKind k) {
         case TOK_SUPER:      return "super";
         case TOK_CASE:       return "case";
         case TOK_WHEN:       return "when";
+        case TOK_DEFINED:    return "defined?";
         case TOK_PLUS:       return "+";
         case TOK_MINUS:      return "-";
         case TOK_STAR:       return "*";

@@ -194,6 +194,10 @@ static void collect(Sema *s, Node *node, NodeList *excl) {
             collect(s, node->block_pass.expr, excl);
             break;
 
+        case NODE_DEFINED:
+            collect(s, node->defined_expr.expr, excl);
+            break;
+
         case NODE_DEF:
             break;
 
@@ -268,6 +272,10 @@ static void resolve(Sema *s, Node *node) {
 
         case NODE_BLOCK_PASS:
             resolve(s, node->block_pass.expr);
+            break;
+
+        case NODE_DEFINED:
+            resolve(s, node->defined_expr.expr);
             break;
 
         case NODE_CALL:

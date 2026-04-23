@@ -176,7 +176,7 @@ A systematic test-probe of all three completed stages revealed the following con
 
 - **`%w[...]`** word-array literals and **`%i[...]`** symbol-array literals: parse error
 - ~~**`.()` call syntax**: `fn.(args)` (shorthand for `fn.call(args)`) raises parse error at the `.(`~~ done
-- **`defined?`** operator: treated as undefined method
+- ~~**`defined?`** operator: treated as undefined method~~ done
 - **`rescue else`** clause: `begin ... rescue ... else ... end` and method-level `rescue ... else` not parsed
 - **`return 1, 2, 3`** (bare multi-value return): parse error; must use `return [1,2,3]` workaround
 - **`*head, last = array`** (leading splat on LHS of multi-assign): parse error; `first, *rest =` works but `*rest, last =` does not
@@ -220,6 +220,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - sprintf-style formatting via `String#%`, `format`, and `sprintf` with basic `%s`/`%d`/`%i`/`%f`, width, precision, and `%%`
 - protected method external-call `NoMethodError` messages now report protected-call failures instead of generic undefined-method text
 - `.()` call shorthand parsing for `recv.call(...)`
+- `defined?` operator support for locals, instance variables, constants, literals, and method-existence checks on `self` and simple receivers
 - `attr_reader`, `attr_writer`, `attr_accessor`
 - class methods via `def self.foo`
 - bare `puts` / `print` / `p` and command-style calls
