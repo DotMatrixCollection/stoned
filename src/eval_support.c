@@ -772,6 +772,17 @@ int has_splat_param(NodeList *params) {
     return 0;
 }
 
+static int count_bindable_params(NodeList *params) {
+    int count = 0;
+    for (NodeList *l = params; l; l = l->next) {
+        Node *p = l->node;
+        if (!p) continue;
+        if (p->kind == NODE_PARAM && p->param.block_param) continue;
+        count++;
+    }
+    return count;
+}
+
 void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc) {
     int argi = 0;
     for (NodeList *pl = params; pl; pl = pl->next) {
@@ -815,15 +826,26 @@ Value call_block(Eval *ev, Env *caller_env, Value blk, Value *args, int argc, No
     Env *closure  = blk.block.closure;
     Env *frame    = env_new(ev->arena, closure, 0);
     NodeList *pl  = bn->block.params;
+    Value *bound_args = args;
+    int bound_argc = argc;
+    Value autosplat_args[64];
+
+    if (!blk.block.is_lambda && argc == 1 && count_bindable_params(pl) > 1 &&
+        args[0].kind == VAL_ARRAY && args[0].array) {
+        bound_argc = (int)args[0].array->len;
+        if (bound_argc > 64) bound_argc = 64;
+        for (int i = 0; i < bound_argc; i++) autosplat_args[i] = args[0].array->elems[i];
+        bound_args = autosplat_args;
+    }
 
     if (blk.block.is_lambda) {
         int required = count_required_params(pl);
         int total = count_total_params(pl);
-        if (argc < required || (!has_splat_param(pl) && argc > total))
+        if (bound_argc < required || (!has_splat_param(pl) && bound_argc > total))
             return eval_raise_class(ev, call_site, "ArgumentError", "wrong number of arguments");
     }
 
-    bind_params(ev, frame, pl, args, argc);
+    bind_params(ev, frame, pl, bound_args, bound_argc);
 
     eval_push_frame(ev, call_site ? call_site->span.line : 0,
                     call_site ? call_site->span.col : 0, "block");

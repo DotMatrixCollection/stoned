@@ -1,0 +1,9 @@
+--direct
+proc_two:[1, 2]
+proc_three:[1, 2, 3]
+proc_mixed:[1, nil, 2]
+lambda_two:ArgumentError
+wrong number of arguments
+--iter
+block:[1, 2]
+proc_pass:[1, 2]
