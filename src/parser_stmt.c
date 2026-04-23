@@ -368,6 +368,23 @@ Node *parse_stmt(Parser *p) {
         return n;
     }
 
+    if (t.kind == TOK_STAR) {
+        Node *lhs = parse_assignment_target_elem(p);
+        if (check(p, TOK_COMMA))
+            lhs = parse_expr_list(p, lhs, 7, 1);
+        if (!match(p, TOK_EQ)) {
+            Token t2 = peek(p);
+            error(p, "expected '=' after assignment target", t2.line, t2.col);
+            return NULL;
+        }
+        Node *rhs_first = parse_expr(p, 0);
+        Node *rhs = parse_expr_list(p, rhs_first, 0, 0);
+        Node *n = node_new(p->arena, NODE_ASSIGN, s);
+        n->assign.target = lhs;
+        n->assign.value = rhs;
+        return n;
+    }
+
     Node *expr = parse_expr(p, 0);
     if (!expr) return NULL;
 
