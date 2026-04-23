@@ -177,7 +177,7 @@ A systematic test-probe of all three completed stages revealed the following con
 - ~~**`%w[...]`** word-array literals and **`%i[...]`** symbol-array literals: parse error~~ done
 - ~~**`.()` call syntax**: `fn.(args)` (shorthand for `fn.call(args)`) raises parse error at the `.(`~~ done
 - ~~**`defined?`** operator: treated as undefined method~~ done
-- **`rescue else`** clause: `begin ... rescue ... else ... end` and method-level `rescue ... else` not parsed
+- ~~**`rescue else`** clause: `begin ... rescue ... else ... end` and method-level `rescue ... else` not parsed~~ done
 - **`return 1, 2, 3`** (bare multi-value return): parse error; must use `return [1,2,3]` workaround
 - **`*head, last = array`** (leading splat on LHS of multi-assign): parse error; `first, *rest =` works but `*rest, last =` does not
 
@@ -222,6 +222,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - `.()` call shorthand parsing for `recv.call(...)`
 - `defined?` operator support for locals, instance variables, constants, literals, and method-existence checks on `self` and simple receivers
 - `%w[...]` word-array literals and `%i[...]` symbol-array literals with paired delimiters, whitespace splitting, and backslash escapes
+- `begin ... rescue ... else ... ensure` and method-level `rescue ... else`, with `else` running only on the non-exception path before `ensure`
 - `attr_reader`, `attr_writer`, `attr_accessor`
 - class methods via `def self.foo`
 - bare `puts` / `print` / `p` and command-style calls

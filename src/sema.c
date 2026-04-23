@@ -148,6 +148,7 @@ static void collect(Sema *s, Node *node, NodeList *excl) {
             collect(s, node->begin_stmt.body, excl);
             for (NodeList *l = node->begin_stmt.rescues; l; l = l->next)
                 collect(s, l->node, excl);
+            collect(s, node->begin_stmt.else_body, excl);
             collect(s, node->begin_stmt.ensure_body, excl);
             break;
 
@@ -334,6 +335,7 @@ static void resolve(Sema *s, Node *node) {
         case NODE_BEGIN:
             resolve(s, node->begin_stmt.body);
             resolve_list(s, node->begin_stmt.rescues);
+            resolve(s, node->begin_stmt.else_body);
             resolve(s, node->begin_stmt.ensure_body);
             break;
 

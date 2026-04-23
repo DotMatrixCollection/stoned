@@ -406,6 +406,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
 
         case NODE_BEGIN: {
             Value result;
+            int rescued = 0;
             retry_begin:
             result = eval_node(ev, env, node->begin_stmt.body);
 
@@ -426,6 +427,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     Value previous_rescue = ev->rescue_context;
                     eval_clear_exception(ev);
                     ev->rescue_context = rescued_exc;
+                    rescued = 1;
                     Env *rescue_env = env;
                     if (rescue_clause->rescue_clause.exception_var) {
                         rescue_env = env_new(ev->arena, env, 0);
@@ -436,6 +438,10 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     if (result.kind == VAL_RETRY) goto retry_begin;
                     break;
                 }
+            }
+
+            if (result.kind != VAL_EXCEPTION && !rescued && node->begin_stmt.else_body) {
+                result = eval_node(ev, env, node->begin_stmt.else_body);
             }
 
             if (node->begin_stmt.ensure_body) {

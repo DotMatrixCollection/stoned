@@ -110,6 +110,10 @@ void print_ast(FILE *out, Node *node, int indent) {
                 for (NodeList *l = node->begin_stmt.rescues; l; l = l->next)
                     print_ast(out, l->node, indent+2);
             }
+            if (node->begin_stmt.else_body) {
+                indent_print(out, indent+1); fprintf(out, "else:\n");
+                print_ast(out, node->begin_stmt.else_body, indent+2);
+            }
             if (node->begin_stmt.ensure_body) {
                 indent_print(out, indent+1); fprintf(out, "ensure:\n");
                 print_ast(out, node->begin_stmt.ensure_body, indent+2);

@@ -66,6 +66,10 @@ static Node *wrap_rescue_ensure(Parser *p, Span s, Node *body) {
         rc->rescue_clause.body = parse_body(p, 0);
         n->begin_stmt.rescues = nodelist_append(p->arena, n->begin_stmt.rescues, rc);
     }
+    if (match(p, TOK_ELSE)) {
+        skip_terminators(p);
+        n->begin_stmt.else_body = parse_body(p, 0);
+    }
     if (match(p, TOK_ENSURE)) {
         skip_terminators(p);
         n->begin_stmt.ensure_body = parse_body(p, 0);

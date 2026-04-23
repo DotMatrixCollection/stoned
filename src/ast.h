@@ -168,6 +168,7 @@ struct Node {
         struct {
             Node *body;
             NodeList *rescues;
+            Node *else_body;
             Node *ensure_body;
         } begin_stmt;
 
