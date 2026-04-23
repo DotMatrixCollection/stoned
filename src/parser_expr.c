@@ -7,6 +7,10 @@ typedef struct { int lbp; int rbp; } BP;
 
 static Node *parse_hash_key(Parser *p, int *used_label);
 
+static int jump_value_terminator(TokenKind kind) {
+    return kind == TOK_NEWLINE || kind == TOK_SEMICOLON || kind == TOK_EOF || kind == TOK_END;
+}
+
 static Node *parse_percent_list(Parser *p, Span s, Token t, NodeKind elem_kind) {
     Node *array = node_new(p->arena, NODE_ARRAY, s);
     NodeList *elems = NULL;
@@ -56,6 +60,23 @@ static Node *parse_percent_list(Parser *p, Span s, Token t, NodeKind elem_kind) 
         elems = nodelist_append(p->arena, elems, elem);
     }
 
+    array->array.elements = elems;
+    return array;
+}
+
+static Node *parse_jump_value(Parser *p, Node *first, Span s) {
+    if (!first) return NULL;
+    if (!check(p, TOK_COMMA)) return first;
+
+    Node *array = node_new(p->arena, NODE_ARRAY, s);
+    NodeList *elems = NULL;
+    elems = nodelist_append(p->arena, elems, first);
+    while (match(p, TOK_COMMA)) {
+        if (jump_value_terminator(peek(p).kind))
+            break;
+        Node *elem = parse_expr(p, 0);
+        if (elem) elems = nodelist_append(p->arena, elems, elem);
+    }
     array->array.elements = elems;
     return array;
 }
@@ -818,8 +839,10 @@ Node *parse_primary(Parser *p) {
         case TOK_RETURN: {
             advance(p);
             Node *n = node_new(p->arena, NODE_RETURN, s);
-            if (!check(p, TOK_NEWLINE) && !check(p, TOK_SEMICOLON) && !check(p, TOK_EOF) && !check(p, TOK_END))
-                n->jump.value = parse_expr(p, 0);
+            if (!jump_value_terminator(peek(p).kind)) {
+                Node *first = parse_expr(p, 0);
+                n->jump.value = parse_jump_value(p, first, s);
+            }
             return n;
         }
         case TOK_BREAK: {
