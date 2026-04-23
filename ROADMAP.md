@@ -23,8 +23,8 @@ Core reflection exists in part, but it should be made more consistent across val
 ### Proc / lambda
 The core callable forms now exist, but the remaining work is semantic cleanup:
 
-- Ruby-complete proc/lambda control-flow edge cases
-- fuller arity behavior and argument coercion
+- Ruby-complete proc/lambda control-flow edge cases beyond the current direct-call and escaped-`&proc` `break`/`return` behavior plus top-level lambda/proc `return`
+- fuller arity behavior and argument coercion beyond the current lambda default-arg and optional/splat `arity` coverage
 - better integration with method/block conversion patterns
 
 ### Modules
@@ -119,6 +119,8 @@ These were previously roadmap items and are now implemented in the current tree:
 - codepoint-based Unicode behavior for `upcase`, `downcase`, `capitalize`, `swapcase`, `succ`, `tr`, `count`, `delete`, and `squeeze`
 - multiple assignment, splat capture, and destructuring
 - `Proc.new`, `lambda`, and `->` literals with callable proc/lambda values
+- proc/lambda defaults and `arity` polish: arrow lambdas and block literals parse defaulted params; arrow lambdas honor omitted default args; proc/lambda `arity` reports Ruby-like negative values for optional/splat forms
+- proc/lambda control-flow polish: lambda `break` returns from the lambda call; lambda `return` works in top-level and block-passed lambda literals; top-level proc literals may carry `return`; direct-call proc `break` and escaped proc-object `break`/`return` through `&proc` now raise `LocalJumpError`
 - `module`, `include`, `prepend`, `extend`, and `super` through module ancestors
 - `send`, `__send__`, `public_send`, and method visibility (`public`, `private`, `protected`)
 - class-method visibility helpers (`private_class_method`, `public_class_method`, `protected_class_method`)
