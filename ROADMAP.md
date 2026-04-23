@@ -146,8 +146,8 @@ If work starts today, the next highest-value sequence is:
 
 1. ~~finish proc/lambda argument and control-flow leftovers~~ — done
 2. ~~reflection / visibility / dispatch hardening~~ — done (see Already landed)
-3. tighten module ancestor ordering and `super`
-4. expand exception completeness
+3. ~~tighten module ancestor ordering and `super`~~ — done
+4. ~~expand exception completeness~~ — done (see Already landed)
 5. then resume broader core-library and loading work
 
 ## Open problem buckets
@@ -220,3 +220,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - `IO` class with `$stdout`, `$stderr`, `$stdin` / `STDOUT`, `STDERR`, `STDIN`; instance methods `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `tty?`; `$stdin.gets` / `$stdin.read`
 - Numeric completeness: Integer `gcd`, `lcm`, `pow`+modulus, `divmod`, `digits`, `chr`, `succ`/`pred`, rounding methods, `positive?`/`negative?`/`nonzero?`/`integer?`, `abs2`, `between?`, `clamp`, `step`, `to_s(base)`; Float `nan?`, `infinite?`, `finite?`, `divmod`, precision rounding, same Numeric methods; `0.0/0.0` now IEEE 754 NaN; float `to_s` always includes decimal point
 - String non-regex completeness: `chomp`, `chop`, `lstrip`, `rstrip`, `capitalize`, `swapcase`, `ljust`, `rjust`, `center`, `ord`, `hex`, `oct`, `bytes`, `<<`, `index`, `rindex`, `[]`/`slice`, `lines`, `each_line`, `tr` (with range expansion), `count`, `delete`, `squeeze`, `scan`, `sub`, `gsub` (string and block forms), `inspect`
+- Inline method-level `rescue` / `ensure` without explicit `begin..end`; multiple rescue clauses at method level
+- `freeze`, `frozen?`, `dup`, `clone`, `FrozenError`; `frozen?` always true for Integer/Symbol/nil/bool; `FrozenError < RuntimeError`; ivar assignment raises `FrozenError` on frozen objects; `dup` on Hash/Array now makes independent copies
+- `StopIteration` (subclass of `StandardError`); `loop{}` catches `StopIteration` silently and returns nil; `break value` inside `loop{}` returns that value
+- `val_equal` extended to handle `VAL_CLASS` (pointer identity) and `VAL_OBJECT` (pointer identity), enabling `ancestors.include?(SomeClass)` and similar checks to work correctly

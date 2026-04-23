@@ -4,6 +4,40 @@
 
 static Node *parse_expr_list(Parser *p, Node *first, int elem_min_bp, int assignment_target);
 
+/* Attach rescue/ensure clauses to an already-parsed body, producing a NODE_BEGIN.
+   Called for both explicit begin...end and implicit method-level rescue. */
+static Node *wrap_rescue_ensure(Parser *p, Span s, Node *body) {
+    Node *n = node_new(p->arena, NODE_BEGIN, s);
+    n->begin_stmt.body = body;
+    while (match(p, TOK_RESCUE)) {
+        Node *rc = node_new(p->arena, NODE_RESCUE, s);
+        if (!check(p, TOK_ARROW) && !check(p, TOK_NEWLINE) && !check(p, TOK_SEMICOLON) &&
+            !check(p, TOK_END) && !check(p, TOK_ENSURE) && !check(p, TOK_ELSE)) {
+            do {
+                Node *exc = parse_expr(p, 0);
+                rc->rescue_clause.exception_classes =
+                    nodelist_append(p->arena, rc->rescue_clause.exception_classes, exc);
+            } while (match(p, TOK_COMMA));
+        }
+        if (match(p, TOK_ARROW)) {
+            Token var_tok = advance(p);
+            if (var_tok.kind != TOK_IDENT) {
+                error(p, "expected exception variable name after '=>'", var_tok.line, var_tok.col);
+                return NULL;
+            }
+            rc->rescue_clause.exception_var = var_tok.sval;
+        }
+        skip_terminators(p);
+        rc->rescue_clause.body = parse_body(p, 0);
+        n->begin_stmt.rescues = nodelist_append(p->arena, n->begin_stmt.rescues, rc);
+    }
+    if (match(p, TOK_ENSURE)) {
+        skip_terminators(p);
+        n->begin_stmt.ensure_body = parse_body(p, 0);
+    }
+    return n;
+}
+
 static const char *def_name_from_token(Parser *p, Token tok) {
     switch (tok.kind) {
         case TOK_IDENT:
@@ -146,36 +180,10 @@ Node *parse_stmt(Parser *p) {
 
     if (t.kind == TOK_BEGIN) {
         advance(p);
-        Node *n = node_new(p->arena, NODE_BEGIN, s);
         skip_terminators(p);
-        n->begin_stmt.body = parse_body(p, 0);
-        while (match(p, TOK_RESCUE)) {
-            Node *rescue_clause = node_new(p->arena, NODE_RESCUE, s);
-            if (!check(p, TOK_ARROW) && !check(p, TOK_NEWLINE) && !check(p, TOK_SEMICOLON) &&
-                !check(p, TOK_END) && !check(p, TOK_ENSURE)) {
-                do {
-                    Node *exc = parse_expr(p, 0);
-                    rescue_clause->rescue_clause.exception_classes =
-                        nodelist_append(p->arena, rescue_clause->rescue_clause.exception_classes, exc);
-                } while (match(p, TOK_COMMA));
-            }
-            if (match(p, TOK_ARROW)) {
-                Token var_tok = advance(p);
-                if (var_tok.kind != TOK_IDENT) {
-                    error(p, "expected exception variable name after '=>'", var_tok.line, var_tok.col);
-                    return NULL;
-                }
-                rescue_clause->rescue_clause.exception_var = var_tok.sval;
-            }
-            skip_terminators(p);
-            rescue_clause->rescue_clause.body = parse_body(p, 0);
-            n->begin_stmt.rescues =
-                nodelist_append(p->arena, n->begin_stmt.rescues, rescue_clause);
-        }
-        if (match(p, TOK_ENSURE)) {
-            skip_terminators(p);
-            n->begin_stmt.ensure_body = parse_body(p, 0);
-        }
+        Node *body = parse_body(p, 0);
+        Node *n = wrap_rescue_ensure(p, s, body);
+        if (!n) return NULL;
         expect(p, TOK_END, "expected 'end'");
         return n;
     }
@@ -225,7 +233,12 @@ Node *parse_stmt(Parser *p) {
         }
 
         skip_terminators(p);
-        n->def.body = parse_body(p, 0);
+        Node *def_body = parse_body(p, 0);
+        if (check(p, TOK_RESCUE) || check(p, TOK_ENSURE)) {
+            def_body = wrap_rescue_ensure(p, s, def_body);
+            if (!def_body) return NULL;
+        }
+        n->def.body = def_body;
         expect(p, TOK_END, "expected 'end'");
         return n;
     }

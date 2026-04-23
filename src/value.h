@@ -111,6 +111,7 @@ typedef struct RubyObject {
     Value       klass;       /* VAL_CLASS: the object's class */
     IVarEntry  *ivars;       /* Instance variables */
     struct Env *singleton_env; /* Methods added via extend */
+    int         frozen;      /* 1 after freeze */
 } RubyObject;
 
 /* Insertion-order-preserving hash map (keys/vals malloc'd, struct arena'd) */
@@ -201,6 +202,8 @@ static inline int val_equal(Value a, Value b) {
             while (a.sval[i] && b.sval[i] && a.sval[i] == b.sval[i]) i++;
             return a.sval[i] == b.sval[i];
         }
+        case VAL_CLASS:  return a.klass == b.klass;
+        case VAL_OBJECT: return a.obj   == b.obj;
         case VAL_RANGE:
             return a.range->exclusive == b.range->exclusive &&
                    val_equal(a.range->begin_val, b.range->begin_val) &&

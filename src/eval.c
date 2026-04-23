@@ -71,10 +71,16 @@ static void assign_target(Eval *ev, Env *env, Node *target, Value val) {
         assign_lvar(ev, env, target->sval, val);
     } else if (target->kind == NODE_IVAR) {
         Value self;
-        if (env_get(env, "self", &self) && self.kind == VAL_OBJECT)
+        if (env_get(env, "self", &self) && self.kind == VAL_OBJECT) {
+            if (self.obj->frozen) {
+                const char *kname = self.obj->klass.kind == VAL_CLASS ? self.obj->klass.klass->name : "Object";
+                eval_raise_class(ev, target, "FrozenError", "can't modify frozen %s", kname);
+                return;
+            }
             val_object_set_ivar(ev->arena, self, target->sval, val);
-        else
+        } else {
             global_set(ev->arena, &ev->globals, target->sval, val);
+        }
     } else if (target->kind == NODE_GVAR) {
         global_set(ev->arena, &ev->globals, target->sval, val);
     } else if (target->kind == NODE_CONST) {
@@ -147,7 +153,11 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         case NODE_ASSIGN: {
             Value val = eval_node(ev, env, node->assign.value);
             CHECK(val);
-            assign_target(ev, env, node->assign.target, val);
+            {
+                const char *exc_before = ev->exception_class;
+                assign_target(ev, env, node->assign.target, val);
+                if (ev->exception_class != exc_before) return val_exception();
+            }
             return val;
         }
 
@@ -550,7 +560,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NameError", "NoMethodError",
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError", "StopIteration",
-        "SystemStackError", "IOError", "EncodingError",
+        "SystemStackError", "IOError", "EncodingError", "FrozenError",
         NULL
     };
     for (int i = 0; builtins[i]; i++) {
@@ -562,7 +572,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     }
 
     Value exception, standard_error, runtime_error, argument_error, type_error, name_error, no_method_error;
-    Value zero_division_error, local_jump_error, key_error, load_error, stop_iteration, system_stack_error, io_error, encoding_error;
+    Value zero_division_error, local_jump_error, key_error, load_error, stop_iteration, system_stack_error, io_error, encoding_error, frozen_error;
     if (env_get(ev->top_env, "Exception", &exception) && exception.kind == VAL_CLASS &&
         env_get(ev->top_env, "StandardError", &standard_error) && standard_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "RuntimeError", &runtime_error) && runtime_error.kind == VAL_CLASS &&
@@ -577,7 +587,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         env_get(ev->top_env, "StopIteration", &stop_iteration) && stop_iteration.kind == VAL_CLASS &&
         env_get(ev->top_env, "SystemStackError", &system_stack_error) && system_stack_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "IOError", &io_error) && io_error.kind == VAL_CLASS &&
-        env_get(ev->top_env, "EncodingError", &encoding_error) && encoding_error.kind == VAL_CLASS) {
+        env_get(ev->top_env, "EncodingError", &encoding_error) && encoding_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "FrozenError", &frozen_error) && frozen_error.kind == VAL_CLASS) {
         standard_error.klass->superclass = exception;
         runtime_error.klass->superclass = standard_error;
         argument_error.klass->superclass = standard_error;
@@ -592,6 +603,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         system_stack_error.klass->superclass = standard_error;
         io_error.klass->superclass = standard_error;
         encoding_error.klass->superclass = standard_error;
+        frozen_error.klass->superclass = runtime_error;
         no_method_error.klass->superclass = name_error;
     }
 

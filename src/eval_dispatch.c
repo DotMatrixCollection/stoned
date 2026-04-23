@@ -503,6 +503,24 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         if (!blk) return eval_raise_class(ev, site, "ArgumentError", "lambda requires a block");
         return val_lambda(blk->block.block_node, blk->block.closure);
     }
+    if (strcmp(name, "loop") == 0) {
+        if (!blk) return eval_raise_class(ev, site, "LocalJumpError", "no block given (loop)");
+        for (;;) {
+            Value r = call_block(ev, env, *blk, NULL, 0, site);
+            if (r.kind == VAL_EXCEPTION) {
+                if (ev->current_exception.kind == VAL_OBJECT &&
+                    value_is_a_named_class(ev, ev->current_exception, "StopIteration")) {
+                    ev->exception_class = NULL;
+                    ev->current_exception = val_nil();
+                    return val_nil();
+                }
+                return r;
+            }
+            if (r.kind == VAL_BREAK)
+                return r.jump.wrapped ? *r.jump.wrapped : val_nil();
+            if (r.kind == VAL_RETURN) return r;
+        }
+    }
     if (strcmp(name, "rand") == 0) {
         if (argc == 0) return val_float((double)rand() / RAND_MAX);
         int64_t n = argc > 0 ? args[0].ival : 1;
@@ -708,8 +726,42 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             return val_bool(recv.obj == args[0].obj);
         return val_bool(val_equal(recv, args[0]));
     }
-    if (strcmp(name, "freeze") == 0) return recv;
-    if (strcmp(name, "frozen?") == 0) return val_false();
+    if (strcmp(name, "freeze") == 0) {
+        if (recv.kind == VAL_OBJECT) recv.obj->frozen = 1;
+        return recv;
+    }
+    if (strcmp(name, "frozen?") == 0) {
+        if (recv.kind == VAL_OBJECT) return val_bool(recv.obj->frozen);
+        /* integers, symbols, nil, true, false are always frozen */
+        if (recv.kind == VAL_INT || recv.kind == VAL_FLOAT ||
+            recv.kind == VAL_SYMBOL || recv.kind == VAL_NIL || recv.kind == VAL_BOOL)
+            return val_true();
+        return val_false();
+    }
+    if (strcmp(name, "dup") == 0 || strcmp(name, "clone") == 0) {
+        int is_clone = (strcmp(name, "clone") == 0);
+        if (recv.kind == VAL_OBJECT) {
+            Value copy = val_object(ev->arena, recv.obj->klass);
+            for (IVarEntry *iv = recv.obj->ivars; iv; iv = iv->next)
+                val_object_set_ivar(ev->arena, copy, iv->name, iv->val);
+            if (is_clone && recv.obj->frozen) copy.obj->frozen = 1;
+            return copy;
+        }
+        if (recv.kind == VAL_HASH) {
+            Value copy = val_hash_new(ev->arena);
+            for (size_t i = 0; i < recv.hash->len; i++)
+                val_hash_set(copy.hash, recv.hash->keys[i], recv.hash->vals[i]);
+            return copy;
+        }
+        if (recv.kind == VAL_ARRAY) {
+            Value copy = val_array_new();
+            for (size_t i = 0; i < recv.array->len; i++)
+                val_array_push(&copy, recv.array->elems[i]);
+            return copy;
+        }
+        /* primitives: dup/clone returns self (strings are value types here) */
+        return recv;
+    }
     if (strcmp(name, "itself") == 0) return recv;
     if (strcmp(name, "object_id") == 0) {
         if (recv.kind == VAL_OBJECT) return val_int((int64_t)(uintptr_t)recv.obj);
@@ -1090,7 +1142,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "raise", "proc", "lambda", "rand", "exit", "include", "prepend", "extend",
+            "puts", "print", "p", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", NULL
