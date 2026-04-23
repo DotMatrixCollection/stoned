@@ -148,7 +148,43 @@ If work starts today, the next highest-value sequence is:
 2. ~~reflection / visibility / dispatch hardening~~ — done (see Already landed)
 3. ~~tighten module ancestor ordering and `super`~~ — done
 4. ~~expand exception completeness~~ — done (see Already landed)
-5. then resume broader core-library and loading work
+5. **gap fill: Stages 1–3 known holes** — surveyed 2026-04-22, see below
+6. then resume Stage 4 (core library parity)
+
+## Stage gap survey (2026-04-22)
+
+A systematic test-probe of all three completed stages revealed the following confirmed gaps. Items are grouped by implementation effort.
+
+### Group 1 — Prelude expansion (pure Ruby, no C changes)
+
+- **Comparable**: missing `<`, `>`, `<=`, `>=` operator methods — user classes that define `<=>` and `include Comparable` cannot use these operators. `between?`/`clamp` exist but `<`/`>` etc. do not.
+- **Enumerable**: current prelude only has `find`/`detect`/`entries`/`first`/`take`/`drop`/`count(block)`. Missing: `to_a`, `min`, `max`, `sort`, `include?`/`member?`, `sum`, `map`, `select`, `reject`, `reduce`/`inject`, `any?`, `all?`, `none?`, `count` (no-block form), `flat_map`, `each_with_object`, `min_by`, `max_by`, `sort_by`, `zip`, `group_by`, `tally`
+- **`alias` / `alias_method`**: not parsed or evaluated; `alias hi hello` silently fails
+
+### Group 2 — Runtime additions (C changes, self-contained)
+
+- **`Hash.new(default)`** and **`Hash.new { |h,k| ... }`**: `Hash.new` with a default value or block not implemented; `h[missing_key]` should return default instead of nil
+- **`Array.new(n, val)`** and **`Array.new(n) { |i| ... }`**: `Array.new` only creates empty arrays; n-with-value and n-with-block forms not implemented
+- **`tap`**, **`then`**/**`yield_self`**: not defined on any receiver
+- **`pp` kernel method**: not defined (separate from `p`)
+- **`Integer(s)`** / **`Float(s)`** / **`String(v)`** / **`Array(v)`** kernel conversion functions: currently resolve to the class constant, not the conversion function
+- **`String#%`** (sprintf-style format): `"%.2f" % 3.14` raises NoMethodError
+- **`format`** / **`sprintf`** kernel methods: not defined
+- Protected method external-call error message says `"undefined method"` instead of `"protected method 'x' called for an instance of Foo"`
+
+### Group 3 — Parser additions (require lexer/parser changes)
+
+- **`%w[...]`** word-array literals and **`%i[...]`** symbol-array literals: parse error
+- **`.()` call syntax**: `fn.(args)` (shorthand for `fn.call(args)`) raises parse error at the `.(`
+- **`defined?`** operator: treated as undefined method
+- **`rescue else`** clause: `begin ... rescue ... else ... end` and method-level `rescue ... else` not parsed
+- **`return 1, 2, 3`** (bare multi-value return): parse error; must use `return [1,2,3]` workaround
+- **`*head, last = array`** (leading splat on LHS of multi-assign): parse error; `first, *rest =` works but `*rest, last =` does not
+
+### Group 4 — Complex / large features
+
+- **Heredocs** (`<<~HEREDOC` / `<<HEREDOC`): not implemented in lexer
+- **Keyword arguments** (`def foo(x:, y: 1)` / `foo(name: val)` / `**opts`): not implemented in parser or runtime — the single largest conformance gap at Stage 1
 
 ## Open problem buckets
 
