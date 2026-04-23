@@ -290,7 +290,9 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
         if (op.kind == TOK_DOT || op.kind == TOK_COLON2) {
             Token name_tok = advance(p);
             const char *method_name = NULL;
-            if (name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) {
+            if (op.kind == TOK_DOT && name_tok.kind == TOK_LPAREN && token_adjacent(op, name_tok)) {
+                method_name = "call";
+            } else if (name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) {
                 method_name = name_tok.sval;
             } else {
                 /* All keyword tokens carry their string in sval — allow any as method name */
@@ -325,7 +327,10 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
             call->call.recv = left;
             call->call.method = method_name;
             Token nxt = peek(p);
-            if (nxt.kind == TOK_LPAREN && token_adjacent(name_tok, nxt)) {
+            if (name_tok.kind == TOK_LPAREN && strcmp(method_name, "call") == 0) {
+                call->call.args = parse_args(p);
+                expect(p, TOK_RPAREN, "expected ')'");
+            } else if (nxt.kind == TOK_LPAREN && token_adjacent(name_tok, nxt)) {
                 advance(p);
                 call->call.args = parse_args(p);
                 expect(p, TOK_RPAREN, "expected ')'");
