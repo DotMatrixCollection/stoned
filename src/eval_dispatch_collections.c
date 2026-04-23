@@ -201,29 +201,47 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "min") == 0) {
-        if (recv.array->len == 0) *out = val_nil();
-        else {
-            Value m = recv.array->elems[0];
-            for (size_t i = 1; i < recv.array->len; i++) {
-                Value cur = recv.array->elems[i];
-                if (cur.kind == VAL_INT && m.kind == VAL_INT && cur.ival < m.ival) m = cur;
-                else if (cur.kind == VAL_FLOAT && m.kind == VAL_FLOAT && cur.fval < m.fval) m = cur;
+        if (blk) return 0; /* min with block — fall through to Enumerable */
+        if (recv.array->len == 0) { *out = val_nil(); return 1; }
+        Value m = recv.array->elems[0];
+        for (size_t i = 1; i < recv.array->len; i++) {
+            Value cur = recv.array->elems[i];
+            int less = 0;
+            if (cur.kind == VAL_INT && m.kind == VAL_INT) less = cur.ival < m.ival;
+            else if (cur.kind == VAL_FLOAT && m.kind == VAL_FLOAT) less = cur.fval < m.fval;
+            else if (cur.kind == VAL_INT && m.kind == VAL_FLOAT) less = (double)cur.ival < m.fval;
+            else if (cur.kind == VAL_FLOAT && m.kind == VAL_INT) less = cur.fval < (double)m.ival;
+            else if ((cur.kind == VAL_STRING || cur.kind == VAL_SYMBOL) && cur.kind == m.kind)
+                less = strcmp(cur.sval, m.sval) < 0;
+            else {
+                Value cmp = dispatch_method(ev, env, cur, "<=>", &m, 1, NULL, site, 0, 1);
+                if (cmp.kind == VAL_INT) less = cmp.ival < 0;
             }
-            *out = m;
+            if (less) m = cur;
         }
+        *out = m;
         return 1;
     }
     if (strcmp(name, "max") == 0) {
-        if (recv.array->len == 0) *out = val_nil();
-        else {
-            Value m = recv.array->elems[0];
-            for (size_t i = 1; i < recv.array->len; i++) {
-                Value cur = recv.array->elems[i];
-                if (cur.kind == VAL_INT && m.kind == VAL_INT && cur.ival > m.ival) m = cur;
-                else if (cur.kind == VAL_FLOAT && m.kind == VAL_FLOAT && cur.fval > m.fval) m = cur;
+        if (blk) return 0; /* max with block — fall through to Enumerable */
+        if (recv.array->len == 0) { *out = val_nil(); return 1; }
+        Value m = recv.array->elems[0];
+        for (size_t i = 1; i < recv.array->len; i++) {
+            Value cur = recv.array->elems[i];
+            int greater = 0;
+            if (cur.kind == VAL_INT && m.kind == VAL_INT) greater = cur.ival > m.ival;
+            else if (cur.kind == VAL_FLOAT && m.kind == VAL_FLOAT) greater = cur.fval > m.fval;
+            else if (cur.kind == VAL_INT && m.kind == VAL_FLOAT) greater = (double)cur.ival > m.fval;
+            else if (cur.kind == VAL_FLOAT && m.kind == VAL_INT) greater = cur.fval > (double)m.ival;
+            else if ((cur.kind == VAL_STRING || cur.kind == VAL_SYMBOL) && cur.kind == m.kind)
+                greater = strcmp(cur.sval, m.sval) > 0;
+            else {
+                Value cmp = dispatch_method(ev, env, cur, "<=>", &m, 1, NULL, site, 0, 1);
+                if (cmp.kind == VAL_INT) greater = cmp.ival > 0;
             }
-            *out = m;
+            if (greater) m = cur;
         }
+        *out = m;
         return 1;
     }
     if (strcmp(name, "sum") == 0) {
@@ -272,10 +290,22 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             while (j > 0) {
                 Value prev = result.array->elems[j - 1];
                 int less = 0;
-                if (key.kind == VAL_INT && prev.kind == VAL_INT) less = key.ival < prev.ival;
+                if (blk) {
+                    Value pair[2] = { key, prev };
+                    Value cmp = call_block(ev, env, *blk, pair, 2, site);
+                    if (val_is_signal(cmp)) { *out = cmp; return 1; }
+                    less = cmp.kind == VAL_INT ? cmp.ival < 0 : 0;
+                } else if (key.kind == VAL_INT && prev.kind == VAL_INT) less = key.ival < prev.ival;
                 else if (key.kind == VAL_FLOAT && prev.kind == VAL_FLOAT) less = key.fval < prev.fval;
+                else if (key.kind == VAL_INT && prev.kind == VAL_FLOAT) less = (double)key.ival < prev.fval;
+                else if (key.kind == VAL_FLOAT && prev.kind == VAL_INT) less = key.fval < (double)prev.ival;
                 else if (key.kind == VAL_STRING && prev.kind == VAL_STRING) less = strcmp(key.sval, prev.sval) < 0;
                 else if (key.kind == VAL_SYMBOL && prev.kind == VAL_SYMBOL) less = strcmp(key.sval, prev.sval) < 0;
+                else {
+                    Value cmp = dispatch_method(ev, env, key, "<=>", &prev, 1, NULL, site, 0, 1);
+                    if (val_is_signal(cmp)) { *out = cmp; return 1; }
+                    less = cmp.kind == VAL_INT ? cmp.ival < 0 : 0;
+                }
                 if (!less) break;
                 result.array->elems[j] = prev;
                 j--;

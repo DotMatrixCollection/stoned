@@ -770,14 +770,29 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     }
     if (strcmp(name, "==") == 0) {
         if (argc < 1) return val_false();
+        if (recv.kind == VAL_OBJECT) {
+            Value m; RubyClass *owner;
+            if (ruby_class_find_instance_method(recv.obj->klass.klass, "==", &m, &owner))
+                return call_method_value(ev, env, recv, m, owner, "==", args, argc, blk, site);
+        }
         return val_bool(val_equal(recv, args[0]));
     }
     if (strcmp(name, "!=") == 0) {
         if (argc < 1) return val_true();
+        if (recv.kind == VAL_OBJECT) {
+            Value m; RubyClass *owner;
+            if (ruby_class_find_instance_method(recv.obj->klass.klass, "!=", &m, &owner))
+                return call_method_value(ev, env, recv, m, owner, "!=", args, argc, blk, site);
+        }
         return val_bool(!val_equal(recv, args[0]));
     }
     if (strcmp(name, "===") == 0 && recv.kind != VAL_CLASS && recv.kind != VAL_RANGE) {
         if (argc < 1) return val_false();
+        if (recv.kind == VAL_OBJECT) {
+            Value m; RubyClass *owner;
+            if (ruby_class_find_instance_method(recv.obj->klass.klass, "===", &m, &owner))
+                return call_method_value(ev, env, recv, m, owner, "===", args, argc, blk, site);
+        }
         return val_bool(val_equal(recv, args[0]));
     }
     if (recv.kind == VAL_SYMBOL) {
