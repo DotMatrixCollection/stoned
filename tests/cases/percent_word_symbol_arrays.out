@@ -1,0 +1,6 @@
+["alpha", "beta", "gamma"]
+["one", "two words", "three"]
+["red", "blue sky", "green"]
+[:alpha, :beta, :gamma]
+[:one, :two words, :three]
+[:red, :blue sky, :green]

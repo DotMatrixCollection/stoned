@@ -46,11 +46,12 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `144 passed, 0 failed, 144 total`.
+Current coverage in the tree: `145 passed, 0 failed, 145 total`.
 
 What is working today:
 
 - Core values: `nil`, booleans, integers, floats, UTF-8 strings with interpolation, symbols, arrays, hashes, ranges
+- Literal sugar: `%w[...]` word arrays and `%i[...]` symbol arrays
 - Operators: arithmetic, comparison, bitwise, string/array `+`, array `<<`, `**`, `<=>`, `&&`, `||`
 - Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return`, `defined?`; `case`/`when` with value equality, range membership, class membership (`===`), multi-pattern clauses, optional `else`, caseless form, `then` keyword; `case` is an expression
 - Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, typed rescue lists, rescue variable binding, `retry`, re-raise, uncaught backtraces, typed runtime failures including `NameError`, `NoMethodError`, `TypeError`, `SystemStackError`, `EncodingError`, and existing core error classes; exception instances support `new(message)`, `message`, `to_s`, `inspect`, `exception`, `backtrace`, and `set_backtrace`

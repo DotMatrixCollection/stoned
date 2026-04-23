@@ -211,6 +211,61 @@ static Token scan_string_dq(Lexer *l, size_t start, uint32_t sline, uint32_t sco
 #undef BUF_PUSH
 }
 
+static char paired_delim(char open) {
+    switch (open) {
+        case '[': return ']';
+        case '(': return ')';
+        case '{': return '}';
+        case '<': return '>';
+        default: return open;
+    }
+}
+
+static Token scan_percent_list(Lexer *l, size_t start, uint32_t sline, uint32_t scol, TokenKind kind) {
+    advance(l); /* consume w or i */
+    if (at_end(l)) {
+        Token t = make_tok(l, TOK_ERROR, start, sline, scol);
+        t.sval = "unterminated percent literal";
+        return t;
+    }
+
+    char open = advance(l);
+    char close = paired_delim(open);
+    int nested = (open != close);
+    int depth = 0;
+    size_t content_start = l->pos;
+
+    while (!at_end(l)) {
+        char c = peek_ch(l);
+        if (c == '\\') {
+            advance(l);
+            if (!at_end(l)) advance(l);
+            continue;
+        }
+        if (nested && c == open) {
+            depth++;
+            advance(l);
+            continue;
+        }
+        if (c == close) {
+            if (depth == 0) {
+                Token t = make_tok(l, kind, start, sline, scol);
+                t.sval = intern(l, l->src + content_start, l->pos - content_start);
+                advance(l);
+                return t;
+            }
+            depth--;
+            advance(l);
+            continue;
+        }
+        advance(l);
+    }
+
+    Token t = make_tok(l, TOK_ERROR, start, sline, scol);
+    t.sval = "unterminated percent literal";
+    return t;
+}
+
 /* ------------------------------------------------------------------ */
 /* Symbol scanning                                                      */
 /* ------------------------------------------------------------------ */
@@ -449,6 +504,8 @@ static Token scan(Lexer *l) {
             SIMPLE(TOK_MINUS);
         case '%':
             if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_PERCENT_EQ); }
+            if (peek_ch(l) == 'w') return scan_percent_list(l, start, sline, scol, TOK_WORDS);
+            if (peek_ch(l) == 'i') return scan_percent_list(l, start, sline, scol, TOK_SYMBOLS);
             SIMPLE(TOK_PERCENT);
         case '^':
             if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_CARET_EQ); }
@@ -678,6 +735,8 @@ const char *token_kind_name(TokenKind k) {
         case TOK_CASE:       return "case";
         case TOK_WHEN:       return "when";
         case TOK_DEFINED:    return "defined?";
+        case TOK_WORDS:      return "%w";
+        case TOK_SYMBOLS:    return "%i";
         case TOK_PLUS:       return "+";
         case TOK_MINUS:      return "-";
         case TOK_STAR:       return "*";

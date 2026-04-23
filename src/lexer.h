@@ -10,6 +10,8 @@ typedef enum {
     TOK_FLOAT,
     TOK_STRING,         /* single-quoted string (no interpolation) */
     TOK_SYMBOL,         /* :foo or :"foo" */
+    TOK_WORDS,          /* %w[...] */
+    TOK_SYMBOLS,        /* %i[...] */
     TOK_HEREDOC,
 
     /* Interpolated string tokens */

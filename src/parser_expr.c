@@ -7,6 +7,59 @@ typedef struct { int lbp; int rbp; } BP;
 
 static Node *parse_hash_key(Parser *p, int *used_label);
 
+static Node *parse_percent_list(Parser *p, Span s, Token t, NodeKind elem_kind) {
+    Node *array = node_new(p->arena, NODE_ARRAY, s);
+    NodeList *elems = NULL;
+    const char *src = t.sval ? t.sval : "";
+    size_t len = strlen(src);
+    size_t i = 0;
+
+    while (i < len) {
+        while (i < len && (src[i] == ' ' || src[i] == '\t' || src[i] == '\r' || src[i] == '\n' ||
+                           src[i] == '\f' || src[i] == '\v'))
+            i++;
+        if (i >= len) break;
+
+        size_t cap = 16;
+        char *buf = arena_alloc(p->arena, cap);
+        size_t blen = 0;
+
+#define PBUF_PUSH(ch) do { \
+    if (blen + 1 >= cap) { \
+        char *nb = arena_alloc(p->arena, cap * 2); \
+        memcpy(nb, buf, blen); \
+        buf = nb; \
+        cap *= 2; \
+    } \
+    buf[blen++] = (char)(ch); \
+} while (0)
+
+        while (i < len) {
+            char c = src[i];
+            if (c == '\\' && i + 1 < len) {
+                i++;
+                PBUF_PUSH(src[i]);
+                i++;
+                continue;
+            }
+            if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\f' || c == '\v')
+                break;
+            PBUF_PUSH(c);
+            i++;
+        }
+        PBUF_PUSH('\0');
+
+#undef PBUF_PUSH
+
+        Node *elem = node_new(p->arena, elem_kind, s);
+        elem->sval = buf;
+        elems = nodelist_append(p->arena, elems, elem);
+    }
+
+    array->array.elements = elems;
+    return array;
+}
+
 static int kernel_const_call_name(const char *name) {
     return strcmp(name, "Integer") == 0 || strcmp(name, "Float") == 0 ||
            strcmp(name, "String") == 0 || strcmp(name, "Array") == 0;
@@ -35,6 +88,8 @@ static int token_can_start_expr(Token t) {
         case TOK_INT:
         case TOK_FLOAT:
         case TOK_STRING:
+        case TOK_WORDS:
+        case TOK_SYMBOLS:
         case TOK_INTERP_BEG:
         case TOK_LPAREN:
         case TOK_LBRACKET:
@@ -346,6 +401,8 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
                     lbracket_as_arg                ||
                     nxt.kind == TOK_SYMBOL         ||
                     nxt.kind == TOK_STRING         ||
+                    nxt.kind == TOK_WORDS          ||
+                    nxt.kind == TOK_SYMBOLS        ||
                     nxt.kind == TOK_INTERP_BEG     ||
                     nxt.kind == TOK_INT            ||
                     nxt.kind == TOK_FLOAT          ||
@@ -548,6 +605,12 @@ Node *parse_primary(Parser *p) {
         case TOK_INT: { advance(p); Node *n = node_new(p->arena, NODE_INT, s); n->ival = t.ival; return n; }
         case TOK_FLOAT: { advance(p); Node *n = node_new(p->arena, NODE_FLOAT, s); n->fval = t.fval; return n; }
         case TOK_STRING: { advance(p); Node *n = node_new(p->arena, NODE_STRING, s); n->sval = t.sval; return n; }
+        case TOK_WORDS:
+            advance(p);
+            return parse_percent_list(p, s, t, NODE_STRING);
+        case TOK_SYMBOLS:
+            advance(p);
+            return parse_percent_list(p, s, t, NODE_SYMBOL);
         case TOK_INTERP_BEG: {
             advance(p);
             Node *n = node_new(p->arena, NODE_ROPE, s);
@@ -608,6 +671,7 @@ Node *parse_primary(Parser *p) {
                 int lbracket_as_arg = (nxt.kind == TOK_LBRACKET && nxt.col > t.col + t.len);
                 Token sign_arg = peek_next_token(p);
                 int can_be_arg = lparen_as_arg || lbracket_as_arg || nxt.kind == TOK_SYMBOL || nxt.kind == TOK_STRING ||
+                                 nxt.kind == TOK_WORDS || nxt.kind == TOK_SYMBOLS ||
                                  nxt.kind == TOK_INTERP_BEG || nxt.kind == TOK_INT || nxt.kind == TOK_FLOAT ||
                                  nxt.kind == TOK_NIL || nxt.kind == TOK_TRUE || nxt.kind == TOK_FALSE ||
                                  nxt.kind == TOK_SELF || nxt.kind == TOK_IVAR || nxt.kind == TOK_GVAR ||
@@ -647,6 +711,7 @@ Node *parse_primary(Parser *p) {
             int lbracket_as_arg = (nxt.kind == TOK_LBRACKET && nxt.col > t.col + t.len);
             Token sign_arg = peek_next_token(p);
             int can_be_arg = lparen_as_arg || lbracket_as_arg || nxt.kind == TOK_SYMBOL || nxt.kind == TOK_STRING ||
+                             nxt.kind == TOK_WORDS || nxt.kind == TOK_SYMBOLS ||
                              nxt.kind == TOK_INTERP_BEG || nxt.kind == TOK_INT || nxt.kind == TOK_FLOAT ||
                              nxt.kind == TOK_NIL || nxt.kind == TOK_TRUE || nxt.kind == TOK_FALSE ||
                              nxt.kind == TOK_SELF || nxt.kind == TOK_IVAR || nxt.kind == TOK_GVAR ||
@@ -792,7 +857,8 @@ Node *parse_primary(Parser *p) {
                 int lbracket_as_arg = (nxt.kind == TOK_LBRACKET && nxt.col > t.col + t.len);
                 Token sign_arg = peek_next_token(p);
                 int can_be_arg = lparen_as_arg || lbracket_as_arg || nxt.kind == TOK_SYMBOL ||
-                                 nxt.kind == TOK_STRING || nxt.kind == TOK_INTERP_BEG ||
+                                 nxt.kind == TOK_STRING || nxt.kind == TOK_WORDS || nxt.kind == TOK_SYMBOLS ||
+                                 nxt.kind == TOK_INTERP_BEG ||
                                  nxt.kind == TOK_INT || nxt.kind == TOK_FLOAT || nxt.kind == TOK_NIL ||
                                  nxt.kind == TOK_TRUE || nxt.kind == TOK_FALSE || nxt.kind == TOK_SELF ||
                                  nxt.kind == TOK_IVAR || nxt.kind == TOK_GVAR || nxt.kind == TOK_CONST ||
