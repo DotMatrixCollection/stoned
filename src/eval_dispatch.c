@@ -763,6 +763,16 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         return recv;
     }
     if (strcmp(name, "itself") == 0) return recv;
+    if (strcmp(name, "tap") == 0) {
+        if (!blk) return eval_raise_class(ev, site, "LocalJumpError", "no block given");
+        Value result = call_block(ev, env, *blk, &recv, 1, site);
+        if (val_is_signal(result)) return result;
+        return recv;
+    }
+    if (strcmp(name, "then") == 0 || strcmp(name, "yield_self") == 0) {
+        if (!blk) return eval_raise_class(ev, site, "LocalJumpError", "no block given");
+        return call_block(ev, env, *blk, &recv, 1, site);
+    }
     if (strcmp(name, "object_id") == 0) {
         if (recv.kind == VAL_OBJECT) return val_int((int64_t)(uintptr_t)recv.obj);
         if (recv.kind == VAL_INT) return val_int(recv.ival * 2 + 1);
@@ -852,7 +862,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (include_super && (vis_mask & 1)) {
             static const char *obj_builtins[] = {
                 "class", "nil?", "is_a?", "kind_of?", "instance_of?", "respond_to?",
-                "equal?", "==", "!=", "freeze", "frozen?", "itself", "object_id",
+                "equal?", "==", "!=", "freeze", "frozen?", "itself", "tap", "then", "yield_self", "object_id",
                 "send", "__send__", "public_send", "extend", "methods", "public_methods",
                 "private_methods", "protected_methods", "method", "inspect", "to_s", NULL
             };
