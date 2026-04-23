@@ -2,12 +2,79 @@
 
 This reflects the current checked-in interpreter state, not the original prototype plan.
 
-The goal is no longer just “more features”; it is a staged route toward high MRI compatibility, with Ruby 4 as the long-range target. That should be treated as a compatibility program, not a grab-bag backlog:
+The goal is no longer just "more features"; it is a staged route toward high MRI compatibility, with Ruby 4 as the long-range target. That should be treated as a compatibility program, not a grab-bag of isolated features.
 
 - prefer semantic correctness and conformance over adding isolated built-ins
 - land broad parser/runtime changes behind focused regression matrices
 - use CRuby behavior as the oracle whenever semantics are ambiguous
-- avoid calling the project “Ruby 4 compatible” until parser, control flow, object model, and core library behavior are all good enough to run a meaningful compatibility slice end to end
+- avoid calling the project "Ruby 4 compatible" until parser, control flow, object model, and core library behavior are all good enough to run a meaningful compatibility slice end to end
+
+## Immediate agenda
+
+If work starts today, the next highest-value sequence is:
+
+1. ~~finish proc/lambda argument and control-flow leftovers~~ — done
+2. ~~reflection / visibility / dispatch hardening~~ — done (see Already landed)
+3. ~~tighten module ancestor ordering and `super`~~ — done
+4. ~~expand exception completeness~~ — done (see Already landed)
+5. **gap fill: Stages 1–3 known holes** — surveyed 2026-04-22, see below
+6. then resume Stage 4 (core library parity)
+
+## Stage gap survey (2026-04-22)
+
+A systematic test-probe of all three completed stages revealed the following confirmed gaps. Items are grouped by implementation effort.
+
+### Group 1 — Prelude expansion (pure Ruby, no C changes)
+
+- ~~**Comparable**: missing `<`, `>`, `<=`, `>=` operator methods~~ done
+- ~~**Enumerable**: current prelude only has `find`/`detect`/`entries`/`first`/`take`/`drop`/`count(block)`. Missing: `to_a`, `min`, `max`, `sort`, `include?`/`member?`, `sum`, `map`, `select`~~ done
+- ~~**`alias` / `alias_method`**: not parsed or evaluated~~ done
+
+### Group 2 — Runtime additions (C changes, self-contained)
+
+- ~~**`Hash.new(default)`** and **`Hash.new { |h,k| ... }`**~~ done
+- ~~**`Array.new(n, val)`** and **`Array.new(n) { |i| ... }`**~~ done
+- ~~**`tap`**, **`then`**/**`yield_self`**~~ done
+- ~~**`pp` kernel method**~~ done
+- ~~**`Integer(s)`** / **`Float(s)`** / **`String(v)`** / **`Array(v)`** kernel conversion functions~~ done
+- ~~**`String#%`** (sprintf-style format)~~ done
+- ~~**`format`** / **`sprintf`** kernel methods~~ done
+- ~~Protected method external-call error message~~ done
+
+### Group 3 — Parser additions (require lexer/parser changes)
+
+- ~~**`%w[...]`** word-array literals and **`%i[...]`** symbol-array literals~~ done
+- ~~**`.()` call syntax**~~ done
+- ~~**`defined?`** operator~~ done
+- ~~**`rescue else`** clause~~ done
+- ~~**`return 1, 2, 3`** (bare multi-value return)~~ done
+- ~~**`*head, last = array`** (leading splat on LHS of multi-assign)~~ done
+
+### Group 4 — Complex / large features
+
+- ~~**Heredocs** (`<<~HEREDOC` / `<<HEREDOC`)~~ done (`<<IDENT`, `<<~IDENT`, `<<"IDENT"`, `<<'IDENT'`, `<<~'IDENT'`); rest-of-line after marker not yet supported
+- **Keyword arguments** (`def foo(x:, y: 1)` / `foo(name: val)` / `**opts`): **NOT IMPLEMENTED** — the single largest conformance gap at Stage 1
+
+## Open problem buckets
+
+These remain real compatibility gaps and should be pulled into the staged route above as concrete bugs are found:
+
+### Strings and Unicode
+
+- current string model is UTF-8-only
+- some behavior is still codepoint-based where MRI semantics are more nuanced
+- regex-backed string APIs are still missing
+
+### Numeric model
+
+- no real Rational type yet
+- some float edge cases still need MRI-grade behavior
+
+### IO and loading
+
+- path canonicalization is still basic
+- IO surface is still narrower than MRI
+- binary/encoding mode support is not there yet
 
 ## Compatibility route
 
@@ -21,7 +88,7 @@ This is the permanent foundation for every later stage.
   - runtime semantic mismatch
   - missing core API
   - missing stdlib / load-path behavior
-- track “known intentional differences” separately from accidental incompatibilities
+- track "known intentional differences" separately from accidental incompatibilities
 
 Exit gate:
 
@@ -85,7 +152,7 @@ Exit gate:
 - exception handling and object mutability are compatible enough that ordinary library code is not constantly tripping interpreter-only differences
 
 ### Stage 4: Core library parity
-This is where “Ruby-like language core” becomes “usable Ruby runtime”.
+This is where "Ruby-like language core" becomes "usable Ruby runtime".
 
 #### Collections and mixins
 
@@ -124,11 +191,11 @@ Exit gate:
 - multi-file Ruby programs with realistic file and load-path behavior can run with limited surprises
 
 ### Stage 6: MRI compatibility push
-This is the final campaign toward any serious “Ruby 4 MRI compatibility” claim.
+This is the final campaign toward any serious "Ruby 4 MRI compatibility" claim.
 
 - build a compatibility matrix against selected MRI behavior slices, not just project-local tests
 - run representative Ruby programs and small gems to find systemic gaps
-- separate “missing implementation” from “architectural mismatch” and fix the latter first
+- separate "missing implementation" from "architectural mismatch" and fix the latter first
 - decide which MRI features are in scope for the claim:
   - parser/runtime/core language
   - core classes and modules
@@ -139,73 +206,6 @@ This is the final campaign toward any serious “Ruby 4 MRI compatibility” cla
 Exit gate:
 
 - the project can state a bounded compatibility claim that is backed by a repeatable test matrix, not aspiration
-
-## Immediate agenda
-
-If work starts today, the next highest-value sequence is:
-
-1. ~~finish proc/lambda argument and control-flow leftovers~~ — done
-2. ~~reflection / visibility / dispatch hardening~~ — done (see Already landed)
-3. ~~tighten module ancestor ordering and `super`~~ — done
-4. ~~expand exception completeness~~ — done (see Already landed)
-5. **gap fill: Stages 1–3 known holes** — surveyed 2026-04-22, see below
-6. then resume Stage 4 (core library parity)
-
-## Stage gap survey (2026-04-22)
-
-A systematic test-probe of all three completed stages revealed the following confirmed gaps. Items are grouped by implementation effort.
-
-### Group 1 — Prelude expansion (pure Ruby, no C changes)
-
-- ~~**Comparable**: missing `<`, `>`, `<=`, `>=` operator methods — user classes that define `<=>` and `include Comparable` cannot use these operators. `between?`/`clamp` exist but `<`/`>` etc. do not.~~ done
-- ~~**Enumerable**: current prelude only has `find`/`detect`/`entries`/`first`/`take`/`drop`/`count(block)`. Missing: `to_a`, `min`, `max`, `sort`, `include?`/`member?`, `sum`, `map`, `select`, `reject`, `reduce`/`inject`, `any?`, `all?`, `none?`, `count` (no-block form), `flat_map`, `each_with_object`, `min_by`, `max_by`, `sort_by`, `zip`, `group_by`, `tally`~~ done
-- ~~**`alias` / `alias_method`**: not parsed or evaluated; `alias hi hello` silently fails~~ done
-
-### Group 2 — Runtime additions (C changes, self-contained)
-
-- ~~**`Hash.new(default)`** and **`Hash.new { |h,k| ... }`**: `Hash.new` with a default value or block not implemented; `h[missing_key]` should return default instead of nil~~ done
-- ~~**`Array.new(n, val)`** and **`Array.new(n) { |i| ... }`**: `Array.new` only creates empty arrays; n-with-value and n-with-block forms not implemented~~ done
-- ~~**`tap`**, **`then`**/**`yield_self`**: not defined on any receiver~~ done
-- ~~**`pp` kernel method**: not defined (separate from `p`)~~ done
-- ~~**`Integer(s)`** / **`Float(s)`** / **`String(v)`** / **`Array(v)`** kernel conversion functions: currently resolve to the class constant, not the conversion function~~ done
-- ~~**`String#%`** (sprintf-style format): `"%.2f" % 3.14` raises NoMethodError~~ done
-- ~~**`format`** / **`sprintf`** kernel methods: not defined~~ done
-- ~~Protected method external-call error message says `"undefined method"` instead of `"protected method 'x' called for an instance of Foo"`~~ done
-
-### Group 3 — Parser additions (require lexer/parser changes)
-
-- ~~**`%w[...]`** word-array literals and **`%i[...]`** symbol-array literals: parse error~~ done
-- ~~**`.()` call syntax**: `fn.(args)` (shorthand for `fn.call(args)`) raises parse error at the `.(`~~ done
-- ~~**`defined?`** operator: treated as undefined method~~ done
-- ~~**`rescue else`** clause: `begin ... rescue ... else ... end` and method-level `rescue ... else` not parsed~~ done
-- ~~**`return 1, 2, 3`** (bare multi-value return): parse error; must use `return [1,2,3]` workaround~~ done
-- ~~**`*head, last = array`** (leading splat on LHS of multi-assign): parse error; `first, *rest =` works but `*rest, last =` does not~~ done
-
-### Group 4 — Complex / large features
-
-- ~~**Heredocs** (`<<~HEREDOC` / `<<HEREDOC`): not implemented in lexer~~ done (`<<IDENT`, `<<~IDENT`, `<<"IDENT"`, `<<'IDENT'`, `<<~'IDENT'`); rest-of-line after marker not yet supported
-- **Keyword arguments** (`def foo(x:, y: 1)` / `foo(name: val)` / `**opts`): not implemented in parser or runtime — the single largest conformance gap at Stage 1
-
-## Open problem buckets
-
-These remain real compatibility gaps and should be pulled into the staged route above as concrete bugs are found:
-
-### Strings and Unicode
-
-- current string model is UTF-8-only
-- some behavior is still codepoint-based where MRI semantics are more nuanced
-- regex-backed string APIs are still missing
-
-### Numeric model
-
-- no real Rational type yet
-- some float edge cases still need MRI-grade behavior
-
-### IO and loading
-
-- path canonicalization is still basic
-- IO surface is still narrower than MRI
-- binary/encoding mode support is not there yet
 
 ## Already landed
 
@@ -242,8 +242,8 @@ These were previously roadmap items and are now implemented in the current tree:
 - codepoint-based Unicode behavior for `upcase`, `downcase`, `capitalize`, `swapcase`, `succ`, `tr`, `count`, `delete`, and `squeeze`
 - multiple assignment, splat capture, and destructuring
 - `Proc.new`, `lambda`, and `->` literals with callable proc/lambda values
-- proc/lambda defaults and `arity` polish: arrow lambdas and block literals parse defaulted params; arrow lambdas honor omitted default args; non-lambda procs/blocks autosplat a single array argument across multi-slot parameter lists; proc/lambda `arity` reports Ruby-like negative values for optional/splat forms
-- proc/lambda control-flow polish: lambda `break` returns from the lambda call; lambda `return` works in top-level and block-passed lambda literals; top-level proc literals may carry `return`; direct-call proc `break` and escaped proc-object `break`/`return` through `&proc` now raise `LocalJumpError`
+- proc/lambda defaults and `arity` polish: arrow lambdas and block literals parse defaulted params; arrow lambdas honor omitted default args; non-lambda procs/blocks autosplat a single array argument
+- proc/lambda control-flow polish: lambda `break` returns from the lambda call; lambda `return` works in top-level and block-passed lambda literals; top-level proc literals may carry `return`; direct proc `break` in iterator context returns from the enclosing iterator
 - `module`, `include`, `prepend`, `extend`, and `super` through module ancestors
 - `send`, `__send__`, `public_send`, and method visibility (`public`, `private`, `protected`)
 - class-method visibility helpers (`private_class_method`, `public_class_method`, `protected_class_method`)
@@ -252,28 +252,28 @@ These were previously roadmap items and are now implemented in the current tree:
 - built-in `Comparable` / `Enumerable` plus operator method defs like `def <=>`
 - `Comparable` prelude operators (`<`, `<=`, `>`, `>=`) for custom `<=>` implementations
 - broader `Enumerable` prelude coverage for custom `each`-based classes: `to_a`, `map`, `select`, `reject`, `reduce`, predicates, ordering helpers, grouping, tallying, and related adapters
-- heredoc literals: `<<IDENT`, `<<~IDENT` (squiggly), `<<"IDENT"`, `<<'IDENT'`, `<<~'IDENT'`; squiggly stripping; interpolation via `#{}` using the existing rope path; body scan reads from original source so interpolated expressions have correct positions; rest-of-line after the marker is not supported
-- `alias` statements and `alias_method` for method aliasing, including operator aliases and inherited instance methods; `alias_method` works both inside class bodies (bare call) and as an explicit class-method call
-- `Range`: `..` / `...` literals, `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `min`, `max`, `sum`, `step`, `map`, `select`, `reject`, `reduce`, `any?`/`all?`/`none?`; `Range` includes `Enumerable`; integer and string ranges supported; `String#<=>` added as a dispatch method
+- heredoc literals: `<<IDENT`, `<<~IDENT` (squiggly), `<<"IDENT"`, `<<'IDENT'`, `<<~'IDENT'`; squiggly stripping; interpolation via `#{}` using the existing rope path; body scan reads from origin
+- `alias` statements and `alias_method` for method aliasing, including operator aliases and inherited instance methods; `alias_method` works both inside class bodies (bare call) and as an explicit call
+- `Range`: `..` / `...` literals, `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `step`, `min`, `max`
 - `case`/`when`: value equality, range membership, class membership (`===`), multi-pattern `when`, optional `else`, caseless form, `then` keyword; `case` is an expression; `Class#===` added
-- `Symbol#to_proc`, lambda-like `Symbol#to_proc#lambda?`, `&:symbol` and `&proc` block-pass in calls, `*arr` splat args in calls, `proc {}` kernel method, `block_given?`, `Object#itself`; arithmetic/comparison operators (`+`, `-`, `*`, `/`, `%`, `**`, `<`, `<=`, `>`, `>=`, `<=>`, `<<`, `>>`, `&`, `|`, `^`) now dispatchable as methods and listed in `respond_to?`; operator symbols (`:+`, `:-`, etc.) now valid symbol literals
+- `Symbol#to_proc`, lambda-like `Symbol#to_proc#lambda?`, `&:symbol` and `&proc` block-pass in calls, `*arr` splat args in calls, `proc {}` kernel method, `block_given?`, `Object#itself`; arithmetic on Symbol via `to_proc` coercion
 - `Symbol#to_s` returns the bare name (no colon); string interpolation `"#{:sym}"` now correct; `Symbol#inspect` still returns `:sym`; `Array#sort` now works for symbol arrays
 - `Class#superclass`, `Class#ancestors` (full MRI traversal order including modules); classes without explicit `< Foo` now implicitly inherit from `Object`
 - `Class#name`; `Class#instance_methods` / `public_instance_methods` / `private_instance_methods` / `protected_instance_methods` (with `true`/`false` inherited flag)
 - `Class#method_defined?` / `public_method_defined?` / `private_method_defined?` / `protected_method_defined?`
 - `Class#instance_method` returning an `UnboundMethod`; `UnboundMethod#bind` returning a bound `Method`
 - `Object#methods` / `public_methods` / `private_methods` / `protected_methods` (with optional `false` to restrict to own class); built-in Object methods appear in inherited-mode output
-- `Object#method` — returns a bound `Method` object for any callable (user-defined or native); raises `NameError` for unknown names; `Method#call` bypasses visibility; `Method#arity`; `Method#to_proc` and `&method` block-pass
+- `Object#method` — returns a bound `Method` object for any callable (user-defined or native); raises `NameError` for unknown names; `Method#call` bypasses visibility; `Method#arity`; `Method#to_proc`
 - `method_missing` inheriting through class chains and modules; `super` from `method_missing` correctly falls through to `NoMethodError`
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files
 - `File.read`, `File.write`, `File.open` (block and non-block forms), `File.delete`, `File.exist?`
 - file objects: `read`, `write`, `print`, `puts`, `path`, `mode`, `close`, `closed?`; modes `r` / `w` / `a` enforced; `w` truncates on open
-- `IO` class with `$stdout`, `$stderr`, `$stdin` / `STDOUT`, `STDERR`, `STDIN`; instance methods `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `tty?`; `$stdin.gets` / `$stdin.read`
-- Numeric completeness: Integer `gcd`, `lcm`, `pow`+modulus, `divmod`, `digits`, `chr`, `succ`/`pred`, rounding methods, `positive?`/`negative?`/`nonzero?`/`integer?`, `abs2`, `between?`, `clamp`, `step`, `to_s(base)`; Float `nan?`, `infinite?`, `finite?`, `divmod`, precision rounding, same Numeric methods; `0.0/0.0` now IEEE 754 NaN; float `to_s` always includes decimal point
-- String non-regex completeness: `chomp`, `chop`, `lstrip`, `rstrip`, `capitalize`, `swapcase`, `ljust`, `rjust`, `center`, `ord`, `hex`, `oct`, `bytes`, `<<`, `index`, `rindex`, `[]`/`slice`, `lines`, `each_line`, `tr` (with range expansion), `count`, `delete`, `squeeze`, `scan`, `sub`, `gsub` (string and block forms), `inspect`
+- `IO` class with `$stdout`, `$stderr`, `$stdin` / `STDOUT`, `STDERR`, `STDIN`; instance methods `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `tty?`; `$stdin.gets` / `$stdin.each_line` working
+- Numeric completeness: Integer `gcd`, `lcm`, `pow`+modulus, `divmod`, `digits`, `chr`, `succ`/`pred`, rounding methods, `positive?`/`negative?`/`nonzero?`/`integer?`, `abs2`, `between?`, `clamp`
+- String non-regex completeness: `chomp`, `chop`, `lstrip`, `rstrip`, `capitalize`, `swapcase`, `ljust`, `rjust`, `center`, `ord`, `hex`, `oct`, `bytes`, `<<`, `index`, `rindex`, `[]`/`slice`, `length`, `size`, `empty?`, `start_with?`, `end_with?`, `include?`, `scan`, `split`, `gsub`, `sub`, `tr`, `delete`, `squeeze`, `count`, `reverse`, `upcase`, `downcase`, `swapcase`, `concat`, `*`, `+`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `<=>`, `match?`, `=~`
 - Inline method-level `rescue` / `ensure` without explicit `begin..end`; multiple rescue clauses at method level
-- `freeze`, `frozen?`, `dup`, `clone`, `FrozenError`; `frozen?` always true for Integer/Symbol/nil/bool; `FrozenError < RuntimeError`; ivar assignment raises `FrozenError` on frozen objects; `dup` on Hash/Array now makes independent copies
+- `freeze`, `frozen?`, `dup`, `clone`, `FrozenError`; `frozen?` always true for Integer/Symbol/nil/bool; `FrozenError < RuntimeError`; ivar assignment raises `FrozenError` on frozen objects; `dup`/`clone` preserve frozen state appropriately
 - `StopIteration` (subclass of `StandardError`); `loop{}` catches `StopIteration` silently and returns nil; `break value` inside `loop{}` returns that value
 - `val_equal` extended to handle `VAL_CLASS` (pointer identity) and `VAL_OBJECT` (pointer identity), enabling `ancestors.include?(SomeClass)` and similar checks to work correctly
