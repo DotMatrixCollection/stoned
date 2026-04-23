@@ -120,6 +120,8 @@ struct RubyHash {
     Value  *vals;
     size_t  len;
     size_t  cap;
+    Value   default_value;
+    Value   default_proc;
 };
 
 struct RubyRange {
@@ -150,6 +152,7 @@ Value val_proc(struct Node *blk, struct Env *closure);
 Value val_lambda(struct Node *blk, struct Env *closure);
 
 Value val_hash_new(Arena *a);
+Value val_hash_new_with_defaults(Arena *a, Value default_value, Value default_proc);
 void  val_hash_set(RubyHash *h, Value key, Value val);
 int   val_hash_get(RubyHash *h, Value key, Value *out);
 int   val_hash_delete(RubyHash *h, Value key);

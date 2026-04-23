@@ -748,7 +748,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             return copy;
         }
         if (recv.kind == VAL_HASH) {
-            Value copy = val_hash_new(ev->arena);
+            Value copy = val_hash_new_with_defaults(ev->arena, recv.hash->default_value, recv.hash->default_proc);
             for (size_t i = 0; i < recv.hash->len; i++)
                 val_hash_set(copy.hash, recv.hash->keys[i], recv.hash->vals[i]);
             return copy;

@@ -155,6 +155,12 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "new") == 0) {
+        if (strcmp(recv.klass->name, "Hash") == 0) {
+            Value default_value = argc > 0 ? args[0] : val_nil();
+            Value default_proc = blk ? *blk : val_nil();
+            *out = val_hash_new_with_defaults(ev->arena, default_value, default_proc);
+            return 1;
+        }
         if (class_is_a_named_class(ev, recv.klass, "Exception")) {
             int ok = 1;
             Value message = exception_arg_message(ev, recv, args, argc, &ok, site);

@@ -163,7 +163,7 @@ A systematic test-probe of all three completed stages revealed the following con
 
 ### Group 2 — Runtime additions (C changes, self-contained)
 
-- **`Hash.new(default)`** and **`Hash.new { |h,k| ... }`**: `Hash.new` with a default value or block not implemented; `h[missing_key]` should return default instead of nil
+- ~~**`Hash.new(default)`** and **`Hash.new { |h,k| ... }`**: `Hash.new` with a default value or block not implemented; `h[missing_key]` should return default instead of nil~~ done
 - **`Array.new(n, val)`** and **`Array.new(n) { |i| ... }`**: `Array.new` only creates empty arrays; n-with-value and n-with-block forms not implemented
 - **`tap`**, **`then`**/**`yield_self`**: not defined on any receiver
 - **`pp` kernel method**: not defined (separate from `p`)
@@ -212,6 +212,7 @@ These remain real compatibility gaps and should be pulled into the staged route 
 These were previously roadmap items and are now implemented in the current tree:
 
 - hash values and hash built-ins
+- `Hash.new(default)` and `Hash.new { |h, k| ... }`, including missing-key lookup through fixed defaults or default procs and preserving hash defaults across `dup`/`clone`
 - `attr_reader`, `attr_writer`, `attr_accessor`
 - class methods via `def self.foo`
 - bare `puts` / `print` / `p` and command-style calls

@@ -97,13 +97,19 @@ Value val_range(Arena *a, Value begin_val, Value end_val, int exclusive) {
     return v;
 }
 
-Value val_hash_new(Arena *a) {
+Value val_hash_new_with_defaults(Arena *a, Value default_value, Value default_proc) {
     RubyHash *h = arena_alloc(a, sizeof(RubyHash));
     h->keys = NULL;
     h->vals = NULL;
     h->len  = 0;
     h->cap  = 0;
+    h->default_value = default_value;
+    h->default_proc = default_proc;
     return val_hash_val(h);
+}
+
+Value val_hash_new(Arena *a) {
+    return val_hash_new_with_defaults(a, val_nil(), val_nil());
 }
 
 void val_hash_set(RubyHash *h, Value key, Value val) {

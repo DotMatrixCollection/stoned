@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `136 passed, 0 failed, 136 total`.
+Current coverage in the tree: `137 passed, 0 failed, 137 total`.
 
 What is working today:
 
@@ -62,7 +62,7 @@ What is working today:
 - File loading: `require_relative`, `require`, `$LOAD_PATH` search, duplicate-load skipping, `LoadError` on load failures
 - Dispatch hooks: `method_missing` and `respond_to_missing?` for objects, classes, and primitive-backed reopened classes; class/module reflection is now consistent across `class`, `is_a?`, and `instance_of?`, with stricter arity enforcement on core reflection built-ins and user-defined methods
 - Operator method defs like `def <=>` and generic operator dispatch for user-defined operator methods
-- Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`
+- Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`, `Hash.new(default)`, and `Hash.new { |h, k| ... }`
 - Range: `..` and `...` literals; `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `min`, `max`, `sum`, `step`, `map`, `select`, `reject`, `reduce`, `any?`/`all?`/`none?`; `Range` includes `Enumerable`; integer and string ranges supported
 - Hash syntax: both `{:a => 1}` and modern label syntax like `{a: 1}`
 - Assignment: parallel assignment, swap, splat capture, nested destructuring, destructured method and block params

@@ -346,7 +346,14 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#[] requires a key");
         else {
             Value found;
-            *out = val_hash_get(h, args[0], &found) ? found : val_nil();
+            if (val_hash_get(h, args[0], &found)) {
+                *out = found;
+            } else if (h->default_proc.kind == VAL_BLOCK) {
+                Value block_args[2] = { recv, args[0] };
+                *out = call_block(ev, env, h->default_proc, block_args, 2, site);
+            } else {
+                *out = h->default_value;
+            }
         }
         return 1;
     }
@@ -421,7 +428,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#merge requires a Hash");
         else if (args[0].kind != VAL_HASH) *out = eval_raise_class(ev, site, "TypeError", "Hash#merge requires a Hash");
         else {
-            Value result = val_hash_new(ev->arena);
+            Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
             for (size_t i = 0; i < h->len; i++) val_hash_set(result.hash, h->keys[i], h->vals[i]);
             RubyHash *other = args[0].hash;
             for (size_t i = 0; i < other->len; i++) val_hash_set(result.hash, other->keys[i], other->vals[i]);
@@ -485,7 +492,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError",
                                           strcmp(name, "reject") == 0 ? "Hash#reject requires a block" : "Hash#select requires a block");
         else {
-            Value result = val_hash_new(ev->arena);
+            Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
             for (size_t i = 0; i < h->len; i++) {
                 Value bargs[2] = { h->keys[i], h->vals[i] };
                 Value r = call_block(ev, env, *blk, bargs, 2, site);
@@ -576,7 +583,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "clear") == 0) { h->len = 0; *out = recv; return 1; }
     if (strcmp(name, "dup") == 0) {
-        Value result = val_hash_new(ev->arena);
+        Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
         for (size_t i = 0; i < h->len; i++) val_hash_set(result.hash, h->keys[i], h->vals[i]);
         *out = result;
         return 1;
