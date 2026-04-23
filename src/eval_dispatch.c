@@ -477,6 +477,55 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         for (int i = 0; i < argc; i++) val_array_push(&arr, args[i]);
         return arr;
     }
+    if (strcmp(name, "Integer") == 0) {
+        if (argc != 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        Value v = args[0];
+        if (v.kind == VAL_INT) return v;
+        if (v.kind == VAL_FLOAT) return val_int((int64_t)v.fval);
+        if (v.kind == VAL_STRING) return val_int(atoll(v.sval ? v.sval : ""));
+        if (!val_responds_to(ev, v, "to_i", 1))
+            return eval_raise_class(ev, site, "TypeError", "can't convert %s into Integer", val_kind_name(v.kind));
+        Value converted = dispatch_method(ev, env, v, "to_i", NULL, 0, NULL, site, 0, -1);
+        if (val_is_signal(converted)) return converted;
+        if (converted.kind == VAL_INT) return converted;
+        return eval_raise_class(ev, site, "TypeError", "can't convert %s into Integer", val_kind_name(v.kind));
+    }
+    if (strcmp(name, "Float") == 0) {
+        if (argc != 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        Value v = args[0];
+        if (v.kind == VAL_FLOAT) return v;
+        if (v.kind == VAL_INT) return val_float((double)v.ival);
+        if (v.kind == VAL_STRING) return val_float(atof(v.sval ? v.sval : ""));
+        if (!val_responds_to(ev, v, "to_f", 1))
+            return eval_raise_class(ev, site, "TypeError", "can't convert %s into Float", val_kind_name(v.kind));
+        Value converted = dispatch_method(ev, env, v, "to_f", NULL, 0, NULL, site, 0, -1);
+        if (val_is_signal(converted)) return converted;
+        if (converted.kind == VAL_FLOAT) return converted;
+        if (converted.kind == VAL_INT) return val_float((double)converted.ival);
+        return eval_raise_class(ev, site, "TypeError", "can't convert %s into Float", val_kind_name(v.kind));
+    }
+    if (strcmp(name, "String") == 0) {
+        if (argc != 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        if (args[0].kind == VAL_STRING) return args[0];
+        return val_string(ev->arena, val_to_s(ev->arena, args[0]));
+    }
+    if (strcmp(name, "Array") == 0) {
+        if (argc != 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        Value v = args[0];
+        if (v.kind == VAL_ARRAY) return v;
+        if (v.kind == VAL_NIL) return val_array_new();
+        if (!val_responds_to(ev, v, "to_a", 1)) {
+            Value arr = val_array_new();
+            val_array_push(&arr, v);
+            return arr;
+        }
+        Value converted = dispatch_method(ev, env, v, "to_a", NULL, 0, NULL, site, 0, -1);
+        if (val_is_signal(converted)) return converted;
+        if (converted.kind == VAL_ARRAY) return converted;
+        Value arr = val_array_new();
+        val_array_push(&arr, v);
+        return arr;
+    }
     if (strcmp(name, "raise") == 0) {
         const char *class_name = "RuntimeError";
         const char *msg = "RuntimeError";
@@ -1167,7 +1216,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "pp", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
+            "puts", "print", "p", "pp", "Integer", "Float", "String", "Array", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", NULL
