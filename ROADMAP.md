@@ -1,101 +1,175 @@
 # Roadmap
 
-This reflects the current checked-in interpreter state, not the original prototype plan. Items within a section are roughly prioritized.
+This reflects the current checked-in interpreter state, not the original prototype plan.
 
-## Near term
+The goal is no longer just “more features”; it is a staged route toward high MRI compatibility, with Ruby 4 as the long-range target. That should be treated as a compatibility program, not a grab-bag backlog:
 
-### Semantics hardening
-The current priority is making the implemented subset more Ruby-like and less surprising:
+- prefer semantic correctness and conformance over adding isolated built-ins
+- land broad parser/runtime changes behind focused regression matrices
+- use CRuby behavior as the oracle whenever semantics are ambiguous
+- avoid calling the project “Ruby 4 compatible” until parser, control flow, object model, and core library behavior are all good enough to run a meaningful compatibility slice end to end
 
-- tighten command-style call parsing in the remaining edge cases beyond current spaced-`(` grouping, unary-leading args, multiline-arg, nested-comma precedence, and covered delayed-`do`/`end` attachment cases
-- expand regression coverage for arrays, hashes, and method dispatch
-- reduce the remaining differences between parenthesized and unparenthesized call forms
-- keep exception behavior coherent as more Ruby-like forms land
+## Compatibility route
 
-### Type introspection consistency
-Core reflection exists in part, but it should be made more consistent across value kinds:
+### Stage 0: Conformance infrastructure
+This is the permanent foundation for every later stage.
 
-- keep tightening `is_a?`, `kind_of?`, `instance_of?`, `class`, `nil?`, `respond_to?`
-- keep behavior coherent across primitives, objects, classes, modules, arrays, and hashes
+- keep expanding fixture coverage around parser ambiguity, dispatch, reflection, block semantics, and exception unwind
+- add more direct CRuby comparison cases for semantics that are easy to get subtly wrong
+- classify gaps by compatibility level:
+  - parser mismatch
+  - runtime semantic mismatch
+  - missing core API
+  - missing stdlib / load-path behavior
+- track “known intentional differences” separately from accidental incompatibilities
 
-## Medium term
+Exit gate:
 
-### Proc / lambda
-The core callable forms now exist, but the remaining work is semantic cleanup:
+- new compatibility work normally lands with a regression that would fail before the patch
+- roadmap sections below are driven by failing conformance slices instead of intuition alone
 
-- Ruby-complete proc/lambda control-flow edge cases beyond the current direct-call and escaped-`&proc` `break`/`return` behavior plus top-level lambda/proc `return`
-- fuller arity behavior and argument coercion beyond the current lambda default-arg and optional/splat `arity` coverage plus non-lambda single-array autosplat
-- better integration with method/block conversion patterns
+### Stage 1: Parser and call semantics parity
+This is the shortest path to making the language feel Ruby-like in ordinary code.
 
-### Modules
-The core module path now exists, but the next semantic gaps are:
+- finish remaining command-style call edge cases
+- keep reducing differences between parenthesized and unparenthesized forms
+- tighten block binding around `do` vs `{}` in deeper nesting and chaining cases
+- keep keyword-hash and grouped-argument parsing aligned with CRuby
+- make `yield`, `super`, and block-pass forms behave like ordinary calls wherever Ruby does
 
-- tighter ancestor ordering compatibility
-- class-side mixins beyond the current `extend` behavior
+Exit gate:
 
-### Method visibility polish
-The core visibility model now exists, but it still needs:
+- common Ruby call forms parse the same way users expect from MRI
+- command-call and grouped/block-binding regressions stop being a recurring source of surprises
 
-- fuller Ruby compatibility around visibility edge cases
-- any remaining `respond_to?` / dispatch inconsistencies as more metaprogramming features land
+### Stage 2: Core runtime semantics parity
+This is the current high-value lane. It determines whether code that parses also behaves correctly.
 
-### `super` polish
-The core `super` path now exists, but it still needs:
+#### Proc / lambda
 
-- closer Ruby compatibility on the remaining forwarding and visibility edge cases
+- finish proc-vs-lambda control-flow edge cases beyond the current direct-call and escaped-`&proc` `break`/`return` behavior plus top-level lambda/proc `return`
+- complete the remaining argument coercion and arity edge cases beyond current defaults, optional/splat `arity`, and non-lambda single-array autosplat
+- tighten block/method conversion patterns, especially `&proc` and callable adaptation through helpers and iterators
 
-## Longer term
+#### Dispatch / reflection / visibility
 
-### `Comparable` and `Enumerable` polish
-The core built-in mixins now exist, but the next gaps are:
+- keep tightening `is_a?`, `kind_of?`, `instance_of?`, `class`, `nil?`, `respond_to?`, and `respond_to_missing?`
+- keep visibility coherent across primitives, objects, classes, modules, arrays, hashes, and proc objects
+- close the remaining `method_missing`, `public_send`, and hidden-method edge cases
 
-- broader `Enumerable` method coverage in the prelude (`map`, `select`, `reject`, etc. are only defined on `Array`, `Hash`, and `Range` natively, not via the shared prelude)
-- closer Ruby compatibility on edge cases
+#### `super` / modules / ancestors
 
-### File loading polish
-The core loading path now exists, but it still needs:
+- tighten module ancestor ordering to closer MRI behavior
+- close remaining `super` forwarding and visibility edge cases
+- extend class-side mixin behavior beyond the current `extend` path where MRI allows it
 
-- stronger path canonicalization / platform handling
-- cleaner load-time error reporting beyond the current basic `LoadError` path
+Exit gate:
 
-### String: regex-dependent methods
-`match`, `=~`, `gsub`/`sub`/`scan` with regex patterns. Planned as a 3-tier hybrid with Onigmo fallback for complex backtracking cases. The non-regex surface is now complete.
+- proc/lambda, reflection, method visibility, and ancestor dispatch behave predictably enough to stop blocking ordinary Ruby metaprogramming patterns
 
-### UTF-8 polish
-The runtime now treats source text and runtime strings as UTF-8-only. Remaining gaps are:
+### Stage 3: Exception and object-model completeness
+This is where the interpreter becomes much less toy-like for real code.
 
-- audit any remaining byte-oriented string behavior for closer Ruby compatibility
-- improve current simple codepoint-based Unicode handling toward fuller Ruby semantics where needed
-- decide whether any future raw-binary APIs should coexist alongside the UTF-8-only text model
+- fill out broader rescue syntax and remaining exception semantics beyond current typed clauses, typed lists, variable binding, and `retry`
+- add broader standard exception coverage, including iterator-facing cases like `StopIteration`
+- implement frozen state and object/string mutability semantics:
+  - `freeze`
+  - `frozen?`
+  - `dup`
+  - `clone`
+  - `FrozenError`
+- keep unwind behavior coherent when exceptions interact with `return`, `break`, `next`, and `ensure`
 
-### Dispatch hook polish
-The core hook path now exists, but it still needs:
+Exit gate:
 
-- closer Ruby compatibility around `respond_to_missing?` edge cases
-- integration with future metaprogramming features
+- exception handling and object mutability are compatible enough that ordinary library code is not constantly tripping interpreter-only differences
 
-### Exception polish
-The core exception path now exists, but it still needs:
+### Stage 4: Core library parity
+This is where “Ruby-like language core” becomes “usable Ruby runtime”.
 
-- fuller Ruby rescue syntax beyond the current `rescue => e`, typed clauses, typed lists, and `retry`
-- `StopIteration` and broader standard exception coverage
+#### Collections and mixins
 
-### Frozen objects and string mutability
-`freeze`, `frozen?`, `dup`, `clone`. Strings in Ruby are mutable by default; frozen strings raise `FrozenError` on mutation. Requires a `frozen` flag on string/object values.
+- broaden `Enumerable` coverage in the shared prelude instead of only on selected concrete classes
+- tighten `Comparable` / `Enumerable` corner-case behavior
 
-### Numeric polish
-Core numeric surface is now complete. Remaining gaps:
+#### Strings and regex
 
-- `Integer#to_r` / `Float#to_r` return self (no Rational type yet)
-- `Float` arithmetic edge cases around negative-zero, subnormals
+- add regex-backed `match`, `=~`, and regex forms of `sub` / `gsub` / `scan`
+- improve current Unicode handling beyond simple codepoint behavior where MRI semantics matter
+- decide how, or whether, binary-string behavior should coexist with the current UTF-8-only model
 
-### I/O polish
-The core IO path has landed. Remaining gaps:
+#### Numerics
 
-- no seek/tell/rewind on file objects
-- no binary mode or encoding flags
-- `$stdin.gets` reads from C stdin only; no line-separator configuration
-- `IO.new` with a raw file descriptor not yet supported
+- add proper `Rational` support instead of current `to_r` placeholders
+- tighten float edge cases around negative zero, subnormals, and MRI-specific numeric behavior
+
+Exit gate:
+
+- a meaningful slice of everyday Ruby core-library code runs without needing ad hoc interpreter-specific rewrites
+
+### Stage 5: Loading, IO, and execution environment parity
+This is the bridge from language/runtime correctness to running larger real programs.
+
+- strengthen `require` / `require_relative` path canonicalization and platform handling
+- improve load-time error reporting and feature-resolution behavior
+- expand IO behavior:
+  - seek / tell / rewind
+  - binary mode and encoding flags
+  - `IO.new` from raw file descriptors
+  - closer stdin behavior and line-separator handling
+- keep file/object lifecycle semantics closer to MRI under block and non-block forms
+
+Exit gate:
+
+- multi-file Ruby programs with realistic file and load-path behavior can run with limited surprises
+
+### Stage 6: MRI compatibility push
+This is the final campaign toward any serious “Ruby 4 MRI compatibility” claim.
+
+- build a compatibility matrix against selected MRI behavior slices, not just project-local tests
+- run representative Ruby programs and small gems to find systemic gaps
+- separate “missing implementation” from “architectural mismatch” and fix the latter first
+- decide which MRI features are in scope for the claim:
+  - parser/runtime/core language
+  - core classes and modules
+  - file/load-path behavior
+  - enough stdlib to run targeted workloads
+- only then consider performance, packaging, and host-integration polish as major priorities
+
+Exit gate:
+
+- the project can state a bounded compatibility claim that is backed by a repeatable test matrix, not aspiration
+
+## Immediate agenda
+
+If work starts today, the next highest-value sequence is:
+
+1. finish proc/lambda argument and control-flow leftovers
+2. continue reflection / visibility / dispatch hardening where CRuby still differs
+3. tighten module ancestor ordering and `super`
+4. expand exception completeness
+5. then resume broader core-library and loading work
+
+## Open problem buckets
+
+These remain real compatibility gaps and should be pulled into the staged route above as concrete bugs are found:
+
+### Strings and Unicode
+
+- current string model is UTF-8-only
+- some behavior is still codepoint-based where MRI semantics are more nuanced
+- regex-backed string APIs are still missing
+
+### Numeric model
+
+- no real Rational type yet
+- some float edge cases still need MRI-grade behavior
+
+### IO and loading
+
+- path canonicalization is still basic
+- IO surface is still narrower than MRI
+- binary/encoding mode support is not there yet
 
 ## Already landed
 
