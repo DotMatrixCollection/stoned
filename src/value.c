@@ -180,20 +180,20 @@ static Value *alloc_val(Arena *a, Value inner) {
     return p;
 }
 
-Value val_return(Arena *a, Value inner) {
-    Value v; v.kind = VAL_RETURN; v.wrapped = alloc_val(a, inner); return v;
+Value val_return(Arena *a, Value inner, struct Env *target_env) {
+    Value v; v.kind = VAL_RETURN; v.jump.wrapped = alloc_val(a, inner); v.jump.target_env = target_env; return v;
 }
 Value val_break(Arena *a, Value inner) {
-    Value v; v.kind = VAL_BREAK; v.wrapped = alloc_val(a, inner); return v;
+    Value v; v.kind = VAL_BREAK; v.jump.wrapped = alloc_val(a, inner); v.jump.target_env = NULL; return v;
 }
 Value val_next(Arena *a, Value inner) {
-    Value v; v.kind = VAL_NEXT; v.wrapped = alloc_val(a, inner); return v;
+    Value v; v.kind = VAL_NEXT; v.jump.wrapped = alloc_val(a, inner); v.jump.target_env = NULL; return v;
 }
 Value val_retry(void) {
-    Value v; v.kind = VAL_RETRY; v.wrapped = NULL; return v;
+    Value v; v.kind = VAL_RETRY; v.jump.wrapped = NULL; v.jump.target_env = NULL; return v;
 }
 Value val_exception(void) {
-    Value v; v.kind = VAL_EXCEPTION; v.wrapped = NULL; return v;
+    Value v; v.kind = VAL_EXCEPTION; v.jump.wrapped = NULL; v.jump.target_env = NULL; return v;
 }
 
 /* ------------------------------------------------------------------ */

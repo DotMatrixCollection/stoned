@@ -798,14 +798,16 @@ void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc) {
     }
 }
 
-static int env_chain_includes(Env *env, Env *target) {
-    for (Env *sc = env; sc; sc = sc->parent) {
-        if (sc == target) return 1;
+static int eval_def_target_active(Eval *ev, Env *target) {
+    if (!target) return 0;
+    for (int i = ev->active_def_count - 1; i >= 0; i--) {
+        if (ev->active_defs[i] == target) return 1;
     }
     return 0;
 }
 
 Value call_block(Eval *ev, Env *caller_env, Value blk, Value *args, int argc, Node *call_site) {
+    (void)caller_env;
     if (blk.kind != VAL_BLOCK)
         return eval_raise_class(ev, call_site, "LocalJumpError", "no block given");
 
@@ -828,16 +830,16 @@ Value call_block(Eval *ev, Env *caller_env, Value blk, Value *args, int argc, No
     Value result = eval_node(ev, frame, bn->block.body);
     eval_pop_frame(ev);
     if (result.kind == VAL_RETURN) {
-        if (blk.block.is_lambda) return *result.wrapped;
-        if (blk.block.is_proc_object && !env_chain_includes(caller_env, blk.block.closure))
+        if (blk.block.is_lambda) return *result.jump.wrapped;
+        if (blk.block.is_proc_object && !eval_def_target_active(ev, result.jump.target_env))
             return eval_raise_class(ev, call_site, "LocalJumpError", "unexpected return");
     }
     if (result.kind == VAL_BREAK) {
-        if (blk.block.is_lambda) return *result.wrapped;
+        if (blk.block.is_lambda) return *result.jump.wrapped;
         if (blk.block.is_proc_object)
             return eval_raise_class(ev, call_site, "LocalJumpError", "break from proc-closure");
     }
-    if (result.kind == VAL_NEXT) return *result.wrapped;
+    if (result.kind == VAL_NEXT) return *result.jump.wrapped;
     return result;
 }
 

@@ -35,6 +35,8 @@ typedef struct {
     char         exception_msg[512];
     EvalFrame    frames[EVAL_MAX_DEPTH];
     int          frame_count;
+    Env         *active_defs[EVAL_MAX_DEPTH];
+    int          active_def_count;
     const char  *current_file;
     LoadedFile  *loaded_files;
 } Eval;

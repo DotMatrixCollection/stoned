@@ -227,7 +227,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 int cont = (node->kind == NODE_WHILE) ? val_truthy(cond) : !val_truthy(cond);
                 if (!cont) break;
                 result = eval_node(ev, env, node->loop.body);
-                if (result.kind == VAL_BREAK) return *result.wrapped;
+                if (result.kind == VAL_BREAK) return *result.jump.wrapped;
                 if (result.kind == VAL_RETURN) return result;
                 if (result.kind == VAL_NEXT) {
                     result = val_nil();
@@ -318,9 +318,9 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             if (node->jump.value) {
                 Value v = eval_node(ev, env, node->jump.value);
                 CHECK(v);
-                return val_return(ev->arena, v);
+                return val_return(ev->arena, v, env_nearest_def(env));
             }
-            return val_return(ev->arena, val_nil());
+            return val_return(ev->arena, val_nil(), env_nearest_def(env));
 
         case NODE_BREAK:
             if (node->jump.value) {
@@ -520,6 +520,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     ev->arena   = arena;
     ev->out     = out;
     ev->top_env = env_new(arena, NULL, 1);
+    ev->active_defs[0] = ev->top_env;
+    ev->active_def_count = 1;
     ev->current_file = current_file;
 
     Value load_path = val_array_new();

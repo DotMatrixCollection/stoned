@@ -128,11 +128,16 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 if (blk) method_env->block_arg = blk;
                 bind_params(ev, method_env, init_method.method.def_node->def.params, args, argc);
                 ev->call_depth++;
+                if (ev->active_def_count < EVAL_MAX_DEPTH)
+                    ev->active_defs[ev->active_def_count++] = method_env;
                 eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, "initialize");
                 Value result = eval_node(ev, method_env, init_method.method.def_node->def.body);
                 eval_pop_frame(ev);
+                if (ev->active_def_count > 0) ev->active_def_count--;
                 ev->call_depth--;
-                if (result.kind == VAL_EXCEPTION) { *out = result; return 1; }
+                if (result.kind == VAL_RETURN && result.jump.target_env == method_env)
+                    result = *result.jump.wrapped;
+                if (val_is_signal(result)) { *out = result; return 1; }
                 (void)result;
                 break;
             }

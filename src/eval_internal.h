@@ -73,7 +73,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
 
 static inline int flow_signal_out(Value v, Value *out) {
     if (v.kind == VAL_BREAK) {
-        *out = *v.wrapped;
+        *out = *v.jump.wrapped;
         return 1;
     }
     if (v.kind == VAL_RETURN || v.kind == VAL_EXCEPTION) {

@@ -347,11 +347,14 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     if (blk) method_env->block_arg = blk;
     bind_params(ev, method_env, params, args, argc);
     ev->call_depth++;
+    if (ev->active_def_count < EVAL_MAX_DEPTH)
+        ev->active_defs[ev->active_def_count++] = method_env;
     eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
     Value result = eval_node(ev, method_env, method.method.def_node->def.body);
     eval_pop_frame(ev);
+    if (ev->active_def_count > 0) ev->active_def_count--;
     ev->call_depth--;
-    if (result.kind == VAL_RETURN) return *result.wrapped;
+    if (result.kind == VAL_RETURN && result.jump.target_env == method_env) return *result.jump.wrapped;
     return result;
 }
 
@@ -993,11 +996,14 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                 if (blk) method_env->block_arg = blk;
                 bind_params(ev, method_env, fn.method.def_node->def.params, args, argc);
                 ev->call_depth++;
+                if (ev->active_def_count < EVAL_MAX_DEPTH)
+                    ev->active_defs[ev->active_def_count++] = method_env;
                 eval_push_frame(ev, node->span.line, node->span.col, name);
                 Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
                 eval_pop_frame(ev);
+                if (ev->active_def_count > 0) ev->active_def_count--;
                 ev->call_depth--;
-                if (result.kind == VAL_RETURN) result = *result.wrapped;
+                if (result.kind == VAL_RETURN && result.jump.target_env == method_env) result = *result.jump.wrapped;
                 else if (val_is_signal(result)) return result;
                 return result;
             }
@@ -1011,11 +1017,14 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                 if (blk) method_env->block_arg = blk;
                 bind_params(ev, method_env, fn.method.def_node->def.params, args, argc);
                 ev->call_depth++;
+                if (ev->active_def_count < EVAL_MAX_DEPTH)
+                    ev->active_defs[ev->active_def_count++] = method_env;
                 eval_push_frame(ev, node->span.line, node->span.col, name);
                 Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
                 eval_pop_frame(ev);
+                if (ev->active_def_count > 0) ev->active_def_count--;
                 ev->call_depth--;
-                if (result.kind == VAL_RETURN) result = *result.wrapped;
+                if (result.kind == VAL_RETURN && result.jump.target_env == method_env) result = *result.jump.wrapped;
                 else if (val_is_signal(result)) return result;
                 return result;
             }
@@ -1037,11 +1046,14 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                     if (blk) method_env->block_arg = blk;
                     bind_params(ev, method_env, fn.method.def_node->def.params, args, argc);
                     ev->call_depth++;
+                    if (ev->active_def_count < EVAL_MAX_DEPTH)
+                        ev->active_defs[ev->active_def_count++] = method_env;
                     eval_push_frame(ev, node->span.line, node->span.col, name);
                     Value result = eval_node(ev, method_env, fn.method.def_node->def.body);
                     eval_pop_frame(ev);
+                    if (ev->active_def_count > 0) ev->active_def_count--;
                     ev->call_depth--;
-                    if (result.kind == VAL_RETURN) result = *result.wrapped;
+                    if (result.kind == VAL_RETURN && result.jump.target_env == method_env) result = *result.jump.wrapped;
                     else if (val_is_signal(result)) return result;
                     return result;
                 }
@@ -1072,11 +1084,14 @@ call_method:
         bind_params(ev, frame, def->def.params, args, argc);
 
         ev->call_depth++;
+        if (ev->active_def_count < EVAL_MAX_DEPTH)
+            ev->active_defs[ev->active_def_count++] = frame;
         eval_push_frame(ev, node->span.line, node->span.col, name);
         Value result = eval_node(ev, frame, def->def.body);
         eval_pop_frame(ev);
+        if (ev->active_def_count > 0) ev->active_def_count--;
         ev->call_depth--;
-        if (result.kind == VAL_RETURN) return *result.wrapped;
+        if (result.kind == VAL_RETURN && result.jump.target_env == frame) return *result.jump.wrapped;
         if (val_is_signal(result)) return result;
         return result;
     }

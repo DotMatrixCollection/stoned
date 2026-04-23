@@ -73,7 +73,10 @@ typedef struct Value {
             int          is_proc_object;
         } block;
 
-        struct Value *wrapped; /* VAL_RETURN, VAL_BREAK, VAL_NEXT: carried value */
+        struct {
+            struct Value *wrapped;
+            struct Env   *target_env;
+        } jump; /* VAL_RETURN target env; VAL_BREAK/VAL_NEXT ignore target_env */
     };
 } Value;
 
@@ -152,7 +155,7 @@ int   val_hash_delete(RubyHash *h, Value key);
 
 Value val_range(Arena *a, Value begin_val, Value end_val, int exclusive);
 
-Value val_return(Arena *a, Value inner);
+Value val_return(Arena *a, Value inner, struct Env *target_env);
 Value val_break(Arena *a, Value inner);
 Value val_next(Arena *a, Value inner);
 Value val_retry(void);

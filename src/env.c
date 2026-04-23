@@ -10,6 +10,13 @@ Env *env_new(Arena *a, Env *parent, int is_def) {
     return e;
 }
 
+Env *env_nearest_def(Env *env) {
+    for (Env *sc = env; sc; sc = sc->parent) {
+        if (sc->is_def) return sc;
+    }
+    return NULL;
+}
+
 void env_set(Arena *a, Env *env, const char *name, Value val) {
     /* Update in-place if already exists anywhere in accessible chain */
     if (env_update(env, name, val)) return;
