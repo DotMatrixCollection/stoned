@@ -155,6 +155,36 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "new") == 0) {
+        if (strcmp(recv.klass->name, "Array") == 0) {
+            if (argc > 2) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+                return 1;
+            }
+            if (argc == 0) {
+                *out = val_array_new();
+                return 1;
+            }
+            if (args[0].kind != VAL_INT) {
+                *out = eval_raise_class(ev, site, "TypeError", "Array.new size must be an Integer");
+                return 1;
+            }
+            if (args[0].ival < 0) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "negative array size");
+                return 1;
+            }
+            Value arr = val_array_new();
+            for (int64_t i = 0; i < args[0].ival; i++) {
+                Value elem = argc > 1 ? args[1] : val_nil();
+                if (blk) {
+                    Value idx = val_int(i);
+                    elem = call_block(ev, env, *blk, &idx, 1, site);
+                    if (val_is_signal(elem)) { *out = elem; return 1; }
+                }
+                val_array_push(&arr, elem);
+            }
+            *out = arr;
+            return 1;
+        }
         if (strcmp(recv.klass->name, "Hash") == 0) {
             Value default_value = argc > 0 ? args[0] : val_nil();
             Value default_proc = blk ? *blk : val_nil();
