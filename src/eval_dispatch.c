@@ -725,6 +725,22 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         }
         return val_nil();
     }
+    if (strcmp(name, "alias_method") == 0) {
+        Value self;
+        if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
+            return eval_raise_class(ev, site, "TypeError", "alias_method must be called in a class or module body");
+        if (argc != 2)
+            return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        const char *new_name = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        const char *old_name = (args[1].kind == VAL_SYMBOL || args[1].kind == VAL_STRING) ? args[1].sval : NULL;
+        if (!new_name || !old_name)
+            return eval_raise_class(ev, site, "TypeError", "expected Symbol or String");
+        Value method;
+        if (!ruby_class_find_instance_method(self.klass, old_name, &method, NULL))
+            return eval_raise_class(ev, site, "NameError", "undefined method '%s' for alias_method", old_name);
+        env_define(ev->arena, self.klass->class_env, new_name, method);
+        return val_symbol(new_name);
+    }
     (void)blk;
     return val_nil();
 }
@@ -1255,7 +1271,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             "puts", "print", "p", "pp", "Integer", "Float", "String", "Array", "format", "sprintf", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
-            "attr_reader", "attr_writer", "attr_accessor", NULL
+            "attr_reader", "attr_writer", "attr_accessor", "alias_method", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
             if (strcmp(name, kernel_names[i]) == 0)

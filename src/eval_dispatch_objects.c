@@ -243,6 +243,28 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
 
+    if (strcmp(name, "alias_method") == 0) {
+        if (argc != 2) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+            return 1;
+        }
+        const char *new_name = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        const char *old_name = (args[1].kind == VAL_SYMBOL || args[1].kind == VAL_STRING) ? args[1].sval : NULL;
+        if (!new_name || !old_name) {
+            *out = eval_raise_class(ev, site, "TypeError", "expected Symbol or String");
+            return 1;
+        }
+        Value method;
+        if (!ruby_class_find_instance_method(recv.klass, old_name, &method, NULL)) {
+            *out = eval_raise_class(ev, site, "NameError",
+                                    "undefined method '%s' for alias_method", old_name);
+            return 1;
+        }
+        env_define(ev->arena, recv.klass->class_env, new_name, method);
+        *out = val_symbol(new_name);
+        return 1;
+    }
+
     if (strcmp(name, "ancestors") == 0) {
         Value arr = val_array_new();
         RubyClass *visited[256]; int nv = 0;

@@ -159,7 +159,7 @@ A systematic test-probe of all three completed stages revealed the following con
 
 - ~~**Comparable**: missing `<`, `>`, `<=`, `>=` operator methods — user classes that define `<=>` and `include Comparable` cannot use these operators. `between?`/`clamp` exist but `<`/`>` etc. do not.~~ done
 - ~~**Enumerable**: current prelude only has `find`/`detect`/`entries`/`first`/`take`/`drop`/`count(block)`. Missing: `to_a`, `min`, `max`, `sort`, `include?`/`member?`, `sum`, `map`, `select`, `reject`, `reduce`/`inject`, `any?`, `all?`, `none?`, `count` (no-block form), `flat_map`, `each_with_object`, `min_by`, `max_by`, `sort_by`, `zip`, `group_by`, `tally`~~ done
-- ~~**`alias` / `alias_method`**: not parsed or evaluated; `alias hi hello` silently fails~~ `alias` done; `alias_method` still pending
+- ~~**`alias` / `alias_method`**: not parsed or evaluated; `alias hi hello` silently fails~~ done
 
 ### Group 2 — Runtime additions (C changes, self-contained)
 
@@ -252,7 +252,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - built-in `Comparable` / `Enumerable` plus operator method defs like `def <=>`
 - `Comparable` prelude operators (`<`, `<=`, `>`, `>=`) for custom `<=>` implementations
 - broader `Enumerable` prelude coverage for custom `each`-based classes: `to_a`, `map`, `select`, `reject`, `reduce`, predicates, ordering helpers, grouping, tallying, and related adapters
-- `alias` statements for method aliasing, including operator aliases and inherited instance methods
+- `alias` statements and `alias_method` for method aliasing, including operator aliases and inherited instance methods; `alias_method` works both inside class bodies (bare call) and as an explicit class-method call
 - `Range`: `..` / `...` literals, `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `min`, `max`, `sum`, `step`, `map`, `select`, `reject`, `reduce`, `any?`/`all?`/`none?`; `Range` includes `Enumerable`; integer and string ranges supported; `String#<=>` added as a dispatch method
 - `case`/`when`: value equality, range membership, class membership (`===`), multi-pattern `when`, optional `else`, caseless form, `then` keyword; `case` is an expression; `Class#===` added
 - `Symbol#to_proc`, lambda-like `Symbol#to_proc#lambda?`, `&:symbol` and `&proc` block-pass in calls, `*arr` splat args in calls, `proc {}` kernel method, `block_given?`, `Object#itself`; arithmetic/comparison operators (`+`, `-`, `*`, `/`, `%`, `**`, `<`, `<=`, `>`, `>=`, `<=>`, `<<`, `>>`, `&`, `|`, `^`) now dispatchable as methods and listed in `respond_to?`; operator symbols (`:+`, `:-`, etc.) now valid symbol literals
