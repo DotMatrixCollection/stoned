@@ -87,7 +87,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 val_object_set_ivar(ev->arena, file_obj, "mode", mode);
                 val_object_set_ivar(ev->arena, file_obj, "closed", val_false());
                 if (blk) {
-                    Value result = call_block(ev, *blk, &file_obj, 1, site);
+                    Value result = call_block(ev, env, *blk, &file_obj, 1, site);
                     val_object_set_ivar(ev->arena, file_obj, "closed", val_true());
                     *out = result;
                 } else {
@@ -101,7 +101,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         if (!blk) {
             *out = eval_raise_class(ev, site, "ArgumentError", "Proc.new requires a block");
         } else {
-            *out = val_block(blk->block.block_node, blk->block.closure);
+            *out = val_proc(blk->block.block_node, blk->block.closure);
         }
         return 1;
     }

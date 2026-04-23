@@ -331,16 +331,7 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     NodeList *params = method.method.def_node->def.params;
     int required = count_required_params(params);
     int has_splat = has_splat_param(params);
-    int total = 0;
-    for (NodeList *pl = params; pl; pl = pl->next) {
-        Node *p = pl->node;
-        if (!p) continue;
-        if (p->kind == NODE_PARAM) {
-            if (!p->param.splat && !p->param.block_param) total++;
-        } else if (p->kind == NODE_ARRAY) {
-            total++;
-        }
-    }
+    int total = count_total_params(params);
     if ((argc < required) || (!has_splat && argc > total))
         return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
 
@@ -500,7 +491,7 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     }
     if (strcmp(name, "proc") == 0) {
         if (!blk) return eval_raise_class(ev, site, "ArgumentError", "proc requires a block");
-        return val_block(blk->block.block_node, blk->block.closure);
+        return val_proc(blk->block.block_node, blk->block.closure);
     }
     if (strcmp(name, "lambda") == 0) {
         if (!blk) return eval_raise_class(ev, site, "ArgumentError", "lambda requires a block");
@@ -724,11 +715,11 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         return dispatch_dynamic_send(ev, env, recv, name, args, argc, blk, site, 1);
     if (recv.kind == VAL_BLOCK) {
         if (strcmp(name, "call") == 0 || strcmp(name, "[]") == 0)
-            return call_block(ev, recv, args, argc, site);
+            return call_block(ev, env, recv, args, argc, site);
         if (strcmp(name, "lambda?") == 0)
             return val_bool(recv.block.is_lambda);
         if (strcmp(name, "arity") == 0)
-            return val_int(count_required_params(recv.block.block_node->block.params));
+            return val_int(proc_arity(recv.block.block_node->block.params, recv.block.is_lambda));
         if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0)
             return val_string(ev->arena, recv.block.is_lambda ? "#<Proc:lambda>" : "#<Proc>");
     }
@@ -909,7 +900,7 @@ static Value make_symbol_proc(Eval *ev, const char *method_name) {
     Node *block_node = node_new(a, NODE_BLOCK, s);
     block_node->block.params = params;
     block_node->block.body = body;
-    return val_block(block_node, ev->top_env);
+    return val_proc(block_node, ev->top_env);
 }
 
 Value eval_call(Eval *ev, Env *env, Node *node) {
@@ -966,7 +957,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                 if (sc->is_def) break;
             }
             if (!block_arg) return eval_raise_class(ev, node, "LocalJumpError", "no block given (yield)");
-            return call_block(ev, *block_arg, args, argc, node);
+            return call_block(ev, env, *block_arg, args, argc, node);
         }
         if (strcmp(name, "block_given?") == 0) {
             for (Env *sc = env; sc; sc = sc->parent) {

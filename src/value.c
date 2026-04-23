@@ -152,6 +152,16 @@ Value val_block(struct Node *blk, struct Env *closure) {
     v.block.block_node = blk;
     v.block.closure    = closure;
     v.block.is_lambda  = 0;
+    v.block.is_proc_object = 0;
+    return v;
+}
+
+Value val_proc(struct Node *blk, struct Env *closure) {
+    Value v; v.kind = VAL_BLOCK;
+    v.block.block_node = blk;
+    v.block.closure    = closure;
+    v.block.is_lambda  = 0;
+    v.block.is_proc_object = 1;
     return v;
 }
 
@@ -160,6 +170,7 @@ Value val_lambda(struct Node *blk, struct Env *closure) {
     v.block.block_node = blk;
     v.block.closure    = closure;
     v.block.is_lambda  = 1;
+    v.block.is_proc_object = 1;
     return v;
 }
 

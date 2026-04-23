@@ -285,7 +285,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         else {
             for (int64_t i = 0; i < n; i++) {
                 Value arg = val_int(i);
-                Value r = call_block(ev, *blk, &arg, 1, site);
+                Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
             }
@@ -299,7 +299,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         else {
             for (int64_t i = n; i <= args[0].ival; i++) {
                 Value arg = val_int(i);
-                Value r = call_block(ev, *blk, &arg, 1, site);
+                Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
             }
@@ -313,7 +313,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         else {
             for (int64_t i = n; i >= args[0].ival; i--) {
                 Value arg = val_int(i);
-                Value r = call_block(ev, *blk, &arg, 1, site);
+                Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
             }
@@ -329,7 +329,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         if (step == 0.0) { *out = eval_raise_class(ev, site, "ArgumentError", "step cannot be 0"); return 1; }
         for (double i = (double)n; step > 0 ? i <= limit : i >= limit; i += step) {
             Value arg = val_int((int64_t)i);
-            Value r = call_block(ev, *blk, &arg, 1, site);
+            Value r = call_block(ev, env, *blk, &arg, 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(r, out)) return 1;
         }
@@ -436,7 +436,7 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
         if (step == 0.0) { *out = eval_raise_class(ev, site, "ArgumentError", "step cannot be 0"); return 1; }
         for (double i = f; step > 0 ? i <= limit : i >= limit; i += step) {
             Value arg = val_float(i);
-            Value r = call_block(ev, *blk, &arg, 1, site);
+            Value r = call_block(ev, env, *blk, &arg, 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(r, out)) return 1;
         }
@@ -585,7 +585,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 size_t width = 0;
                 utf8_char_at(s, i, &ptr, &width, NULL);
                 Value ch = val_string_n(ev->arena, ptr, width);
-                Value r = call_block(ev, *blk, &ch, 1, site);
+                Value r = call_block(ev, env, *blk, &ch, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
             }
@@ -895,7 +895,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 line = val_string(ev->arena, p);
                 p += strlen(p);
             }
-            Value r = call_block(ev, *blk, &line, 1, site);
+            Value r = call_block(ev, env, *blk, &line, 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(r, out)) return 1;
         }
@@ -1005,7 +1005,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         while ((p = strstr(p, needle)) != NULL) {
             Value match = val_string_n(ev->arena, p, nlen);
             if (blk) {
-                Value r = call_block(ev, *blk, &match, 1, site);
+                Value r = call_block(ev, env, *blk, &match, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
             } else {
@@ -1037,7 +1037,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 const char *repl;
                 if (blk) {
                     Value match = val_string_n(ev->arena, p, nlen);
-                    Value r = call_block(ev, *blk, &match, 1, site);
+                    Value r = call_block(ev, env, *blk, &match, 1, site);
                     if (ev->errored) { free(buf); *out = val_nil(); return 1; }
                     if (val_is_signal(r)) { free(buf); *out = r; return 1; }
                     repl = val_to_s(ev->arena, r);

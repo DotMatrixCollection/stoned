@@ -69,6 +69,7 @@ void parser_init(Parser *p, const char *src, size_t len, Arena *arena) {
     p->arena = arena;
     p->allow_command_arg_commas = 1;
     p->command_arg_depth = 0;
+    p->stop_at_param_pipe = 0;
 }
 
 Node *parse_program(Parser *p) {

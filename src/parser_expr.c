@@ -207,6 +207,7 @@ static Node *parse_hash_key(Parser *p, int *used_label) {
 static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
     while (1) {
         Token op = peek(p);
+        if (p->stop_at_param_pipe && op.kind == TOK_PIPE) break;
 
         if (op.kind == TOK_QUESTION) {
             BP bp = infix_bp(TOK_QUESTION);
@@ -427,7 +428,10 @@ Node *parse_block(Parser *p) {
     Node *n = node_new(p->arena, NODE_BLOCK, s);
     if (check(p, TOK_PIPE)) {
         advance(p);
+        int saved_stop_at_param_pipe = p->stop_at_param_pipe;
+        p->stop_at_param_pipe = 1;
         n->block.params = parse_params(p);
+        p->stop_at_param_pipe = saved_stop_at_param_pipe;
         expect(p, TOK_PIPE, "expected '|' to close block params");
     }
     skip_terminators(p);

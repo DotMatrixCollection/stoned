@@ -21,6 +21,8 @@ typedef struct {
     int         loop_depth;   /* while/until nesting */
     int         block_depth;  /* do/{ block nesting */
     int         def_depth;    /* def nesting */
+    int         lambda_depth; /* lambda body nesting */
+    int         proc_depth;   /* proc/proc.new body nesting */
     int         rescue_depth; /* rescue body nesting */
     ParseError  errors[MAX_ERRORS];
     int         error_count;

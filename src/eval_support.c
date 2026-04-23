@@ -716,6 +716,21 @@ int count_required_params(NodeList *params) {
         Node *p = l->node;
         if (!p) continue;
         if (p->kind == NODE_PARAM) {
+            if (!p->param.splat && !p->param.block_param && !p->param.default_val)
+                count++;
+        } else if (p->kind == NODE_ARRAY) {
+            count++;
+        }
+    }
+    return count;
+}
+
+int count_total_params(NodeList *params) {
+    int count = 0;
+    for (NodeList *l = params; l; l = l->next) {
+        Node *p = l->node;
+        if (!p) continue;
+        if (p->kind == NODE_PARAM) {
             if (!p->param.splat && !p->param.block_param)
                 count++;
         } else if (p->kind == NODE_ARRAY) {
@@ -723,6 +738,28 @@ int count_required_params(NodeList *params) {
         }
     }
     return count;
+}
+
+int proc_arity(NodeList *params, int is_lambda) {
+    int required = count_required_params(params);
+    int has_splat = has_splat_param(params);
+    int has_optional = 0;
+
+    for (NodeList *l = params; l; l = l->next) {
+        Node *p = l->node;
+        if (!p) continue;
+        if (p->kind == NODE_PARAM && p->param.default_val) {
+            has_optional = 1;
+            break;
+        }
+    }
+
+    if (is_lambda) {
+        if (has_splat || has_optional) return -(required + 1);
+        return required;
+    }
+    if (has_splat) return -(required + 1);
+    return required;
 }
 
 int has_splat_param(NodeList *params) {
@@ -736,26 +773,39 @@ int has_splat_param(NodeList *params) {
 }
 
 void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc) {
-    int pi = 0;
-    for (NodeList *pl = params; pl; pl = pl->next, pi++) {
+    int argi = 0;
+    for (NodeList *pl = params; pl; pl = pl->next) {
         Node *p = pl->node;
         if (!p) continue;
+        if (p->kind == NODE_PARAM && p->param.block_param) {
+            Value blk = env->block_arg ? *env->block_arg : val_nil();
+            bind_pattern(ev, env, p, blk);
+            continue;
+        }
         if (p->kind == NODE_PARAM && p->param.splat) {
             Value rest = val_array_new();
-            for (int j = pi; j < argc; j++) val_array_push(&rest, args[j]);
+            for (int j = argi; j < argc; j++) val_array_push(&rest, args[j]);
             bind_pattern(ev, env, p, rest);
             break;
         }
 
-        Value pval = pi < argc ? args[pi]
+        Value pval = argi < argc ? args[argi]
                    : (p->kind == NODE_PARAM && p->param.default_val
                       ? eval_node(ev, env, p->param.default_val)
                       : val_nil());
         bind_pattern(ev, env, p, pval);
+        argi++;
     }
 }
 
-Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site) {
+static int env_chain_includes(Env *env, Env *target) {
+    for (Env *sc = env; sc; sc = sc->parent) {
+        if (sc == target) return 1;
+    }
+    return 0;
+}
+
+Value call_block(Eval *ev, Env *caller_env, Value blk, Value *args, int argc, Node *call_site) {
     if (blk.kind != VAL_BLOCK)
         return eval_raise_class(ev, call_site, "LocalJumpError", "no block given");
 
@@ -764,8 +814,12 @@ Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site) {
     Env *frame    = env_new(ev->arena, closure, 0);
     NodeList *pl  = bn->block.params;
 
-    if (blk.block.is_lambda && !has_splat_param(pl) && argc != count_required_params(pl))
-        return eval_raise_class(ev, call_site, "ArgumentError", "wrong number of arguments");
+    if (blk.block.is_lambda) {
+        int required = count_required_params(pl);
+        int total = count_total_params(pl);
+        if (argc < required || (!has_splat_param(pl) && argc > total))
+            return eval_raise_class(ev, call_site, "ArgumentError", "wrong number of arguments");
+    }
 
     bind_params(ev, frame, pl, args, argc);
 
@@ -773,7 +827,16 @@ Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site) {
                     call_site ? call_site->span.col : 0, "block");
     Value result = eval_node(ev, frame, bn->block.body);
     eval_pop_frame(ev);
-    if (blk.block.is_lambda && result.kind == VAL_RETURN) return *result.wrapped;
+    if (result.kind == VAL_RETURN) {
+        if (blk.block.is_lambda) return *result.wrapped;
+        if (blk.block.is_proc_object && !env_chain_includes(caller_env, blk.block.closure))
+            return eval_raise_class(ev, call_site, "LocalJumpError", "unexpected return");
+    }
+    if (result.kind == VAL_BREAK) {
+        if (blk.block.is_lambda) return *result.wrapped;
+        if (blk.block.is_proc_object)
+            return eval_raise_class(ev, call_site, "LocalJumpError", "break from proc-closure");
+    }
     if (result.kind == VAL_NEXT) return *result.wrapped;
     return result;
 }

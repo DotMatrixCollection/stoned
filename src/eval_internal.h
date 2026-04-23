@@ -24,6 +24,8 @@ void eval_push_frame(Eval *ev, uint32_t line, uint32_t col, const char *label);
 void eval_pop_frame(Eval *ev);
 void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc);
 int count_required_params(NodeList *params);
+int count_total_params(NodeList *params);
+int proc_arity(NodeList *params, int is_lambda);
 int has_splat_param(NodeList *params);
 MethodVisibility current_method_visibility(Env *env);
 void set_current_method_visibility(Arena *a, Env *env, MethodVisibility visibility);
@@ -31,7 +33,7 @@ void update_method_visibility(Env *env, const char *name, MethodVisibility visib
 int method_visibility_allows_call(Eval *ev, Env *env, Value recv, RubyClass *owner,
                                   MethodVisibility visibility, int public_only, int explicit_receiver);
 const char *eval_rope(Eval *ev, Env *env, RopeNode *r);
-Value call_block(Eval *ev, Value blk, Value *args, int argc, Node *call_site);
+Value call_block(Eval *ev, Env *caller_env, Value blk, Value *args, int argc, Node *call_site);
 Value eval_require(Eval *ev, Env *env, const char *path, Node *site);
 Value eval_require_relative(Eval *ev, Env *env, const char *path, Node *site);
 Value eval_file_read(Eval *ev, const char *path, Node *site);

@@ -190,6 +190,10 @@ static void collect(Sema *s, Node *node, NodeList *excl) {
             collect(s, node->unop.operand, excl);
             break;
 
+        case NODE_BLOCK_PASS:
+            collect(s, node->block_pass.expr, excl);
+            break;
+
         case NODE_DEF:
             break;
 
@@ -259,10 +263,32 @@ static void resolve(Sema *s, Node *node) {
             resolve(s, node->unop.operand);
             break;
 
+        case NODE_BLOCK_PASS:
+            resolve(s, node->block_pass.expr);
+            break;
+
         case NODE_CALL:
             resolve(s, node->call.recv);
             resolve_list(s, node->call.args);
-            if (node->call.block) resolve(s, node->call.block);
+            if (node->call.block) {
+                int is_lambda_call = node->call.recv == NULL &&
+                                     node->call.method &&
+                                     strcmp(node->call.method, "lambda") == 0;
+                int is_proc_call = node->call.recv == NULL &&
+                                   node->call.method &&
+                                   strcmp(node->call.method, "proc") == 0;
+                int is_proc_new = node->call.recv &&
+                                  node->call.recv->kind == NODE_CONST &&
+                                  node->call.recv->sval &&
+                                  strcmp(node->call.recv->sval, "Proc") == 0 &&
+                                  node->call.method &&
+                                  strcmp(node->call.method, "new") == 0;
+                if (is_lambda_call) s->lambda_depth++;
+                if (is_proc_call || is_proc_new) s->proc_depth++;
+                resolve(s, node->call.block);
+                if (is_proc_call || is_proc_new) s->proc_depth--;
+                if (is_lambda_call) s->lambda_depth--;
+            }
             break;
 
         case NODE_BLOCK: {
@@ -329,7 +355,7 @@ static void resolve(Sema *s, Node *node) {
         }
 
         case NODE_RETURN:
-            if (s->def_depth == 0)
+            if (s->def_depth == 0 && s->lambda_depth == 0 && s->proc_depth == 0)
                 sema_error(s, "'return' outside of method", node->span.line, node->span.col);
             resolve(s, node->jump.value);
             break;

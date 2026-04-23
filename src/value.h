@@ -70,6 +70,7 @@ typedef struct Value {
             struct Node *block_node;
             struct Env  *closure;
             int          is_lambda;
+            int          is_proc_object;
         } block;
 
         struct Value *wrapped; /* VAL_RETURN, VAL_BREAK, VAL_NEXT: carried value */
@@ -141,6 +142,7 @@ void  val_array_push(Value *arr, Value elem);
 
 Value val_method(struct Node *def, struct Env *closure, MethodVisibility visibility);
 Value val_block(struct Node *blk, struct Env *closure);
+Value val_proc(struct Node *blk, struct Env *closure);
 Value val_lambda(struct Node *blk, struct Env *closure);
 
 Value val_hash_new(Arena *a);

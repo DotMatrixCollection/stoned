@@ -76,7 +76,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         else {
             for (size_t i = 0; i < recv.array->len; i++) {
                 Value arg = recv.array->elems[i];
-                Value r = call_block(ev, *blk, &arg, 1, site);
+                Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
             }
@@ -89,7 +89,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         else {
             for (size_t i = 0; i < recv.array->len; i++) {
                 Value bargs[2] = { recv.array->elems[i], val_int((int64_t)i) };
-                Value r = call_block(ev, *blk, bargs, 2, site);
+                Value r = call_block(ev, env, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
             }
@@ -103,7 +103,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             Value result = val_array_new();
             for (size_t i = 0; i < recv.array->len; i++) {
                 Value arg = recv.array->elems[i];
-                Value r = call_block(ev, *blk, &arg, 1, site);
+                Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
                 val_array_push(&result, r);
@@ -118,7 +118,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             Value result = val_array_new();
             for (size_t i = 0; i < recv.array->len; i++) {
                 Value arg = recv.array->elems[i];
-                Value r = call_block(ev, *blk, &arg, 1, site);
+                Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
                 if (val_truthy(r)) val_array_push(&result, arg);
@@ -133,7 +133,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             Value result = val_array_new();
             for (size_t i = 0; i < recv.array->len; i++) {
                 Value arg = recv.array->elems[i];
-                Value r = call_block(ev, *blk, &arg, 1, site);
+                Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
                 if (!val_truthy(r)) val_array_push(&result, arg);
@@ -150,7 +150,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             Value acc = argc > 0 ? args[0] : recv.array->elems[start++];
             for (size_t i = start; i < recv.array->len; i++) {
                 Value bargs[2] = { acc, recv.array->elems[i] };
-                Value r = call_block(ev, *blk, bargs, 2, site);
+                Value r = call_block(ev, env, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
                 acc = r;
@@ -168,7 +168,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             *out = strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0 ? val_true() : val_false();
             for (size_t i = 0; i < recv.array->len; i++) {
                 Value arg = recv.array->elems[i];
-                Value r = call_block(ev, *blk, &arg, 1, site);
+                Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (r.kind == VAL_EXCEPTION) { *out = r; return 1; }
                 if (strcmp(name, "any?") == 0 && val_truthy(r)) { *out = val_true(); return 1; }
@@ -308,7 +308,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             Value found;
             if (val_hash_get(h, args[0], &found)) *out = found;
             else if (argc > 1) *out = args[1];
-            else if (blk) *out = call_block(ev, *blk, &args[0], 1, site);
+            else if (blk) *out = call_block(ev, env, *blk, &args[0], 1, site);
             else *out = eval_raise_class(ev, site, "KeyError", "Hash#fetch: key not found");
         }
         return 1;
@@ -336,7 +336,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             int ok = val_hash_get(h, args[0], &found);
             val_hash_delete(h, args[0]);
             if (ok) *out = found;
-            else if (blk) *out = call_block(ev, *blk, &args[0], 1, site);
+            else if (blk) *out = call_block(ev, env, *blk, &args[0], 1, site);
             else *out = val_nil();
         }
         return 1;
@@ -391,7 +391,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         else {
             for (size_t i = 0; i < h->len; i++) {
                 Value bargs[2] = { h->keys[i], h->vals[i] };
-                Value r = call_block(ev, *blk, bargs, 2, site);
+                Value r = call_block(ev, env, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
             }
@@ -405,7 +405,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         else {
             for (size_t i = 0; i < h->len; i++) {
                 Value arg = strcmp(name, "each_key") == 0 ? h->keys[i] : h->vals[i];
-                Value r = call_block(ev, *blk, &arg, 1, site);
+                Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
             }
@@ -419,7 +419,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             Value result = val_array_new();
             for (size_t i = 0; i < h->len; i++) {
                 Value bargs[2] = { h->keys[i], h->vals[i] };
-                Value r = call_block(ev, *blk, bargs, 2, site);
+                Value r = call_block(ev, env, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
                 val_array_push(&result, r);
@@ -435,7 +435,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             Value result = val_hash_new(ev->arena);
             for (size_t i = 0; i < h->len; i++) {
                 Value bargs[2] = { h->keys[i], h->vals[i] };
-                Value r = call_block(ev, *blk, bargs, 2, site);
+                Value r = call_block(ev, env, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
                 if ((strcmp(name, "reject") == 0 && !val_truthy(r)) || (strcmp(name, "reject") != 0 && val_truthy(r)))
@@ -452,7 +452,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             *out = strcmp(name, "all?") == 0 ? val_true() : val_false();
             for (size_t i = 0; i < h->len; i++) {
                 Value bargs[2] = { h->keys[i], h->vals[i] };
-                Value r = call_block(ev, *blk, bargs, 2, site);
+                Value r = call_block(ev, env, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (r.kind == VAL_EXCEPTION) { *out = r; return 1; }
                 if (strcmp(name, "any?") == 0 && val_truthy(r)) { *out = val_true(); return 1; }
@@ -478,7 +478,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             Value result = val_array_new();
             for (size_t i = 0; i < h->len; i++) {
                 Value bargs[2] = { h->keys[i], h->vals[i] };
-                Value r = call_block(ev, *blk, bargs, 2, site);
+                Value r = call_block(ev, env, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (r.kind == VAL_EXCEPTION) { *out = r; return 1; }
                 if (r.kind == VAL_ARRAY) for (size_t j = 0; j < r.array->len; j++) val_array_push(&result, r.array->elems[j]);
@@ -507,7 +507,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
                 val_array_push(&pair, h->keys[i]);
                 val_array_push(&pair, h->vals[i]);
                 Value bargs[2] = { acc, pair };
-                Value r = call_block(ev, *blk, bargs, 2, site);
+                Value r = call_block(ev, env, *blk, bargs, 2, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
                 acc = r;
@@ -626,7 +626,7 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
         for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
             Value arg = val_int(i);
-            Value res = call_block(ev, *blk, &arg, 1, site);
+            Value res = call_block(ev, env, *blk, &arg, 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(res, out)) return 1;
         }
@@ -641,7 +641,7 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         int64_t idx = 0;
         for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++, idx++) {
             Value bargs[2] = { val_int(i), val_int(idx) };
-            Value res = call_block(ev, *blk, bargs, 2, site);
+            Value res = call_block(ev, env, *blk, bargs, 2, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(res, out)) return 1;
         }
@@ -706,7 +706,7 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
         for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i += step) {
             Value arg = val_int(i);
-            Value res = call_block(ev, *blk, &arg, 1, site);
+            Value res = call_block(ev, env, *blk, &arg, 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(res, out)) return 1;
         }
@@ -721,7 +721,7 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         Value result = val_array_new();
         for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
             Value arg = val_int(i);
-            Value res = call_block(ev, *blk, &arg, 1, site);
+            Value res = call_block(ev, env, *blk, &arg, 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(res, out)) return 1;
             val_array_push(&result, res);
@@ -737,7 +737,7 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         Value result = val_array_new();
         for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
             Value arg = val_int(i);
-            Value res = call_block(ev, *blk, &arg, 1, site);
+            Value res = call_block(ev, env, *blk, &arg, 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(res, out)) return 1;
             if (val_truthy(res)) val_array_push(&result, arg);
@@ -753,7 +753,7 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         Value result = val_array_new();
         for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
             Value arg = val_int(i);
-            Value res = call_block(ev, *blk, &arg, 1, site);
+            Value res = call_block(ev, env, *blk, &arg, 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(res, out)) return 1;
             if (!val_truthy(res)) val_array_push(&result, arg);
@@ -770,7 +770,7 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         Value acc = argc > 0 ? args[0] : val_int(start++);
         for (int64_t i = start; r->exclusive ? i < hi : i <= hi; i++) {
             Value bargs[2] = { acc, val_int(i) };
-            Value res = call_block(ev, *blk, bargs, 2, site);
+            Value res = call_block(ev, env, *blk, bargs, 2, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(res, out)) return 1;
             acc = res;
@@ -786,7 +786,7 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = (strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) ? val_true() : val_false();
         for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
             Value arg = val_int(i);
-            Value res = call_block(ev, *blk, &arg, 1, site);
+            Value res = call_block(ev, env, *blk, &arg, 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (res.kind == VAL_EXCEPTION) { *out = res; return 1; }
             if (strcmp(name, "any?") == 0 && val_truthy(res)) { *out = val_true(); return 1; }
