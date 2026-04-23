@@ -469,7 +469,7 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
             fprintf(ev->out, "%s", val_to_s(ev->arena, args[i]));
         return val_nil();
     }
-    if (strcmp(name, "p") == 0) {
+    if (strcmp(name, "p") == 0 || strcmp(name, "pp") == 0) {
         for (int i = 0; i < argc; i++)
             fprintf(ev->out, "%s\n", val_inspect(ev->arena, args[i]));
         if (argc == 1) return args[0];
@@ -1167,7 +1167,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
+            "puts", "print", "p", "pp", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", NULL
