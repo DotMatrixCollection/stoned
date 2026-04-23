@@ -70,6 +70,11 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                    Value *blk, Node *site, Value *out, int public_only, int explicit_receiver);
 int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                     Value *blk, Node *site, Value *out, int public_only, int explicit_receiver);
+int sym_in_array(Value *arr, const char *sym_name);
+void collect_own_instance_methods(Env *class_env, Value *arr, int vis_mask);
+void collect_all_instance_methods(RubyClass *klass, Value *arr, int vis_mask,
+                                  RubyClass **visited, int *nv);
+Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name);
 
 static inline int flow_signal_out(Value v, Value *out) {
     if (v.kind == VAL_BREAK) {

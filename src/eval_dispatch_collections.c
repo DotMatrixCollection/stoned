@@ -253,6 +253,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 if (key.kind == VAL_INT && prev.kind == VAL_INT) less = key.ival < prev.ival;
                 else if (key.kind == VAL_FLOAT && prev.kind == VAL_FLOAT) less = key.fval < prev.fval;
                 else if (key.kind == VAL_STRING && prev.kind == VAL_STRING) less = strcmp(key.sval, prev.sval) < 0;
+                else if (key.kind == VAL_SYMBOL && prev.kind == VAL_SYMBOL) less = strcmp(key.sval, prev.sval) < 0;
                 if (!less) break;
                 result.array->elems[j] = prev;
                 j--;

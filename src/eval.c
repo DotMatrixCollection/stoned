@@ -425,6 +425,13 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     CHECK(superclass);
                     if (superclass.kind != VAL_CLASS && superclass.kind != VAL_NIL)
                         return eval_raise_class(ev, node, "TypeError", "superclass must be a class");
+                } else {
+                    /* implicit superclass is Object unless we are defining Object itself */
+                    Value object_val;
+                    if (strcmp(node->klass.name, "Object") != 0 &&
+                        env_get(ev->top_env, "Object", &object_val) &&
+                        object_val.kind == VAL_CLASS)
+                        superclass = object_val;
                 }
                 klass = val_class(ev->arena, node->klass.name, superclass);
                 klass.klass->class_env = env_new(ev->arena, ev->top_env, 1);
@@ -539,7 +546,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         "Object", "BasicObject", "Numeric",
         "Integer", "Float", "String", "Symbol",
         "Array", "Hash", "Range", "NilClass", "TrueClass", "FalseClass", "IO", "File",
-        "Class", "Module", "Method", "Proc", "Comparable", "Enumerable",
+        "Class", "Module", "Method", "UnboundMethod", "Proc", "Comparable", "Enumerable",
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NameError", "NoMethodError",
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError", "StopIteration",

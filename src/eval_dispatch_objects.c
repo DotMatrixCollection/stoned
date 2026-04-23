@@ -15,6 +15,55 @@ static Value exception_arg_message(Eval *ev, Value recv, Value *args, int argc, 
     return val_string(ev->arena, val_to_s(ev->arena, args[0]));
 }
 
+int sym_in_array(Value *arr, const char *sym_name) {
+    for (size_t i = 0; i < arr->array->len; i++) {
+        if (arr->array->elems[i].kind == VAL_SYMBOL &&
+            strcmp(arr->array->elems[i].sval, sym_name) == 0) return 1;
+    }
+    return 0;
+}
+
+void collect_own_instance_methods(Env *class_env, Value *arr, int vis_mask) {
+    for (EnvEntry *entry = class_env ? class_env->vars : NULL; entry; entry = entry->next) {
+        if (entry->val.kind != VAL_METHOD) continue;
+        if (strncmp(entry->name, "self.", 5) == 0) continue;
+        MethodVisibility vis = entry->val.method.visibility;
+        int match = ((vis_mask & 1) && vis == METHOD_PUBLIC) ||
+                    ((vis_mask & 2) && vis == METHOD_PROTECTED) ||
+                    ((vis_mask & 4) && vis == METHOD_PRIVATE);
+        if (match && !sym_in_array(arr, entry->name))
+            val_array_push(arr, val_symbol(entry->name));
+    }
+}
+
+void collect_all_instance_methods(RubyClass *klass, Value *arr, int vis_mask,
+                                         RubyClass **visited, int *nv) {
+    if (!klass) return;
+    for (int i = 0; i < *nv; i++) if (visited[i] == klass) return;
+    visited[(*nv)++] = klass;
+    for (RubyModuleInclusion *inc = klass->prepended_modules; inc; inc = inc->next)
+        collect_all_instance_methods(inc->mod, arr, vis_mask, visited, nv);
+    collect_own_instance_methods(klass->class_env, arr, vis_mask);
+    for (RubyModuleInclusion *inc = klass->included_modules; inc; inc = inc->next)
+        collect_all_instance_methods(inc->mod, arr, vis_mask, visited, nv);
+    if (!klass->is_module && klass->superclass.kind == VAL_CLASS)
+        collect_all_instance_methods(klass->superclass.klass, arr, vis_mask, visited, nv);
+}
+
+static void collect_class_ancestors(RubyClass *klass, Value *arr, RubyClass **visited, int *nv) {
+    if (!klass) return;
+    for (int i = 0; i < *nv; i++) if (visited[i] == klass) return;
+    visited[(*nv)++] = klass;
+    for (RubyModuleInclusion *inc = klass->prepended_modules; inc; inc = inc->next)
+        collect_class_ancestors(inc->mod, arr, visited, nv);
+    Value kv; kv.kind = VAL_CLASS; kv.klass = klass;
+    val_array_push(arr, kv);
+    for (RubyModuleInclusion *inc = klass->included_modules; inc; inc = inc->next)
+        collect_class_ancestors(inc->mod, arr, visited, nv);
+    if (!klass->is_module && klass->superclass.kind == VAL_CLASS)
+        collect_class_ancestors(klass->superclass.klass, arr, visited, nv);
+}
+
 int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     if (recv.kind != VAL_CLASS) return 0;
@@ -146,6 +195,87 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = obj;
         return 1;
     }
+    /* ---- Class reflection ---- */
+
+    if (strcmp(name, "superclass") == 0) {
+        *out = recv.klass->superclass.kind == VAL_CLASS ? recv.klass->superclass : val_nil();
+        return 1;
+    }
+
+    if (strcmp(name, "name") == 0) {
+        *out = val_string(ev->arena, recv.klass->name);
+        return 1;
+    }
+
+    if (strcmp(name, "ancestors") == 0) {
+        Value arr = val_array_new();
+        RubyClass *visited[256]; int nv = 0;
+        collect_class_ancestors(recv.klass, &arr, visited, &nv);
+        *out = arr;
+        return 1;
+    }
+
+    if (strcmp(name, "instance_methods") == 0 ||
+        strcmp(name, "public_instance_methods") == 0 ||
+        strcmp(name, "private_instance_methods") == 0 ||
+        strcmp(name, "protected_instance_methods") == 0) {
+        int include_super = (argc == 0) || val_truthy(args[0]);
+        int vis_mask;
+        if (strcmp(name, "public_instance_methods") == 0) vis_mask = 1;
+        else if (strcmp(name, "private_instance_methods") == 0) vis_mask = 4;
+        else if (strcmp(name, "protected_instance_methods") == 0) vis_mask = 2;
+        else vis_mask = 3; /* public + protected */
+        Value arr = val_array_new();
+        if (include_super) {
+            RubyClass *visited[256]; int nv = 0;
+            collect_all_instance_methods(recv.klass, &arr, vis_mask, visited, &nv);
+        } else {
+            collect_own_instance_methods(recv.klass->class_env, &arr, vis_mask);
+        }
+        *out = arr;
+        return 1;
+    }
+
+    if (strcmp(name, "method_defined?") == 0 ||
+        strcmp(name, "public_method_defined?") == 0 ||
+        strcmp(name, "private_method_defined?") == 0 ||
+        strcmp(name, "protected_method_defined?") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!mname) { *out = eval_raise_class(ev, site, "TypeError", "expected Symbol or String"); return 1; }
+        Value method; RubyClass *owner = NULL;
+        if (!ruby_class_find_instance_method(recv.klass, mname, &method, &owner)) { *out = val_false(); return 1; }
+        MethodVisibility vis = method.method.visibility;
+        int match = 0;
+        if (strcmp(name, "method_defined?") == 0) match = (vis == METHOD_PUBLIC || vis == METHOD_PROTECTED);
+        else if (strcmp(name, "public_method_defined?") == 0) match = (vis == METHOD_PUBLIC);
+        else if (strcmp(name, "private_method_defined?") == 0) match = (vis == METHOD_PRIVATE);
+        else match = (vis == METHOD_PROTECTED);
+        *out = val_bool(match);
+        return 1;
+    }
+
+    if (strcmp(name, "instance_method") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!mname) { *out = eval_raise_class(ev, site, "TypeError", "expected Symbol or String"); return 1; }
+        Value method_val; RubyClass *owner = NULL;
+        if (!ruby_class_find_instance_method(recv.klass, mname, &method_val, &owner)) {
+            *out = eval_raise_class(ev, site, "NameError", "undefined method '%s' for class '%s'", mname, recv.klass->name);
+            return 1;
+        }
+        Value ubm_klass;
+        if (!env_get(ev->top_env, "UnboundMethod", &ubm_klass) || ubm_klass.kind != VAL_CLASS) { *out = val_nil(); return 1; }
+        Value obj = val_object(ev->arena, ubm_klass);
+        val_object_set_ivar(ev->arena, obj, "__klass__", recv);
+        val_object_set_ivar(ev->arena, obj, "__method_name__", val_string(ev->arena, mname));
+        val_object_set_ivar(ev->arena, obj, "__method__", method_val);
+        *out = obj;
+        return 1;
+    }
+
+    /* ---- end class reflection ---- */
+
     size_t nlen = strlen(name);
     char *key = arena_alloc(ev->arena, nlen + 6);
     memcpy(key, "self.", 5);
@@ -167,9 +297,77 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     return 0;
 }
 
+Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name);
+
 int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                     Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     if (recv.kind != VAL_OBJECT) return 0;
+
+    /* Method and UnboundMethod objects */
+    if (recv.obj->klass.kind == VAL_CLASS) {
+        const char *kname = recv.obj->klass.klass->name;
+
+        if (strcmp(kname, "Method") == 0) {
+            if (strcmp(name, "call") == 0 || strcmp(name, "[]") == 0) {
+                Value receiver, method_name_v;
+                if (!val_object_get_ivar(recv, "__receiver__", &receiver) ||
+                    !val_object_get_ivar(recv, "__method_name__", &method_name_v)) {
+                    *out = eval_raise_class(ev, site, "RuntimeError", "invalid Method object");
+                    return 1;
+                }
+                /* bypass visibility — Method#call always allowed */
+                *out = dispatch_method(ev, env, receiver, method_name_v.sval, args, argc, blk, site, 0, -1);
+                return 1;
+            }
+            if (strcmp(name, "arity") == 0) {
+                Value method_val;
+                if (val_object_get_ivar(recv, "__method__", &method_val) && method_val.kind == VAL_METHOD)
+                    *out = val_int(proc_arity(method_val.method.def_node->def.params, 1));
+                else
+                    *out = val_int(-1);
+                return 1;
+            }
+            if (strcmp(name, "to_proc") == 0) {
+                Value receiver, method_name_v;
+                if (!val_object_get_ivar(recv, "__receiver__", &receiver) ||
+                    !val_object_get_ivar(recv, "__method_name__", &method_name_v)) {
+                    *out = val_nil(); return 1;
+                }
+                *out = make_bound_method_proc(ev, receiver, method_name_v.sval);
+                return 1;
+            }
+            return 0;
+        }
+
+        if (strcmp(kname, "UnboundMethod") == 0) {
+            if (strcmp(name, "arity") == 0) {
+                Value method_val;
+                if (val_object_get_ivar(recv, "__method__", &method_val) && method_val.kind == VAL_METHOD)
+                    *out = val_int(proc_arity(method_val.method.def_node->def.params, 1));
+                else
+                    *out = val_int(-1);
+                return 1;
+            }
+            if (strcmp(name, "bind") == 0) {
+                if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+                Value method_name_v, method_val;
+                if (!val_object_get_ivar(recv, "__method_name__", &method_name_v) ||
+                    !val_object_get_ivar(recv, "__method__", &method_val)) {
+                    *out = val_nil(); return 1;
+                }
+                Value m_klass;
+                if (!env_get(ev->top_env, "Method", &m_klass) || m_klass.kind != VAL_CLASS) { *out = val_nil(); return 1; }
+                Value obj = val_object(ev->arena, m_klass);
+                val_object_set_ivar(ev->arena, obj, "__receiver__", args[0]);
+                val_object_set_ivar(ev->arena, obj, "__method_name__", method_name_v);
+                val_object_set_ivar(ev->arena, obj, "__method__", method_val);
+                *out = obj;
+                return 1;
+            }
+            return 0;
+        }
+    }
+
     if (recv.obj->klass.kind == VAL_CLASS && strcmp(recv.obj->klass.klass->name, "IO") == 0) {
         Value fd_val;
         if (!val_object_get_ivar(recv, "__fd__", &fd_val) || fd_val.kind != VAL_STRING) {

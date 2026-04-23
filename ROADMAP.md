@@ -144,8 +144,8 @@ Exit gate:
 
 If work starts today, the next highest-value sequence is:
 
-1. finish proc/lambda argument and control-flow leftovers
-2. continue reflection / visibility / dispatch hardening where CRuby still differs
+1. ~~finish proc/lambda argument and control-flow leftovers~~ — done
+2. ~~reflection / visibility / dispatch hardening~~ — done (see Already landed)
 3. tighten module ancestor ordering and `super`
 4. expand exception completeness
 5. then resume broader core-library and loading work
@@ -203,7 +203,15 @@ These were previously roadmap items and are now implemented in the current tree:
 - built-in `Comparable` / `Enumerable` plus operator method defs like `def <=>`
 - `Range`: `..` / `...` literals, `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `min`, `max`, `sum`, `step`, `map`, `select`, `reject`, `reduce`, `any?`/`all?`/`none?`; `Range` includes `Enumerable`; integer and string ranges supported; `String#<=>` added as a dispatch method
 - `case`/`when`: value equality, range membership, class membership (`===`), multi-pattern `when`, optional `else`, caseless form, `then` keyword; `case` is an expression; `Class#===` added
-- `Symbol#to_proc`, lambda-like `Symbol#to_proc#lambda?`, `&:symbol` and `&proc` block-pass in calls, `*arr` splat args in calls, `proc {}` kernel method, `block_given?`, `Object#itself`; arithmetic/comparison operators (`+`, `-`, `*`, `/`, `%`, `**`, `<`, `<=`, `>`, `>=`, `<=>`, `<<`, `>>`, `&`, `|`, `^`) now dispatchable as methods; operator symbols (`:+`, `:-`, etc.) now valid symbol literals
+- `Symbol#to_proc`, lambda-like `Symbol#to_proc#lambda?`, `&:symbol` and `&proc` block-pass in calls, `*arr` splat args in calls, `proc {}` kernel method, `block_given?`, `Object#itself`; arithmetic/comparison operators (`+`, `-`, `*`, `/`, `%`, `**`, `<`, `<=`, `>`, `>=`, `<=>`, `<<`, `>>`, `&`, `|`, `^`) now dispatchable as methods and listed in `respond_to?`; operator symbols (`:+`, `:-`, etc.) now valid symbol literals
+- `Symbol#to_s` returns the bare name (no colon); string interpolation `"#{:sym}"` now correct; `Symbol#inspect` still returns `:sym`; `Array#sort` now works for symbol arrays
+- `Class#superclass`, `Class#ancestors` (full MRI traversal order including modules); classes without explicit `< Foo` now implicitly inherit from `Object`
+- `Class#name`; `Class#instance_methods` / `public_instance_methods` / `private_instance_methods` / `protected_instance_methods` (with `true`/`false` inherited flag)
+- `Class#method_defined?` / `public_method_defined?` / `private_method_defined?` / `protected_method_defined?`
+- `Class#instance_method` returning an `UnboundMethod`; `UnboundMethod#bind` returning a bound `Method`
+- `Object#methods` / `public_methods` / `private_methods` / `protected_methods` (with optional `false` to restrict to own class); built-in Object methods appear in inherited-mode output
+- `Object#method` — returns a bound `Method` object for any callable (user-defined or native); raises `NameError` for unknown names; `Method#call` bypasses visibility; `Method#arity`; `Method#to_proc` and `&method` block-pass
+- `method_missing` inheriting through class chains and modules; `super` from `method_missing` correctly falls through to `NoMethodError`
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files

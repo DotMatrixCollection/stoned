@@ -216,11 +216,7 @@ const char *val_to_s(Arena *a, Value v) {
                 strncat(buf, ".0", 64 - strlen(buf) - 1);
             return buf;
         case VAL_STRING: return v.sval ? v.sval : "";
-        case VAL_SYMBOL:
-            buf = arena_alloc(a, strlen(v.sval) + 2);
-            buf[0] = ':';
-            strcpy(buf + 1, v.sval);
-            return buf;
+        case VAL_SYMBOL: return v.sval ? v.sval : "";
         case VAL_ARRAY: {
             /* "[elem, elem, ...]" */
             size_t total = 3;
@@ -293,6 +289,11 @@ const char *val_inspect(Arena *a, Value v) {
             buf[len + 2] = '\0';
             return buf;
         }
+        case VAL_SYMBOL:
+            buf = arena_alloc(a, strlen(v.sval) + 2);
+            buf[0] = ':';
+            strcpy(buf + 1, v.sval);
+            return buf;
         default: return val_to_s(a, v);
     }
 }

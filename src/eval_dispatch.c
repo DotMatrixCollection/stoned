@@ -210,12 +210,15 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "to_s", "to_f", "to_i", "to_int", "to_r", "abs", "abs2", "even?", "odd?", "zero?",
         "nonzero?", "positive?", "negative?", "integer?", "ceil", "floor", "round",
         "truncate", "succ", "next", "pred", "chr", "gcd", "lcm", "pow", "divmod",
-        "digits", "between?", "clamp", "times", "upto", "downto", "step", NULL
+        "digits", "between?", "clamp", "times", "upto", "downto", "step",
+        "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "<=>",
+        "<<", ">>", "&", "|", "^", "~", "-@", "[]", NULL
     };
     static const char *float_methods[] = {
         "to_s", "to_f", "to_i", "truncate", "to_r", "abs", "abs2", "zero?", "nonzero?",
         "positive?", "negative?", "integer?", "nan?", "finite?", "infinite?", "ceil",
-        "floor", "round", "divmod", "between?", "clamp", "step", NULL
+        "floor", "round", "divmod", "between?", "clamp", "step",
+        "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "<=>", NULL
     };
     static const char *str_methods[] = {
         "to_s", "to_i", "to_f", "to_sym", "length", "size", "empty?", "upcase",
@@ -629,6 +632,35 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
 
 static Value make_symbol_proc(Eval *ev, const char *method_name);
 
+Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name) {
+    Arena *a = ev->arena;
+    Span s = {0, 0, 0};
+    Env *closure = env_new(a, ev->top_env, 0);
+    env_define(a, closure, "__bound_recv__", receiver);
+    Node *rest_p = node_new(a, NODE_PARAM, s);
+    rest_p->param.splat = 1;
+    rest_p->param.name = "__bound_args__";
+    NodeList *params = nodelist_append(a, NULL, rest_p);
+    Node *recv_var = node_new(a, NODE_LVAR, s);
+    recv_var->sval = "__bound_recv__";
+    Node *args_var = node_new(a, NODE_LVAR, s);
+    args_var->sval = "__bound_args__";
+    Node *splat_arg = node_new(a, NODE_UNOP, s);
+    splat_arg->unop.op = "*";
+    splat_arg->unop.operand = args_var;
+    Node *call_node = node_new(a, NODE_CALL, s);
+    call_node->call.recv = recv_var;
+    call_node->call.method = method_name;
+    call_node->call.args = nodelist_append(a, NULL, splat_arg);
+    call_node->call.block = NULL;
+    Node *body = node_new(a, NODE_BODY, s);
+    body->body.stmts = nodelist_append(a, NULL, call_node);
+    Node *block_node = node_new(a, NODE_BLOCK, s);
+    block_node->block.params = params;
+    block_node->block.body = body;
+    return val_lambda(block_node, closure);
+}
+
 Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                       const char *name, Value *args, int argc,
                       Value *blk, Node *site, int public_only, int explicit_receiver);
@@ -716,6 +748,85 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         return dispatch_dynamic_send(ev, env, recv, name, args, argc, blk, site, 0);
     if (strcmp(name, "public_send") == 0)
         return dispatch_dynamic_send(ev, env, recv, name, args, argc, blk, site, 1);
+
+    /* Object#methods / public_methods / private_methods / protected_methods */
+    if (strcmp(name, "methods") == 0 || strcmp(name, "public_methods") == 0 ||
+        strcmp(name, "private_methods") == 0 || strcmp(name, "protected_methods") == 0) {
+        int include_super = (argc == 0) || val_truthy(args[0]);
+        int vis_mask;
+        if (strcmp(name, "public_methods") == 0) vis_mask = 1;
+        else if (strcmp(name, "private_methods") == 0) vis_mask = 4;
+        else if (strcmp(name, "protected_methods") == 0) vis_mask = 2;
+        else vis_mask = 3; /* methods: public + protected */
+        Value arr = val_array_new();
+        if (recv.kind == VAL_OBJECT) {
+            if (recv.obj->singleton_env) {
+                for (EnvEntry *e = recv.obj->singleton_env->vars; e; e = e->next) {
+                    if (e->val.kind != VAL_METHOD) continue;
+                    MethodVisibility vis = e->val.method.visibility;
+                    int match = ((vis_mask & 1) && vis == METHOD_PUBLIC) ||
+                                ((vis_mask & 2) && vis == METHOD_PROTECTED) ||
+                                ((vis_mask & 4) && vis == METHOD_PRIVATE);
+                    if (match && !sym_in_array(&arr, e->name))
+                        val_array_push(&arr, val_symbol(e->name));
+                }
+            }
+            if (recv.obj->klass.kind == VAL_CLASS) {
+                RubyClass *k = recv.obj->klass.klass;
+                if (include_super) {
+                    RubyClass *visited[256]; int nv = 0;
+                    collect_all_instance_methods(k, &arr, vis_mask, visited, &nv);
+                } else {
+                    collect_own_instance_methods(k->class_env, &arr, vis_mask);
+                }
+            }
+        }
+        /* Add hardcoded built-in public methods (from Object/BasicObject) when inheriting */
+        if (include_super && (vis_mask & 1)) {
+            static const char *obj_builtins[] = {
+                "class", "nil?", "is_a?", "kind_of?", "instance_of?", "respond_to?",
+                "equal?", "==", "!=", "freeze", "frozen?", "itself", "object_id",
+                "send", "__send__", "public_send", "extend", "methods", "public_methods",
+                "private_methods", "protected_methods", "method", "inspect", "to_s", NULL
+            };
+            for (int i = 0; obj_builtins[i]; i++) {
+                if (!sym_in_array(&arr, obj_builtins[i]))
+                    val_array_push(&arr, val_symbol(obj_builtins[i]));
+            }
+        }
+        return arr;
+    }
+
+    /* Object#method */
+    if (strcmp(name, "method") == 0) {
+        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!mname) return eval_raise_class(ev, site, "TypeError", "expected Symbol or String");
+        if (!val_responds_to(ev, recv, mname, 1))
+            return eval_raise_class(ev, site, "NameError", "undefined method '%s'", mname);
+        Value method_val = val_nil();
+        if (recv.kind == VAL_OBJECT) {
+            if (recv.obj->singleton_env) {
+                Value m;
+                if (env_get(recv.obj->singleton_env, mname, &m) && m.kind == VAL_METHOD)
+                    method_val = m;
+            }
+            if (method_val.kind == VAL_NIL && recv.obj->klass.kind == VAL_CLASS) {
+                Value m; RubyClass *owner = NULL;
+                if (ruby_class_find_instance_method(recv.obj->klass.klass, mname, &m, &owner))
+                    method_val = m;
+            }
+        }
+        Value m_klass;
+        if (!env_get(ev->top_env, "Method", &m_klass) || m_klass.kind != VAL_CLASS)
+            return val_nil();
+        Value obj = val_object(ev->arena, m_klass);
+        val_object_set_ivar(ev->arena, obj, "__receiver__", recv);
+        val_object_set_ivar(ev->arena, obj, "__method_name__", val_string(ev->arena, mname));
+        val_object_set_ivar(ev->arena, obj, "__method__", method_val);
+        return obj;
+    }
+
     if (recv.kind == VAL_BLOCK) {
         if (strcmp(name, "call") == 0 || strcmp(name, "[]") == 0)
             return call_block(ev, env, recv, args, argc, site);
@@ -946,6 +1057,14 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         } else if (bp.kind == VAL_BLOCK) {
             blk_val = bp;
             blk = &blk_val;
+        } else if (bp.kind == VAL_OBJECT && bp.obj->klass.kind == VAL_CLASS &&
+                   strcmp(bp.obj->klass.klass->name, "Method") == 0) {
+            Value recv_iv, mname_iv;
+            if (val_object_get_ivar(bp, "__receiver__", &recv_iv) &&
+                val_object_get_ivar(bp, "__method_name__", &mname_iv)) {
+                blk_val = make_bound_method_proc(ev, recv_iv, mname_iv.sval);
+                blk = &blk_val;
+            }
         }
         /* nil/false block pass → no block */
     }
