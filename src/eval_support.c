@@ -4,6 +4,7 @@
 
 #include <stdarg.h>
 #include <sys/stat.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,6 +57,133 @@ static int append_file_bytes(const char *path, const char *content, size_t len) 
     size_t written = fwrite(content, 1, len, f);
     fclose(f);
     return written == len;
+}
+
+static int append_dynamic(char **buf, size_t *cap, size_t *used, const char *src, size_t len) {
+    while (*used + len + 1 > *cap) {
+        size_t next = *cap ? *cap * 2 : 64;
+        char *nb = realloc(*buf, next);
+        if (!nb) return 0;
+        *buf = nb;
+        *cap = next;
+    }
+    memcpy(*buf + *used, src, len);
+    *used += len;
+    (*buf)[*used] = '\0';
+    return 1;
+}
+
+Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char *fmt, Value *args, int argc, Node *site) {
+    size_t cap = 128, used = 0;
+    char *buf = malloc(cap);
+    if (!buf) return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+    buf[0] = '\0';
+
+    int argi = 0;
+    for (size_t i = 0; fmt[i]; i++) {
+        if (fmt[i] != '%') {
+            if (!append_dynamic(&buf, &cap, &used, fmt + i, 1)) {
+                free(buf);
+                return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+            }
+            continue;
+        }
+
+        i++;
+        if (fmt[i] == '%') {
+            if (!append_dynamic(&buf, &cap, &used, "%", 1)) {
+                free(buf);
+                return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+            }
+            continue;
+        }
+
+        int width = 0;
+        int precision = -1;
+        while (isdigit((unsigned char)fmt[i])) {
+            width = width * 10 + (fmt[i] - '0');
+            i++;
+        }
+        if (fmt[i] == '.') {
+            precision = 0;
+            i++;
+            while (isdigit((unsigned char)fmt[i])) {
+                precision = precision * 10 + (fmt[i] - '0');
+                i++;
+            }
+        }
+
+        if (argi >= argc) {
+            free(buf);
+            return eval_raise_class(ev, site, "ArgumentError", "too few arguments for format string");
+        }
+
+        char tmp[256];
+        const char *piece = tmp;
+        size_t piece_len = 0;
+        Value v = args[argi++];
+
+        switch (fmt[i]) {
+            case 's': {
+                piece = val_to_s(ev->arena, v);
+                piece_len = strlen(piece);
+                break;
+            }
+            case 'd':
+            case 'i': {
+                int64_t n;
+                if (v.kind == VAL_INT) n = v.ival;
+                else if (v.kind == VAL_FLOAT) n = (int64_t)v.fval;
+                else {
+                    free(buf);
+                    return eval_raise_class(ev, site, "TypeError", "can't convert %s into Integer", val_kind_name(v.kind));
+                }
+                int nlen;
+                if (width > 0) nlen = snprintf(tmp, sizeof(tmp), "%*lld", width, (long long)n);
+                else nlen = snprintf(tmp, sizeof(tmp), "%lld", (long long)n);
+                piece_len = nlen < 0 ? 0 : (size_t)nlen;
+                break;
+            }
+            case 'f': {
+                double f;
+                if (v.kind == VAL_FLOAT) f = v.fval;
+                else if (v.kind == VAL_INT) f = (double)v.ival;
+                else {
+                    free(buf);
+                    return eval_raise_class(ev, site, "TypeError", "can't convert %s into Float", val_kind_name(v.kind));
+                }
+                char spec[32];
+                if (precision >= 0 && width > 0) snprintf(spec, sizeof(spec), "%%%d.%df", width, precision);
+                else if (precision >= 0) snprintf(spec, sizeof(spec), "%%.%df", precision);
+                else if (width > 0) snprintf(spec, sizeof(spec), "%%%df", width);
+                else snprintf(spec, sizeof(spec), "%%f");
+                int nlen = snprintf(tmp, sizeof(tmp), spec, f);
+                piece_len = nlen < 0 ? 0 : (size_t)nlen;
+                break;
+            }
+            default:
+                free(buf);
+                return eval_raise_class(ev, site, "ArgumentError", "unsupported format specifier '%c'", fmt[i]);
+        }
+
+        if (fmt[i] == 's' && width > 0 && piece_len < (size_t)width) {
+            size_t pad = (size_t)width - piece_len;
+            for (size_t j = 0; j < pad; j++) {
+                if (!append_dynamic(&buf, &cap, &used, " ", 1)) {
+                    free(buf);
+                    return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+                }
+            }
+        }
+        if (!append_dynamic(&buf, &cap, &used, piece, piece_len)) {
+            free(buf);
+            return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+        }
+    }
+
+    Value result = val_string(ev->arena, buf);
+    free(buf);
+    return result;
 }
 
 static const char *normalize_path(Arena *a, const char *path) {

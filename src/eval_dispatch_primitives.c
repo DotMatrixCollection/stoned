@@ -1075,6 +1075,20 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         return 1;
     }
+    if (strcmp(name, "%") == 0) {
+        if (argc < 1) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "String#% requires an argument");
+            return 1;
+        }
+        Value *fmt_args = &args[0];
+        int fmt_argc = 1;
+        if (args[0].kind == VAL_ARRAY) {
+            fmt_args = args[0].array->elems;
+            fmt_argc = (int)args[0].array->len;
+        }
+        *out = eval_format_string(ev, env, s, fmt_args, fmt_argc, site);
+        return 1;
+    }
     return 0;
 }
 

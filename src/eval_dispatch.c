@@ -477,6 +477,11 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         for (int i = 0; i < argc; i++) val_array_push(&arr, args[i]);
         return arr;
     }
+    if (strcmp(name, "format") == 0 || strcmp(name, "sprintf") == 0) {
+        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        const char *fmt = val_to_s(ev->arena, args[0]);
+        return eval_format_string(ev, env, fmt, args + 1, argc - 1, site);
+    }
     if (strcmp(name, "Integer") == 0) {
         if (argc != 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         Value v = args[0];
@@ -1216,7 +1221,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "pp", "Integer", "Float", "String", "Array", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
+            "puts", "print", "p", "pp", "Integer", "Float", "String", "Array", "format", "sprintf", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", NULL

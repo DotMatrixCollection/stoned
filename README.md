@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `141 passed, 0 failed, 141 total`.
+Current coverage in the tree: `142 passed, 0 failed, 142 total`.
 
 What is working today:
 
@@ -69,8 +69,8 @@ What is working today:
 - Proc/lambda: `Proc.new {}`, `proc {}`, `lambda {}`, `-> (...) {}`, `call`, `[]`, `lambda?`, `arity`, lambda `return`, proc non-local `return`; arrow lambdas and block literals now parse defaulted params, arrow lambdas honor omitted default args, non-lambda procs/blocks now autosplat a single array argument across multi-slot parameter lists, proc/lambda `arity` reports Ruby-like negative values for optional/splat forms, lambda `break` returns from the lambda call, lambda `return` now works in top-level and block-passed lambda literals, top-level proc literals may now carry `return` as a non-local exit instead of being rejected at sema time, proc non-local `return` now propagates correctly through helper methods when a proc is passed as `&proc`, proc-object `break` via direct `call` raises `LocalJumpError`, and escaped proc objects passed back through `&proc` now preserve proc identity so invalid `break`/`return` raise `LocalJumpError` instead of being misbound or silently collapsing; `Symbol#to_proc` now returns lambda-like proc objects and `&:symbol` block-pass works in calls; `&proc` block-pass; `*arr` splat args in calls; `block_given?`; `Object#itself`
 - Integer: `gcd`, `lcm`, `pow` (with optional modulus), `divmod`, `digits`, `chr`, `succ`/`pred`, `ceil`/`floor`/`round`/`truncate`, `positive?`/`negative?`/`nonzero?`/`integer?`, `abs2`, `between?`, `clamp`, `step`, `to_s(base)`
 - Float: `nan?`, `infinite?`, `finite?`, `divmod`, `ceil`/`floor`/`round`/`truncate` with optional ndigits, `positive?`/`negative?`/`nonzero?`/`integer?`, `abs2`, `between?`, `clamp`, `step`; `0.0/0.0` now returns `NaN` (IEEE 754)
-- String: UTF-8-only strings; codepoint-aware `length`/`size`, `chars`, `split("")`, `each_char`, `reverse`, `ord`, `index`, `rindex`, `[]`/`slice`, `chop`, `strip`, `lstrip`, `rstrip`, `ljust`, `rjust`, `center`, `upcase`, `downcase`, `capitalize`, `swapcase`, `succ`, `tr`, `count`, `delete`, `squeeze`; plus `chomp`, `hex`, `oct`, `bytes`, `<<`, `lines`, `each_line`, `scan`, `sub`, `gsub` (string and block forms), `inspect`. Current Unicode semantics are codepoint-based with simple case mapping rather than full locale- or grapheme-aware behavior.
-- Kernel: `puts`, `print`, `p`, `pp`, `Integer()`, `Float()`, `String()`, `Array()`, `raise`, `lambda`, `rand`, `exit`
+- String: UTF-8-only strings; codepoint-aware `length`/`size`, `chars`, `split("")`, `each_char`, `reverse`, `ord`, `index`, `rindex`, `[]`/`slice`, `chop`, `strip`, `lstrip`, `rstrip`, `ljust`, `rjust`, `center`, `upcase`, `downcase`, `capitalize`, `swapcase`, `succ`, `tr`, `count`, `delete`, `squeeze`; plus `chomp`, `hex`, `oct`, `bytes`, `<<`, `lines`, `each_line`, `scan`, `sub`, `gsub`, and sprintf-style `String#%` with basic `%s`/`%d`/`%i`/`%f`, width, precision, and `%%`; `inspect`. Current Unicode semantics are codepoint-based with simple case mapping rather than full locale- or grapheme-aware behavior.
+- Kernel: `puts`, `print`, `p`, `pp`, `Integer()`, `Float()`, `String()`, `Array()`, `format`, `sprintf`, `raise`, `lambda`, `rand`, `exit`
 - IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`; `$stdin.gets` / `$stdin.read`
 - File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`; file objects with `read`, `write`, `print`, `puts`, `path`, `mode`, `close`, `closed?`; modes `r`, `w`, `a` enforced
 - Globals and constants
