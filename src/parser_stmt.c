@@ -237,6 +237,15 @@ Node *parse_stmt(Parser *p) {
             expect(p, TOK_RPAREN, "expected ')'");
         }
 
+        if (match(p, TOK_EQ)) {
+            /* Endless method: def foo = expr */
+            Node *expr = parse_expr(p, 0);
+            Node *body = node_new(p->arena, NODE_BODY, s);
+            body->body.stmts = expr ? nodelist_append(p->arena, NULL, expr) : NULL;
+            n->def.body = body;
+            return n;
+        }
+
         skip_terminators(p);
         Node *def_body = parse_body(p, 0);
         if (check(p, TOK_RESCUE) || check(p, TOK_ENSURE)) {
