@@ -67,6 +67,7 @@ typedef enum {
     NODE_DEF,
     NODE_CLASS,         /* class Foo < Bar ... end */
     NODE_MODULE,        /* module Foo ... end */
+    NODE_ALIAS,         /* alias new_name old_name */
     NODE_PARAM,         /* single formal parameter */
 
     /* case/when */
@@ -183,6 +184,12 @@ struct Node {
             NodeList   *params;
             Node       *body;
         } def;
+
+        /* NODE_ALIAS */
+        struct {
+            const char *new_name;
+            const char *old_name;
+        } alias_stmt;
 
         /* NODE_CLASS */
         struct {

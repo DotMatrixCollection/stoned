@@ -197,6 +197,9 @@ static void collect(Sema *s, Node *node, NodeList *excl) {
         case NODE_DEF:
             break;
 
+        case NODE_ALIAS:
+            break;
+
         case NODE_MODULE:
             break;
 
@@ -353,6 +356,9 @@ static void resolve(Sema *s, Node *node) {
             scope_pop(s);
             break;
         }
+
+        case NODE_ALIAS:
+            break;
 
         case NODE_RETURN:
             if (s->def_depth == 0 && s->lambda_depth == 0 && s->proc_depth == 0)

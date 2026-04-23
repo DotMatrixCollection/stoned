@@ -42,6 +42,7 @@ typedef enum {
     TOK_DEF,
     TOK_CLASS,
     TOK_MODULE,
+    TOK_ALIAS,
     TOK_RETURN,
     TOK_BREAK,
     TOK_NEXT,

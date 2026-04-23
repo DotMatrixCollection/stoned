@@ -41,6 +41,7 @@ static struct { const char *word; TokenKind kind; } KEYWORDS[] = {
     {"def",     TOK_DEF},
     {"class",   TOK_CLASS},
     {"module",  TOK_MODULE},
+    {"alias",   TOK_ALIAS},
     {"return",  TOK_RETURN},
     {"break",   TOK_BREAK},
     {"next",    TOK_NEXT},
@@ -660,6 +661,7 @@ const char *token_kind_name(TokenKind k) {
         case TOK_DEF:        return "def";
         case TOK_CLASS:      return "class";
         case TOK_MODULE:     return "module";
+        case TOK_ALIAS:      return "alias";
         case TOK_RETURN:     return "return";
         case TOK_BREAK:      return "break";
         case TOK_NEXT:       return "next";
