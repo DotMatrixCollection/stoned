@@ -507,7 +507,9 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     NodeList *params = method_val.method.def_node->def.params;
                     for (; params && super_argc < 64; params = params->next) {
                         Node *p = params->node;
-                        if (p->kind != NODE_PARAM || !p->param.name || p->param.block_param) continue;
+                        if (p->kind != NODE_PARAM || !p->param.name ||
+                            p->param.block_param || p->param.keyword_param ||
+                            p->param.keyword_splat) continue;
                         Value pval;
                         if (env_get(frame, p->param.name, &pval))
                             super_args[super_argc++] = pval;

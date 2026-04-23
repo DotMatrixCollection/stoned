@@ -191,6 +191,14 @@ static Node *parse_command_hash(Parser *p, Node *first_key_node) {
 }
 
 static Node *parse_arg_expr(Parser *p) {
+    if (check(p, TOK_STAR2)) {
+        Span ss = tok_span(peek(p));
+        advance(p);
+        Node *ds = node_new(p->arena, NODE_UNOP, ss);
+        ds->unop.op = "**";
+        ds->unop.operand = parse_expr(p, 0);
+        return ds;
+    }
     p->command_arg_depth++;
     Node *arg = parse_expr(p, 0);
     p->command_arg_depth--;
@@ -580,8 +588,19 @@ static Node *parse_param_node(Parser *p, int allow_default) {
     if (t.kind == TOK_STAR) {
         advance(p);
         param->param.splat = 1;
-        t = advance(p);
-        param->param.name = t.sval;
+        t = peek(p);
+        if (t.kind == TOK_IDENT || t.kind == TOK_CONST) {
+            advance(p);
+            param->param.name = t.sval;
+        }
+    } else if (t.kind == TOK_STAR2) {
+        advance(p);
+        param->param.keyword_splat = 1;
+        t = peek(p);
+        if (t.kind == TOK_IDENT || t.kind == TOK_CONST) {
+            advance(p);
+            param->param.name = t.sval;
+        }
     } else if (t.kind == TOK_AMP) {
         advance(p);
         param->param.block_param = 1;
@@ -590,8 +609,18 @@ static Node *parse_param_node(Parser *p, int allow_default) {
     } else {
         advance(p);
         param->param.name = t.sval;
-        if (allow_default && match(p, TOK_EQ))
+        if (check(p, TOK_COLON)) {
+            /* keyword parameter: key: or key: default */
+            advance(p);
+            param->param.keyword_param = 1;
+            /* optional default — anything that isn't a param separator */
+            if (allow_default &&
+                !check(p, TOK_COMMA) && !check(p, TOK_RPAREN) &&
+                !check(p, TOK_PIPE)  && !check(p, TOK_NEWLINE) && !check(p, TOK_EOF))
+                param->param.default_val = parse_expr(p, 0);
+        } else if (allow_default && match(p, TOK_EQ)) {
             param->param.default_val = parse_expr(p, 0);
+        }
     }
     return param;
 }

@@ -1,0 +1,12 @@
+Hello, Alice!
+example.com:80
+example.com:443
+[now] INFO: started
+[12:00] WARN: slow
+debug=true, verbose=false
+x=1 y=10 rest={}
+x=1 y=20 rest={}
+x=1 y=20 rest={:z=>30}
+local:80
+nil ok
+missing keyword: name

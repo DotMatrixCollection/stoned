@@ -27,6 +27,7 @@ int count_required_params(NodeList *params);
 int count_total_params(NodeList *params);
 int proc_arity(NodeList *params, int is_lambda);
 int has_splat_param(NodeList *params);
+int has_kwarg_params(NodeList *params);
 MethodVisibility current_method_visibility(Env *env);
 void set_current_method_visibility(Arena *a, Env *env, MethodVisibility visibility);
 void update_method_visibility(Env *env, const char *name, MethodVisibility visibility, int singleton_only);

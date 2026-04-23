@@ -206,6 +206,8 @@ struct Node {
             Node       *default_val; /* NULL if none */
             int         splat;       /* 1 if *param */
             int         block_param; /* 1 if &param */
+            int         keyword_param;  /* 1 if key: or key: default */
+            int         keyword_splat;  /* 1 if **opts */
         } param;
 
         /* NODE_RETURN, NODE_BREAK, NODE_NEXT */

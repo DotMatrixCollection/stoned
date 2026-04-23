@@ -362,7 +362,12 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     int required = count_required_params(params);
     int has_splat = has_splat_param(params);
     int total = count_total_params(params);
-    if ((argc < required) || (!has_splat && argc > total))
+    /* When the method declares keyword params, the trailing hash arg is kwargs,
+       not a positional argument — don't count it against the positional arity. */
+    int effective_argc = argc;
+    if (has_kwarg_params(params) && argc > 0 && args[argc - 1].kind == VAL_HASH)
+        effective_argc = argc - 1;
+    if ((effective_argc < required) || (!has_splat && effective_argc > total))
         return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
 
     Env *method_env = env_new(ev->arena, method.method.closure, 1);
@@ -376,6 +381,7 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     env_set(ev->arena, method_env, "__class__", owner_val);
     if (blk) method_env->block_arg = blk;
     bind_params(ev, method_env, params, args, argc);
+    if (ev->exception_class != NULL) return val_exception();
     ev->call_depth++;
     if (ev->active_def_count < EVAL_MAX_DEPTH)
         ev->active_defs[ev->active_def_count++] = method_env;
@@ -1216,6 +1222,23 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             }
             continue;
         }
+        if (l->node->kind == NODE_UNOP && strcmp(l->node->unop.op, "**") == 0) {
+            Value dsplat = eval_node(ev, env, l->node->unop.operand);
+            CHECK(dsplat);
+            /* Merge into trailing hash arg or append as new hash arg */
+            if (dsplat.kind == VAL_HASH && argc > 0 && args[argc - 1].kind == VAL_HASH) {
+                Value merged = val_hash_new(ev->arena);
+                RubyHash *dst = merged.hash;
+                RubyHash *a = args[argc - 1].hash;
+                RubyHash *b = dsplat.hash;
+                if (a) for (size_t i = 0; i < a->len; i++) val_hash_set(dst, a->keys[i], a->vals[i]);
+                if (b) for (size_t i = 0; i < b->len; i++) val_hash_set(dst, b->keys[i], b->vals[i]);
+                args[argc - 1] = merged;
+            } else if (argc < 64) {
+                args[argc++] = dsplat;
+            }
+            continue;
+        }
         Value a = eval_node(ev, env, l->node);
         CHECK(a);
         args[argc++] = a;
@@ -1292,6 +1315,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                 env_set(ev->arena, method_env, "__class__", klass_val);
                 if (blk) method_env->block_arg = blk;
                 bind_params(ev, method_env, fn.method.def_node->def.params, args, argc);
+                if (ev->exception_class != NULL) return val_exception();
                 ev->call_depth++;
                 if (ev->active_def_count < EVAL_MAX_DEPTH)
                     ev->active_defs[ev->active_def_count++] = method_env;
@@ -1313,6 +1337,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                 env_set(ev->arena, method_env, "__class__", klass_val);
                 if (blk) method_env->block_arg = blk;
                 bind_params(ev, method_env, fn.method.def_node->def.params, args, argc);
+                if (ev->exception_class != NULL) return val_exception();
                 ev->call_depth++;
                 if (ev->active_def_count < EVAL_MAX_DEPTH)
                     ev->active_defs[ev->active_def_count++] = method_env;
@@ -1342,6 +1367,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                     env_set(ev->arena, method_env, "__class__", kv);
                     if (blk) method_env->block_arg = blk;
                     bind_params(ev, method_env, fn.method.def_node->def.params, args, argc);
+                    if (ev->exception_class != NULL) return val_exception();
                     ev->call_depth++;
                     if (ev->active_def_count < EVAL_MAX_DEPTH)
                         ev->active_defs[ev->active_def_count++] = method_env;
@@ -1379,7 +1405,7 @@ call_method:
         if (blk) frame->block_arg = blk;
 
         bind_params(ev, frame, def->def.params, args, argc);
-
+        if (ev->exception_class != NULL) return val_exception();
         ev->call_depth++;
         if (ev->active_def_count < EVAL_MAX_DEPTH)
             ev->active_defs[ev->active_def_count++] = frame;

@@ -869,7 +869,8 @@ int count_required_params(NodeList *params) {
         Node *p = l->node;
         if (!p) continue;
         if (p->kind == NODE_PARAM) {
-            if (!p->param.splat && !p->param.block_param && !p->param.default_val)
+            if (!p->param.splat && !p->param.block_param && !p->param.default_val
+                && !p->param.keyword_param && !p->param.keyword_splat)
                 count++;
         } else if (p->kind == NODE_ARRAY) {
             count++;
@@ -884,13 +885,24 @@ int count_total_params(NodeList *params) {
         Node *p = l->node;
         if (!p) continue;
         if (p->kind == NODE_PARAM) {
-            if (!p->param.splat && !p->param.block_param)
+            if (!p->param.splat && !p->param.block_param
+                && !p->param.keyword_param && !p->param.keyword_splat)
                 count++;
         } else if (p->kind == NODE_ARRAY) {
             count++;
         }
     }
     return count;
+}
+
+int has_kwarg_params(NodeList *params) {
+    for (NodeList *l = params; l; l = l->next) {
+        Node *p = l->node;
+        if (p && p->kind == NODE_PARAM &&
+            (p->param.keyword_param || p->param.keyword_splat))
+            return 1;
+    }
+    return 0;
 }
 
 int proc_arity(NodeList *params, int is_lambda) {
@@ -937,6 +949,15 @@ static int count_bindable_params(NodeList *params) {
 }
 
 void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc) {
+    /* Extract kwargs from trailing hash arg when the method declares keyword params */
+    Value kwargs = val_nil();
+    int positional_argc = argc;
+    if (has_kwarg_params(params) && argc > 0 && args[argc - 1].kind == VAL_HASH) {
+        kwargs = args[argc - 1];
+        positional_argc--;
+    }
+
+    /* Bind positional params */
     int argi = 0;
     for (NodeList *pl = params; pl; pl = pl->next) {
         Node *p = pl->node;
@@ -946,19 +967,66 @@ void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc) {
             bind_pattern(ev, env, p, blk);
             continue;
         }
+        if (p->kind == NODE_PARAM && (p->param.keyword_param || p->param.keyword_splat)) continue;
         if (p->kind == NODE_PARAM && p->param.splat) {
             Value rest = val_array_new();
-            for (int j = argi; j < argc; j++) val_array_push(&rest, args[j]);
+            for (int j = argi; j < positional_argc; j++) val_array_push(&rest, args[j]);
             bind_pattern(ev, env, p, rest);
+            argi = positional_argc;
             break;
         }
-
-        Value pval = argi < argc ? args[argi]
+        Value pval = argi < positional_argc ? args[argi]
                    : (p->kind == NODE_PARAM && p->param.default_val
                       ? eval_node(ev, env, p->param.default_val)
                       : val_nil());
         bind_pattern(ev, env, p, pval);
         argi++;
+    }
+
+    /* Bind keyword params, tracking which hash keys are consumed */
+    const char *consumed[64];
+    int n_consumed = 0;
+
+    for (NodeList *pl = params; pl; pl = pl->next) {
+        Node *p = pl->node;
+        if (!p || p->kind != NODE_PARAM || !p->param.keyword_param) continue;
+        const char *kname = p->param.name;
+        if (!kname) continue;
+
+        Value kval;
+        Value sym_key = val_symbol(kname);
+        if (kwargs.kind == VAL_HASH && kwargs.hash && val_hash_get(kwargs.hash, sym_key, &kval)) {
+            if (n_consumed < 64) consumed[n_consumed++] = kname;
+        } else if (p->param.default_val) {
+            kval = eval_node(ev, env, p->param.default_val);
+            if (ev->errored || val_is_signal(kval)) return;
+        } else {
+            eval_raise_class(ev, NULL, "ArgumentError", "missing keyword: %s", kname);
+            return;
+        }
+        env_set(ev->arena, env, kname, kval);
+    }
+
+    /* Bind **opts with the remaining (unconsumed) kwargs */
+    for (NodeList *pl = params; pl; pl = pl->next) {
+        Node *p = pl->node;
+        if (!p || p->kind != NODE_PARAM || !p->param.keyword_splat) continue;
+        Value rest_hash = val_hash_new(ev->arena);
+        if (kwargs.kind == VAL_HASH && kwargs.hash) {
+            for (size_t i = 0; i < kwargs.hash->len; i++) {
+                Value k = kwargs.hash->keys[i];
+                int consumed_key = 0;
+                if (k.kind == VAL_SYMBOL) {
+                    for (int j = 0; j < n_consumed; j++) {
+                        if (strcmp(k.sval, consumed[j]) == 0) { consumed_key = 1; break; }
+                    }
+                }
+                if (!consumed_key)
+                    val_hash_set(rest_hash.hash, k, kwargs.hash->vals[i]);
+            }
+        }
+        if (p->param.name) env_set(ev->arena, env, p->param.name, rest_hash);
+        break;
     }
 }
 
@@ -994,11 +1062,15 @@ Value call_block(Eval *ev, Env *caller_env, Value blk, Value *args, int argc, No
     if (blk.block.is_lambda) {
         int required = count_required_params(pl);
         int total = count_total_params(pl);
-        if (bound_argc < required || (!has_splat_param(pl) && bound_argc > total))
+        int eff_argc = bound_argc;
+        if (has_kwarg_params(pl) && bound_argc > 0 && bound_args[bound_argc - 1].kind == VAL_HASH)
+            eff_argc = bound_argc - 1;
+        if (eff_argc < required || (!has_splat_param(pl) && eff_argc > total))
             return eval_raise_class(ev, call_site, "ArgumentError", "wrong number of arguments");
     }
 
     bind_params(ev, frame, pl, bound_args, bound_argc);
+    if (ev->exception_class != NULL) return val_exception();
 
     eval_push_frame(ev, call_site ? call_site->span.line : 0,
                     call_site ? call_site->span.col : 0, "block");
