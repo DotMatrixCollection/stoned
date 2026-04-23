@@ -170,6 +170,17 @@ typedef struct {
     int         imode_depth;
     int         ibrace[LEX_INTERP_DEPTH]; /* { } nesting depth per INTERP_EXPR level */
 
+    /* heredoc body scanning state */
+    int         hd_active;            /* non-zero while scanning heredoc body */
+    size_t      hd_body_end;          /* exclusive end of body in l->src */
+    size_t      hd_resume;            /* l->pos to restore after heredoc ends */
+    uint32_t    hd_resume_line;       /* l->line at hd_resume */
+    uint32_t    hd_resume_line_start; /* l->line_start at hd_resume */
+    uint32_t    hd_body_line;         /* l->line at body start */
+    uint32_t    hd_body_line_start;   /* l->line_start at body start */
+    int         hd_min_indent;        /* chars to strip at BOL (squiggly) */
+    int         hd_at_bol;            /* pending indent-strip at beginning of line */
+
     /* one-token lookahead buffer */
     Token       peeked;
     int         has_peeked;

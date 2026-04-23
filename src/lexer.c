@@ -438,12 +438,240 @@ static Token scan_interp_str_content(Lexer *l) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Heredoc support                                                      */
+/* ------------------------------------------------------------------ */
+
+static int heredoc_min_indent(const char *src, size_t start, size_t end) {
+    int min_ind = -1;
+    size_t i = start;
+    while (i < end) {
+        int indent = 0;
+        while (i < end && (src[i] == ' ' || src[i] == '\t')) { i++; indent++; }
+        if (i < end && src[i] != '\n') {
+            if (min_ind < 0 || indent < min_ind) min_ind = indent;
+        }
+        while (i < end && src[i] != '\n') i++;
+        if (i < end) i++;
+    }
+    return min_ind < 0 ? 0 : min_ind;
+}
+
+/* Called when hd_active && imode_top == LMODE_INTERP_STR.
+   Reads body content from l->src[l->pos..hd_body_end), stripping
+   hd_min_indent leading chars at the start of each line. */
+static Token scan_heredoc_content(Lexer *l) {
+    /* Skip leading indent at beginning of line */
+    if (l->hd_at_bol && l->hd_min_indent > 0) {
+        for (int i = 0; i < l->hd_min_indent && l->pos < l->hd_body_end; i++) {
+            char c = l->src[l->pos];
+            if (c != ' ' && c != '\t') break;
+            advance(l);
+        }
+        l->hd_at_bol = 0;
+    }
+
+    uint32_t sline = l->line;
+    uint32_t scol  = col_of(l, l->pos);
+
+    /* End of body */
+    if (l->pos >= l->hd_body_end) {
+        imode_pop(l);
+        l->hd_active = 0;
+        l->pos        = l->hd_resume;
+        l->line       = l->hd_resume_line;
+        l->line_start = l->hd_resume_line_start;
+        Token t; memset(&t, 0, sizeof(t));
+        t.kind = TOK_INTERP_END; t.line = sline; t.col = scol;
+        return t;
+    }
+
+    /* Interpolation start */
+    if (l->src[l->pos] == '#' &&
+        l->pos + 1 < l->hd_body_end && l->src[l->pos + 1] == '{') {
+        advance(l); advance(l);
+        imode_push(l, LMODE_INTERP_EXPR);
+        Token t; memset(&t, 0, sizeof(t));
+        t.kind = TOK_INTERP_EXPR_BEG; t.line = sline; t.col = scol; t.len = 2;
+        return t;
+    }
+
+    /* Accumulate literal chars */
+    size_t cap  = 64;
+    char  *buf  = arena_alloc(l->arena, cap);
+    size_t blen = 0;
+
+#define HD_PUSH(ch) do { \
+    if (blen + 1 >= cap) { \
+        char *nb = arena_alloc(l->arena, cap * 2); \
+        memcpy(nb, buf, blen); buf = nb; cap *= 2; \
+    } \
+    buf[blen++] = (char)(ch); \
+} while(0)
+
+    while (l->pos < l->hd_body_end) {
+        char c = l->src[l->pos];
+        if (c == '#' && l->pos + 1 < l->hd_body_end && l->src[l->pos + 1] == '{') break;
+        advance(l);
+        if (c == '\\') {
+            if (l->pos >= l->hd_body_end) { HD_PUSH('\\'); break; }
+            char esc = advance(l);
+            switch (esc) {
+                case 'n':  HD_PUSH('\n'); break;
+                case 't':  HD_PUSH('\t'); break;
+                case 'r':  HD_PUSH('\r'); break;
+                case '\\': HD_PUSH('\\'); break;
+                case '#':  HD_PUSH('#');  break;
+                default:   HD_PUSH('\\'); HD_PUSH(esc); break;
+            }
+        } else {
+            HD_PUSH(c);
+            if (c == '\n' && l->hd_min_indent > 0) {
+                l->hd_at_bol = 1;
+                break; /* emit segment; next call handles indent skip */
+            }
+        }
+    }
+    HD_PUSH('\0');
+
+#undef HD_PUSH
+
+    Token t; memset(&t, 0, sizeof(t));
+    t.kind = TOK_INTERP_LIT; t.line = sline; t.col = scol;
+    t.len  = (uint32_t)(blen - 1);
+    t.sval = buf;
+    return t;
+}
+
+static Token scan_heredoc(Lexer *l, size_t start, uint32_t sline, uint32_t scol) {
+    /* `<<` already consumed */
+    int squiggly = 0, interp = 1;
+    char quote = 0;
+
+    if (peek_ch(l) == '~') { squiggly = 1; advance(l); }
+    char nc = peek_ch(l);
+    if      (nc == '"')  { quote = '"';  interp = 1; advance(l); }
+    else if (nc == '\'') { quote = '\''; interp = 0; advance(l); }
+
+    if (!isalpha((unsigned char)peek_ch(l)) && peek_ch(l) != '_') {
+        /* Not a heredoc after all */
+        Token t = make_tok(l, TOK_LSHIFT, start, sline, scol);
+        return t;
+    }
+
+    size_t term_start = l->pos;
+    while (isalnum((unsigned char)peek_ch(l)) || peek_ch(l) == '_') advance(l);
+    size_t      term_len = l->pos - term_start;
+    const char *term     = l->src + term_start;
+
+    if (quote && peek_ch(l) == quote) advance(l);
+
+    /* Consume rest of current line (rest-of-line after <<...IDENT is discarded) */
+    while (!at_end(l) && peek_ch(l) != '\n') advance(l);
+    if (!at_end(l)) advance(l); /* consume the \n */
+
+    /* l->pos is now at the first body line */
+    size_t   body_start      = l->pos;
+    uint32_t body_line       = l->line;
+    uint32_t body_line_start = l->line_start;
+
+    /* Scan forward to locate the terminator line */
+    size_t   body_end   = body_start;
+    size_t   resume_pos = body_start;
+    int      found      = 0;
+
+    while (l->pos < l->len) {
+        size_t line_head = l->pos;
+
+        /* Check for optional leading whitespace before terminator */
+        size_t ws = l->pos;
+        while (l->pos < l->len && (l->src[l->pos] == ' ' || l->src[l->pos] == '\t'))
+            l->pos++;
+        size_t indent = l->pos - ws;
+
+        int is_term = 0;
+        if (l->pos + term_len <= l->len &&
+            memcmp(l->src + l->pos, term, term_len) == 0) {
+            size_t after = l->pos + term_len;
+            if (after >= l->len || l->src[after] == '\n' || l->src[after] == '\r') {
+                if (squiggly || indent == 0) is_term = 1;
+            }
+        }
+
+        if (is_term) {
+            body_end  = line_head;
+            l->pos   += term_len;
+            if (l->pos < l->len && l->src[l->pos] == '\r') l->pos++;
+            if (l->pos < l->len && l->src[l->pos] == '\n') {
+                l->line++; l->line_start = l->pos + 1; l->pos++;
+            }
+            resume_pos = l->pos;
+            found = 1;
+            break;
+        }
+
+        while (l->pos < l->len && l->src[l->pos] != '\n') l->pos++;
+        if (l->pos < l->len) { l->line++; l->line_start = l->pos + 1; l->pos++; }
+    }
+
+    if (!found) { body_end = resume_pos = l->len; }
+
+    if (!interp) {
+        /* Non-interpolating: build the body string directly */
+        const char *raw     = l->src + body_start;
+        size_t      raw_len = body_end - body_start;
+        char *body;
+        if (squiggly && raw_len > 0) {
+            int min_ind = heredoc_min_indent(l->src, body_start, body_end);
+            body = arena_alloc(l->arena, raw_len + 1);
+            size_t blen = 0, i = body_start;
+            while (i < body_end) {
+                int sk = 0;
+                while (sk < min_ind && i < body_end &&
+                       (l->src[i] == ' ' || l->src[i] == '\t')) { i++; sk++; }
+                while (i < body_end && l->src[i] != '\n') body[blen++] = l->src[i++];
+                if (i < body_end) { body[blen++] = '\n'; i++; }
+            }
+            body[blen] = '\0';
+        } else {
+            body = arena_alloc(l->arena, raw_len + 1);
+            memcpy(body, raw, raw_len);
+            body[raw_len] = '\0';
+        }
+        l->pos = resume_pos;
+        /* l->line and l->line_start already reflect resume_pos from the forward scan */
+        Token t = make_tok(l, TOK_STRING, start, sline, scol);
+        t.sval = body;
+        return t;
+    }
+
+    /* Interpolating: configure heredoc body scan state */
+    l->hd_active            = 1;
+    l->hd_body_end          = body_end;
+    l->hd_resume            = resume_pos;
+    l->hd_resume_line       = l->line;
+    l->hd_resume_line_start = l->line_start;
+    l->hd_min_indent        = squiggly ? heredoc_min_indent(l->src, body_start, body_end) : 0;
+    l->hd_at_bol            = (l->hd_min_indent > 0) ? 1 : 0;
+
+    /* Rewind to body start so scan_heredoc_content reads from there */
+    l->pos        = body_start;
+    l->line       = body_line;
+    l->line_start = body_line_start;
+
+    imode_push(l, LMODE_INTERP_STR);
+    Token t = make_tok(l, TOK_INTERP_BEG, start, sline, scol);
+    return t;
+}
+
+/* ------------------------------------------------------------------ */
 /* Main scan                                                            */
 /* ------------------------------------------------------------------ */
 static Token scan(Lexer *l) {
     /* String content mode — don't skip whitespace, it's significant */
-    if (imode_top(l) == LMODE_INTERP_STR)
+    if (imode_top(l) == LMODE_INTERP_STR) {
+        if (l->hd_active) return scan_heredoc_content(l);
         return scan_interp_str_content(l);
+    }
 
     skip_whitespace(l);
 
@@ -545,6 +773,13 @@ static Token scan(Lexer *l) {
         case '<':
             if (peek_ch(l) == '<') {
                 advance(l);
+                {
+                    char hd_nc = peek_ch(l);
+                    if (hd_nc == '~' || hd_nc == '"' || hd_nc == '\'' ||
+                        isalpha((unsigned char)hd_nc) || hd_nc == '_') {
+                        return scan_heredoc(l, start, sline, scol);
+                    }
+                }
                 if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_LSHIFT_EQ); }
                 SIMPLE(TOK_LSHIFT);
             }

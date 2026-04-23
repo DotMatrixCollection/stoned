@@ -183,7 +183,7 @@ A systematic test-probe of all three completed stages revealed the following con
 
 ### Group 4 — Complex / large features
 
-- **Heredocs** (`<<~HEREDOC` / `<<HEREDOC`): not implemented in lexer
+- ~~**Heredocs** (`<<~HEREDOC` / `<<HEREDOC`): not implemented in lexer~~ done (`<<IDENT`, `<<~IDENT`, `<<"IDENT"`, `<<'IDENT'`, `<<~'IDENT'`); rest-of-line after marker not yet supported
 - **Keyword arguments** (`def foo(x:, y: 1)` / `foo(name: val)` / `**opts`): not implemented in parser or runtime — the single largest conformance gap at Stage 1
 
 ## Open problem buckets
@@ -252,6 +252,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - built-in `Comparable` / `Enumerable` plus operator method defs like `def <=>`
 - `Comparable` prelude operators (`<`, `<=`, `>`, `>=`) for custom `<=>` implementations
 - broader `Enumerable` prelude coverage for custom `each`-based classes: `to_a`, `map`, `select`, `reject`, `reduce`, predicates, ordering helpers, grouping, tallying, and related adapters
+- heredoc literals: `<<IDENT`, `<<~IDENT` (squiggly), `<<"IDENT"`, `<<'IDENT'`, `<<~'IDENT'`; squiggly stripping; interpolation via `#{}` using the existing rope path; body scan reads from original source so interpolated expressions have correct positions; rest-of-line after the marker is not supported
 - `alias` statements and `alias_method` for method aliasing, including operator aliases and inherited instance methods; `alias_method` works both inside class bodies (bare call) and as an explicit class-method call
 - `Range`: `..` / `...` literals, `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `min`, `max`, `sum`, `step`, `map`, `select`, `reject`, `reduce`, `any?`/`all?`/`none?`; `Range` includes `Enumerable`; integer and string ranges supported; `String#<=>` added as a dispatch method
 - `case`/`when`: value equality, range membership, class membership (`===`), multi-pattern `when`, optional `else`, caseless form, `then` keyword; `case` is an expression; `Class#===` added
