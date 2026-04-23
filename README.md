@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `107 passed, 0 failed, 107 total`.
+Current coverage in the tree: `114 passed, 0 failed, 114 total`.
 
 What is working today:
 
@@ -54,7 +54,7 @@ What is working today:
 - Operators: arithmetic, comparison, bitwise, string/array `+`, array `<<`, `**`, `<=>`, `&&`, `||`
 - Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return`; `case`/`when` with value equality, range membership, class membership (`===`), multi-pattern clauses, optional `else`, caseless form, `then` keyword; `case` is an expression
 - Exceptions: `raise`, `begin` / `rescue` / `ensure`, typed rescue clauses, typed rescue lists, rescue variable binding, `retry`, re-raise, uncaught backtraces, typed runtime failures including `NameError`, `NoMethodError`, `TypeError`, `SystemStackError`, `EncodingError`, and existing core error classes; exception instances support `new(message)`, `message`, `to_s`, `inspect`, `exception`, `backtrace`, and `set_backtrace`
-- Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls, multiline command-style arg lists after commas, nested command-call comma precedence, `do`/`{}` binding parity for covered nested command-call cases, command-style and parenthesized keyword-hash args, `send`, `__send__`, `public_send`
+- Methods: `def`, default params, splat params, nested destructuring params, blocks, `yield`, closures, bare command-style calls, multiline command-style arg lists after commas, nested command-call comma precedence, space-before-`(` grouped command args, unary-leading command args, delayed `do`/`end` attachment through grouped and collection contexts for covered nested command-call cases, command-style and parenthesized keyword-hash args, `send`, `__send__`, `public_send`
 - Classes: instance methods, `def self.foo`, inheritance, `initialize`, instance variables, `super` with checked arg forwarding, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
 - Visibility: `public`, `private`, `protected`, `private_class_method`/`public_class_method`/`protected_class_method`, `respond_to?` with `include_private`, explicit receiver restrictions, protected same-family receiver calls, `public_send` refusing hidden real methods
 - Modules: `module Foo ... end`, `include`, `prepend`, `extend`, instance method lookup through included and prepended modules, `super` through module ancestors
@@ -77,13 +77,12 @@ What is working today:
 
 Known limitations:
 
-- `puts (expr)` and `p (expr)` parse as `puts(expr)` — the space before `(` does not prevent the parser from treating it as a call paren. `puts(expr).method` chains on the return value of `puts` (nil), not on `expr`. Use a local variable or write `puts expr` without parentheses to avoid this.
 - This is not Ruby-compatible enough for real-world code yet
 - Text is UTF-8-only across source loading and runtime strings; invalid UTF-8 is rejected in source, `require`, `File.read`, and stdin text reads
 - File/IO coverage is path-backed and stream-mode basic; no socket IO, no binary mode, no seek/tell
 - Exceptions work, but they still need broader standard exception coverage and fuller Ruby rescue semantics beyond the current typed clauses, lists, variable binding, and `retry`
 - Proc/lambda semantics exist, but there are still edge cases around control flow and argument handling that are not Ruby-complete
-- Compatibility around edge-case parsing and method semantics is still being tightened, especially for the remaining block-binding and unparenthesized-call corners beyond the covered precedence cases
+- Compatibility around edge-case parsing and method semantics is still being tightened, especially outside the now-covered command-call spacing, unary-arg, grouped-call, and delayed `do`/`end` attachment cases
 - File loading still needs stronger path canonicalization and more Ruby-complete search behavior
 
 ## Architecture

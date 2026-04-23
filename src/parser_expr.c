@@ -7,6 +7,62 @@ typedef struct { int lbp; int rbp; } BP;
 
 static Node *parse_hash_key(Parser *p, int *used_label);
 
+static int token_adjacent(Token left, Token right) {
+    return left.line == right.line && right.col == left.col + left.len;
+}
+
+static Token peek_next_token(Parser *p) {
+    Parser copy = *p;
+    advance(&copy);
+    return peek(&copy);
+}
+
+static int token_can_start_expr(Token t) {
+    switch (t.kind) {
+        case TOK_IDENT:
+        case TOK_CONST:
+        case TOK_IVAR:
+        case TOK_GVAR:
+        case TOK_NIL:
+        case TOK_TRUE:
+        case TOK_FALSE:
+        case TOK_SELF:
+        case TOK_INT:
+        case TOK_FLOAT:
+        case TOK_STRING:
+        case TOK_INTERP_BEG:
+        case TOK_LPAREN:
+        case TOK_LBRACKET:
+        case TOK_LBRACE:
+        case TOK_PLUS:
+        case TOK_MINUS:
+        case TOK_BANG:
+        case TOK_TILDE:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static int unary_prefix_arg(Token prev, Token sign, Token after_sign) {
+    return (sign.kind == TOK_PLUS || sign.kind == TOK_MINUS) &&
+           sign.line == prev.line &&
+           sign.col > prev.col + prev.len &&
+           token_adjacent(sign, after_sign) &&
+           token_can_start_expr(after_sign);
+}
+
+static Node *parse_expr_continue(Parser *p, Node *left, int min_bp);
+
+static Node *attach_pending_do_block(Parser *p, Node *arg, int min_bp) {
+    if (!arg || !check(p, TOK_DO)) return arg;
+    if (arg->kind == NODE_CALL && !arg->call.block) {
+        arg->call.block = parse_block(p);
+        return parse_expr_continue(p, arg, min_bp);
+    }
+    return arg;
+}
+
 static int command_hash_label_node(Node *node) {
     return node && (node->kind == NODE_LVAR || node->kind == NODE_CONST);
 }
@@ -148,10 +204,7 @@ static Node *parse_hash_key(Parser *p, int *used_label) {
     return parse_expr(p, 0);
 }
 
-Node *parse_expr(Parser *p, int min_bp) {
-    Node *left = parse_primary(p);
-    if (!left) return NULL;
-
+static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
     while (1) {
         Token op = peek(p);
 
@@ -265,15 +318,19 @@ Node *parse_expr(Parser *p, int min_bp) {
             Node *call = node_new(p->arena, NODE_CALL, left->span);
             call->call.recv = left;
             call->call.method = method_name;
-            if (check(p, TOK_LPAREN)) {
+            Token nxt = peek(p);
+            if (nxt.kind == TOK_LPAREN && token_adjacent(name_tok, nxt)) {
                 advance(p);
                 call->call.args = parse_args(p);
                 expect(p, TOK_RPAREN, "expected ')'");
             } else {
-                Token nxt = peek(p);
+                int lparen_as_arg = (nxt.kind == TOK_LPAREN &&
+                                     nxt.col > name_tok.col + name_tok.len);
                 int lbracket_as_arg = (nxt.kind == TOK_LBRACKET &&
                                        nxt.col > name_tok.col + name_tok.len);
+                Token sign_arg = peek_next_token(p);
                 int can_be_arg =
+                    lparen_as_arg                  ||
                     lbracket_as_arg                ||
                     nxt.kind == TOK_SYMBOL         ||
                     nxt.kind == TOK_STRING         ||
@@ -289,7 +346,8 @@ Node *parse_expr(Parser *p, int min_bp) {
                     nxt.kind == TOK_CONST          ||
                     nxt.kind == TOK_IDENT          ||
                     nxt.kind == TOK_BANG           ||
-                    nxt.kind == TOK_TILDE;
+                    nxt.kind == TOK_TILDE          ||
+                    unary_prefix_arg(name_tok, nxt, sign_arg);
                 if (can_be_arg && nxt.line == name_tok.line) {
                     call->call.args = parse_command_args(p);
                 }
@@ -321,6 +379,12 @@ Node *parse_expr(Parser *p, int min_bp) {
     return left;
 }
 
+Node *parse_expr(Parser *p, int min_bp) {
+    Node *left = parse_primary(p);
+    if (!left) return NULL;
+    return parse_expr_continue(p, left, min_bp);
+}
+
 NodeList *parse_args(Parser *p) {
     NodeList *args = NULL;
     int saved_allow_commas = p->allow_command_arg_commas;
@@ -340,9 +404,11 @@ NodeList *parse_args(Parser *p) {
             Node *splat = node_new(p->arena, NODE_UNOP, ss);
             splat->unop.op = "*";
             splat->unop.operand = parse_expr(p, 0);
+            splat->unop.operand = attach_pending_do_block(p, splat->unop.operand, 0);
             args = nodelist_append(p->arena, args, splat);
         } else {
             Node *arg = parse_arg_expr(p);
+            arg = attach_pending_do_block(p, arg, 0);
             if (arg) args = nodelist_append(p->arena, args, arg);
         }
         if (!match(p, TOK_COMMA)) break;
@@ -512,7 +578,8 @@ Node *parse_primary(Parser *p) {
         case TOK_CONST: { advance(p); Node *n = node_new(p->arena, NODE_CONST, s); n->sval = t.sval; return n; }
         case TOK_IDENT: {
             advance(p);
-            if (check(p, TOK_LPAREN)) {
+            Token nxt = peek(p);
+            if (nxt.kind == TOK_LPAREN && token_adjacent(t, nxt)) {
                 advance(p);
                 NodeList *args = parse_args(p);
                 expect(p, TOK_RPAREN, "expected ')'");
@@ -528,14 +595,15 @@ Node *parse_primary(Parser *p) {
                 n->call.recv = NULL; n->call.method = t.sval; n->call.args = NULL; n->call.block = parse_block(p);
                 return n;
             }
-            Token nxt = peek(p);
+            int lparen_as_arg = (nxt.kind == TOK_LPAREN && nxt.col > t.col + t.len);
             int lbracket_as_arg = (nxt.kind == TOK_LBRACKET && nxt.col > t.col + t.len);
-            int can_be_arg = lbracket_as_arg || nxt.kind == TOK_SYMBOL || nxt.kind == TOK_STRING ||
+            Token sign_arg = peek_next_token(p);
+            int can_be_arg = lparen_as_arg || lbracket_as_arg || nxt.kind == TOK_SYMBOL || nxt.kind == TOK_STRING ||
                              nxt.kind == TOK_INTERP_BEG || nxt.kind == TOK_INT || nxt.kind == TOK_FLOAT ||
                              nxt.kind == TOK_NIL || nxt.kind == TOK_TRUE || nxt.kind == TOK_FALSE ||
                              nxt.kind == TOK_SELF || nxt.kind == TOK_IVAR || nxt.kind == TOK_GVAR ||
                              nxt.kind == TOK_CONST || nxt.kind == TOK_IDENT || nxt.kind == TOK_BANG ||
-                             nxt.kind == TOK_TILDE;
+                             nxt.kind == TOK_TILDE || unary_prefix_arg(t, nxt, sign_arg);
             if (can_be_arg && nxt.line == t.line) {
                 NodeList *args = parse_command_args(p);
                 Node *block = NULL;
@@ -552,7 +620,8 @@ Node *parse_primary(Parser *p) {
             advance(p);
             Node *n = node_new(p->arena, NODE_CALL, s);
             n->call.recv = NULL; n->call.method = "yield"; n->call.args = NULL; n->call.block = NULL;
-            if (check(p, TOK_LPAREN)) {
+            Token nxt = peek(p);
+            if (nxt.kind == TOK_LPAREN && token_adjacent(t, nxt)) {
                 advance(p);
                 n->call.args = parse_args(p);
                 expect(p, TOK_RPAREN, "expected ')'");
@@ -569,6 +638,7 @@ Node *parse_primary(Parser *p) {
         case TOK_LPAREN: {
             advance(p);
             Node *inner = parse_expr(p, 0);
+            inner = attach_pending_do_block(p, inner, 0);
             expect(p, TOK_RPAREN, "expected ')'");
             return inner;
         }
@@ -650,14 +720,30 @@ Node *parse_primary(Parser *p) {
         case TOK_SUPER: {
             advance(p);
             Node *n = node_new(p->arena, NODE_SUPER, s);
-            if (check(p, TOK_LPAREN)) {
+            Token nxt = peek(p);
+            if (nxt.kind == TOK_LPAREN && token_adjacent(t, nxt)) {
                 advance(p);
                 n->super_call.args = parse_args(p);
                 n->super_call.forward_args = 0;
                 expect(p, TOK_RPAREN, "expected ')'");
             } else {
-                n->super_call.args = NULL;
-                n->super_call.forward_args = 1;
+                int lparen_as_arg = (nxt.kind == TOK_LPAREN && nxt.col > t.col + t.len);
+                int lbracket_as_arg = (nxt.kind == TOK_LBRACKET && nxt.col > t.col + t.len);
+                Token sign_arg = peek_next_token(p);
+                int can_be_arg = lparen_as_arg || lbracket_as_arg || nxt.kind == TOK_SYMBOL ||
+                                 nxt.kind == TOK_STRING || nxt.kind == TOK_INTERP_BEG ||
+                                 nxt.kind == TOK_INT || nxt.kind == TOK_FLOAT || nxt.kind == TOK_NIL ||
+                                 nxt.kind == TOK_TRUE || nxt.kind == TOK_FALSE || nxt.kind == TOK_SELF ||
+                                 nxt.kind == TOK_IVAR || nxt.kind == TOK_GVAR || nxt.kind == TOK_CONST ||
+                                 nxt.kind == TOK_IDENT || nxt.kind == TOK_BANG || nxt.kind == TOK_TILDE ||
+                                 unary_prefix_arg(t, nxt, sign_arg);
+                if (can_be_arg && nxt.line == t.line) {
+                    n->super_call.args = parse_command_args(p);
+                    n->super_call.forward_args = 0;
+                } else {
+                    n->super_call.args = NULL;
+                    n->super_call.forward_args = 1;
+                }
             }
             return n;
         }
