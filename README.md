@@ -46,7 +46,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `120 passed, 0 failed, 120 total`.
+Current coverage in the tree: `122 passed, 0 failed, 122 total`.
 
 What is working today:
 
