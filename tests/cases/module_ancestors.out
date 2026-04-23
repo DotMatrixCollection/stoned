@@ -1,0 +1,13 @@
+["Child", "M1", "Base"]
+M1
+M1>Base
+["Multi", "M2", "M1", "Base"]
+M2
+M2>M1>Base
+["Layered", "Outer", "M3", "Base"]
+Outer>M3>Base
+["Prepended", "WithPrepend", "Base"]
+Pre>WithPrepend
+Factory
+7
+11

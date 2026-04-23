@@ -9,8 +9,30 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (recv.kind != VAL_ARRAY) return 0;
     if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0 || strcmp(name, "count") == 0) { *out = val_int((int64_t)recv.array->len); return 1; }
     if (strcmp(name, "empty?") == 0) { *out = val_bool(recv.array->len == 0); return 1; }
-    if (strcmp(name, "first") == 0) { *out = recv.array->len == 0 ? val_nil() : recv.array->elems[0]; return 1; }
-    if (strcmp(name, "last") == 0) { *out = recv.array->len == 0 ? val_nil() : recv.array->elems[recv.array->len - 1]; return 1; }
+    if (strcmp(name, "first") == 0) {
+        if (argc >= 1 && args[0].kind == VAL_INT) {
+            size_t n = args[0].ival < 0 ? 0 : (size_t)args[0].ival;
+            if (n > recv.array->len) n = recv.array->len;
+            Value r = val_array_new();
+            for (size_t i = 0; i < n; i++) val_array_push(&r, recv.array->elems[i]);
+            *out = r;
+        } else {
+            *out = recv.array->len == 0 ? val_nil() : recv.array->elems[0];
+        }
+        return 1;
+    }
+    if (strcmp(name, "last") == 0) {
+        if (argc >= 1 && args[0].kind == VAL_INT) {
+            size_t n = args[0].ival < 0 ? 0 : (size_t)args[0].ival;
+            if (n > recv.array->len) n = recv.array->len;
+            Value r = val_array_new();
+            for (size_t i = recv.array->len - n; i < recv.array->len; i++) val_array_push(&r, recv.array->elems[i]);
+            *out = r;
+        } else {
+            *out = recv.array->len == 0 ? val_nil() : recv.array->elems[recv.array->len - 1];
+        }
+        return 1;
+    }
     if (strcmp(name, "push") == 0 || strcmp(name, "append") == 0) {
         for (int i = 0; i < argc; i++) val_array_push(&recv, args[i]);
         *out = recv; return 1;
