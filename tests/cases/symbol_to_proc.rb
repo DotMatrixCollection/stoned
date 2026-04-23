@@ -6,6 +6,8 @@ puts [1, 2, 3, 4].inject(&:*)
 puts [:a, :b, :c].map(&:to_s).inspect
 
 f = :upcase.to_proc
+puts f.lambda?
+puts f.arity
 puts f.call("hello")
 puts f.call("world")
 

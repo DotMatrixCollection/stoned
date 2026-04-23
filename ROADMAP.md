@@ -49,7 +49,7 @@ This is the current high-value lane. It determines whether code that parses also
 
 - finish proc-vs-lambda control-flow edge cases beyond the current direct-call and escaped-`&proc` `break`/`return` behavior plus top-level lambda/proc `return`
 - complete the remaining argument coercion and arity edge cases beyond current defaults, optional/splat `arity`, and non-lambda single-array autosplat
-- tighten block/method conversion patterns, especially `&proc` and callable adaptation through helpers and iterators
+- tighten block/method conversion patterns beyond the current `&proc`, iterator forwarding, and lambda-like `Symbol#to_proc` behavior
 
 #### Dispatch / reflection / visibility
 
@@ -203,7 +203,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - built-in `Comparable` / `Enumerable` plus operator method defs like `def <=>`
 - `Range`: `..` / `...` literals, `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `min`, `max`, `sum`, `step`, `map`, `select`, `reject`, `reduce`, `any?`/`all?`/`none?`; `Range` includes `Enumerable`; integer and string ranges supported; `String#<=>` added as a dispatch method
 - `case`/`when`: value equality, range membership, class membership (`===`), multi-pattern `when`, optional `else`, caseless form, `then` keyword; `case` is an expression; `Class#===` added
-- `Symbol#to_proc`, `&:symbol` and `&proc` block-pass in calls, `*arr` splat args in calls, `proc {}` kernel method, `block_given?`, `Object#itself`; arithmetic/comparison operators (`+`, `-`, `*`, `/`, `%`, `**`, `<`, `<=`, `>`, `>=`, `<=>`, `<<`, `>>`, `&`, `|`, `^`) now dispatchable as methods; operator symbols (`:+`, `:-`, etc.) now valid symbol literals
+- `Symbol#to_proc`, lambda-like `Symbol#to_proc#lambda?`, `&:symbol` and `&proc` block-pass in calls, `*arr` splat args in calls, `proc {}` kernel method, `block_given?`, `Object#itself`; arithmetic/comparison operators (`+`, `-`, `*`, `/`, `%`, `**`, `<`, `<=`, `>`, `>=`, `<=>`, `<<`, `>>`, `&`, `|`, `^`) now dispatchable as methods; operator symbols (`:+`, `:-`, etc.) now valid symbol literals
 - regression test suite wired into `make test`
 - evaluator split into smaller files
 - parser split into expression/statement files

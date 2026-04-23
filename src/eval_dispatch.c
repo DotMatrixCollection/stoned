@@ -903,7 +903,7 @@ static Value make_symbol_proc(Eval *ev, const char *method_name) {
     Node *block_node = node_new(a, NODE_BLOCK, s);
     block_node->block.params = params;
     block_node->block.body = body;
-    return val_proc(block_node, ev->top_env);
+    return val_lambda(block_node, ev->top_env);
 }
 
 Value eval_call(Eval *ev, Env *env, Node *node) {
