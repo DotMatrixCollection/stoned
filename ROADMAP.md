@@ -94,7 +94,9 @@ This is where “Ruby-like language core” becomes “usable Ruby runtime”.
 
 #### Strings and regex
 
-- add regex-backed `match`, `=~`, and regex forms of `sub` / `gsub` / `scan`
+- ~~**basic `Regexp` / `MatchData`**: `Regexp.new`, `match`, `=~`, and core `MatchData` methods (`to_s`, `[]`, `begin`, `end`, `pre_match`, `post_match`) now work via reginold~~ done
+- add regexp literals `/.../`
+- add regex-backed forms of `sub`, `gsub`, and `scan`
 - improve current Unicode handling beyond simple codepoint behavior where MRI semantics matter
 - decide how, or whether, binary-string behavior should coexist with the current UTF-8-only model
 
@@ -277,5 +279,6 @@ These were previously roadmap items and are now implemented in the current tree:
 - String non-regex completeness: `chomp`, `chop`, `lstrip`, `rstrip`, `capitalize`, `swapcase`, `ljust`, `rjust`, `center`, `ord`, `hex`, `oct`, `bytes`, `<<`, `index`, `rindex`, `[]`/`slice`, `lines`, `each_line`, `tr` (with range expansion), `count`, `delete`, `squeeze`, `scan`, `sub`, `gsub` (string and block forms), `inspect`
 - Inline method-level `rescue` / `ensure` without explicit `begin..end`; multiple rescue clauses at method level
 - `freeze`, `frozen?`, `dup`, `clone`, `FrozenError`; `frozen?` always true for Integer/Symbol/nil/bool; `FrozenError < RuntimeError`; ivar assignment raises `FrozenError` on frozen objects; `dup` on Hash/Array now makes independent copies
+- basic `Regexp` / `MatchData`: `Regexp.new(pattern)`, `Regexp#match`, `String#match`, `=~` (both orders), `MatchData#to_s`/`[]`/`begin`/`end`/`pre_match`/`post_match`, `Regexp#source`/`#inspect`, `RegexpError` on compile failure; backed by reginold (Onigmo via a stable opaque C API, no Ruby VM dependency)
 - `StopIteration` (subclass of `StandardError`); `loop{}` catches `StopIteration` silently and returns nil; `break value` inside `loop{}` returns that value
 - `val_equal` extended to handle `VAL_CLASS` (pointer identity) and `VAL_OBJECT` (pointer identity), enabling `ancestors.include?(SomeClass)` and similar checks to work correctly
