@@ -35,6 +35,12 @@ puts full(1, y: 20, z: 30)
 # **hash at call site merges into kwargs
 opts = {port: 9000}
 puts connect(**opts, host: "local")
+puts connect(host: "local", **opts)
+
+# Merge order follows call order: later keyword sources win
+host_opts = {host: "remote"}
+puts connect(**host_opts, host: "local")
+puts connect(host: "local", **host_opts)
 
 # nil is a valid keyword value (not treated as missing)
 begin
@@ -47,6 +53,13 @@ end
 # Missing required keyword raises ArgumentError
 begin
   greet()
+rescue ArgumentError => e
+  puts e.message
+end
+
+# Unknown keywords are rejected unless **opts is present
+begin
+  connect(host: "example.com", scheme: "https")
 rescue ArgumentError => e
   puts e.message
 end

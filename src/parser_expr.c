@@ -158,8 +158,6 @@ static Node *command_hash_label_key(Parser *p, Node *node) {
 static Node *parse_command_hash(Parser *p, Node *first_key_node) {
     Node *n = node_new(p->arena, NODE_HASH, first_key_node->span);
     NodeList *pairs = NULL;
-    int saved_allow_commas = p->allow_command_arg_commas;
-    p->allow_command_arg_commas = 0;
 
     Node *key = command_hash_label_key(p, first_key_node);
     expect(p, TOK_COLON, "expected ':' in hash literal");
@@ -171,22 +169,8 @@ static Node *parse_command_hash(Parser *p, Node *first_key_node) {
         pairs = nodelist_append(p->arena, pairs, pair);
     }
 
-    while (match(p, TOK_COMMA)) {
-        Node *next_key_node = parse_expr(p, 0);
-        if (!command_hash_label_node(next_key_node) || !check(p, TOK_COLON))
-            break;
-        Node *next_key = command_hash_label_key(p, next_key_node);
-        advance(p);
-        Node *next_val = parse_expr(p, 0);
-        if (!next_val) break;
-        Node *pair = node_new(p->arena, NODE_PAIR, next_key->span);
-        pair->pair.key = next_key;
-        pair->pair.value = next_val;
-        pairs = nodelist_append(p->arena, pairs, pair);
-    }
-
-    p->allow_command_arg_commas = saved_allow_commas;
     n->hash.pairs = pairs;
+    n->hash.keyword_style = 1;
     return n;
 }
 

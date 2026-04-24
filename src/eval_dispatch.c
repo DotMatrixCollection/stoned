@@ -365,8 +365,8 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     /* When the method declares keyword params, the trailing hash arg is kwargs,
        not a positional argument — don't count it against the positional arity. */
     int effective_argc = argc;
-    if (has_kwarg_params(params) && argc > 0 && args[argc - 1].kind == VAL_HASH)
-        effective_argc = argc - 1;
+    Value kwargs = extract_kwargs(ev, params, args, &effective_argc);
+    (void)kwargs;
     if ((effective_argc < required) || (!has_splat && effective_argc > total))
         return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
 
@@ -1208,6 +1208,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
     Value args[64];
     int argc = 0;
     Node *block_pass_node = NULL;
+    Value kwargs = val_nil();
     for (NodeList *l = node->call.args; l && argc < 64; l = l->next) {
         if (!l->node) continue;
         if (l->node->kind == NODE_BLOCK_PASS) { block_pass_node = l->node; continue; }
@@ -1222,18 +1223,25 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             }
             continue;
         }
+        if (l->node->kind == NODE_HASH && l->node->hash.keyword_style) {
+            Value khash = eval_node(ev, env, l->node);
+            CHECK(khash);
+            if (khash.kind == VAL_HASH) {
+                if (kwargs.kind != VAL_HASH) kwargs = val_hash_new(ev->arena);
+                for (size_t i = 0; i < khash.hash->len; i++)
+                    val_hash_set(kwargs.hash, khash.hash->keys[i], khash.hash->vals[i]);
+            } else {
+                args[argc++] = khash;
+            }
+            continue;
+        }
         if (l->node->kind == NODE_UNOP && strcmp(l->node->unop.op, "**") == 0) {
             Value dsplat = eval_node(ev, env, l->node->unop.operand);
             CHECK(dsplat);
-            /* Merge into trailing hash arg or append as new hash arg */
-            if (dsplat.kind == VAL_HASH && argc > 0 && args[argc - 1].kind == VAL_HASH) {
-                Value merged = val_hash_new(ev->arena);
-                RubyHash *dst = merged.hash;
-                RubyHash *a = args[argc - 1].hash;
-                RubyHash *b = dsplat.hash;
-                if (a) for (size_t i = 0; i < a->len; i++) val_hash_set(dst, a->keys[i], a->vals[i]);
-                if (b) for (size_t i = 0; i < b->len; i++) val_hash_set(dst, b->keys[i], b->vals[i]);
-                args[argc - 1] = merged;
+            if (dsplat.kind == VAL_HASH) {
+                if (kwargs.kind != VAL_HASH) kwargs = val_hash_new(ev->arena);
+                for (size_t i = 0; i < dsplat.hash->len; i++)
+                    val_hash_set(kwargs.hash, dsplat.hash->keys[i], dsplat.hash->vals[i]);
             } else if (argc < 64) {
                 args[argc++] = dsplat;
             }
@@ -1243,6 +1251,8 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         CHECK(a);
         args[argc++] = a;
     }
+    if (kwargs.kind == VAL_HASH && argc < 64)
+        args[argc++] = kwargs;
 
     Value blk_val;
     Value *blk = NULL;

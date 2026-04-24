@@ -223,6 +223,7 @@ struct Node {
         /* NODE_HASH */
         struct {
             NodeList *pairs;   /* list of NODE_PAIR */
+            int       keyword_style; /* 1 for call-site label kwargs like foo(a: 1) */
         } hash;
 
         /* NODE_PAIR */
