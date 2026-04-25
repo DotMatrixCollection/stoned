@@ -2,6 +2,7 @@
 
 #include "reginold.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 struct Regex {
@@ -60,6 +61,20 @@ const char *regex_source(const Regex *regex) {
     return regex && regex->source ? regex->source : "";
 }
 
+static void fill_captures(RegexMatch *out, const reginold_match *m) {
+    out->capture_count = m->capture_count;
+    out->cap_beg = NULL;
+    out->cap_end = NULL;
+    if (m->capture_count == 0 || !m->captures) return;
+    out->cap_beg = malloc(m->capture_count * sizeof(long));
+    out->cap_end = malloc(m->capture_count * sizeof(long));
+    if (!out->cap_beg || !out->cap_end) { free(out->cap_beg); free(out->cap_end); out->cap_beg = out->cap_end = NULL; return; }
+    for (size_t i = 0; i < m->capture_count; i++) {
+        out->cap_beg[i] = m->captures[i].beg;
+        out->cap_end[i] = m->captures[i].end;
+    }
+}
+
 RegexStatus regex_search(const Regex *regex, const char *bytes, size_t len, size_t start, RegexMatch *out) {
     reginold_match match = {{0, 0}, 0, NULL};
     reginold_status status;
@@ -70,6 +85,7 @@ RegexStatus regex_search(const Regex *regex, const char *bytes, size_t len, size
     if (status == REGINOLD_OK) {
         out->beg = match.overall.beg;
         out->end = match.overall.end;
+        fill_captures(out, &match);
         reginold_match_free(&match);
         return REGEX_OK;
     }
@@ -87,6 +103,7 @@ RegexStatus regex_match_at(const Regex *regex, const char *bytes, size_t len, si
     if (status == REGINOLD_OK) {
         out->beg = match.overall.beg;
         out->end = match.overall.end;
+        fill_captures(out, &match);
         reginold_match_free(&match);
         return REGEX_OK;
     }
@@ -94,6 +111,10 @@ RegexStatus regex_match_at(const Regex *regex, const char *bytes, size_t len, si
     return status == REGINOLD_MISMATCH ? REGEX_MISMATCH : REGEX_ERROR;
 }
 
-void regex_match_free(RegexMatch *match) {
-    (void)match;
+void regex_match_free(RegexMatch *m) {
+    if (!m) return;
+    free(m->cap_beg);
+    free(m->cap_end);
+    m->cap_beg = NULL;
+    m->cap_end = NULL;
 }

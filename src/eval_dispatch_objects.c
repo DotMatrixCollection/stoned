@@ -41,7 +41,7 @@ static Value build_match_data(Eval *ev, Value regexp, Value string, RegexMatch m
 
 Value regexp_search_value(Eval *ev, Value regexp, Value string, int return_index, Node *site) {
     Regex *compiled;
-    RegexMatch match;
+    RegexMatch match = {0, 0, 0, NULL, NULL};
     Value source;
     RegexError err = {0};
     RegexStatus status;
@@ -66,9 +66,9 @@ Value regexp_search_value(Eval *ev, Value regexp, Value string, int return_index
         return val_nil();
     if (status != REGEX_OK)
         return eval_raise_class(ev, site, "RuntimeError", "regexp search failed");
-    if (return_index)
-        return val_int(match.beg);
-    return build_match_data(ev, regexp, string, match);
+    Value result = return_index ? val_int(match.beg) : build_match_data(ev, regexp, string, match);
+    regex_match_free(&match);
+    return result;
 }
 
 int sym_in_array(Value *arr, const char *sym_name) {

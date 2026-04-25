@@ -997,6 +997,66 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "scan") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#scan requires an argument"); return 1; }
+        if (value_is_regexp(args[0])) {
+            Regex *compiled = args[0].obj->native;
+            if (!compiled) {
+                Value src;
+                RegexError rerr = {0};
+                if (!val_object_get_ivar(args[0], "source", &src) || src.kind != VAL_STRING) {
+                    *out = eval_raise_class(ev, site, "RuntimeError", "invalid Regexp object");
+                    return 1;
+                }
+                if (regex_compile(ev->arena, src.sval, 0, &compiled, &rerr) != REGEX_OK) {
+                    *out = eval_raise_class(ev, site, "RegexpError", "%s",
+                                           rerr.message[0] ? rerr.message : "regexp compile failed");
+                    return 1;
+                }
+                args[0].obj->native = compiled;
+            }
+            size_t slen = strlen(s);
+            Value arr = val_array_new();
+            size_t pos = 0;
+            while (pos <= slen) {
+                RegexMatch m = {0, 0, 0, NULL, NULL};
+                if (regex_search(compiled, s, slen, pos, &m) != REGEX_OK) break;
+                size_t mlen = (size_t)(m.end - m.beg);
+                size_t ncaps = m.capture_count;
+                if (ncaps > 0) {
+                    if (blk) {
+                        Value *blk_args = arena_alloc(ev->arena, ncaps * sizeof(Value));
+                        for (size_t i = 0; i < ncaps; i++)
+                            blk_args[i] = (m.cap_beg && m.cap_beg[i] >= 0)
+                                ? val_string_n(ev->arena, s + (size_t)m.cap_beg[i], (size_t)(m.cap_end[i] - m.cap_beg[i]))
+                                : val_nil();
+                        regex_match_free(&m);
+                        Value r = call_block(ev, env, *blk, blk_args, (int)ncaps, site);
+                        if (ev->errored) { *out = val_nil(); return 1; }
+                        if (flow_signal_out(r, out)) return 1;
+                    } else {
+                        Value cap_arr = val_array_new();
+                        for (size_t i = 0; i < ncaps; i++)
+                            val_array_push(&cap_arr, (m.cap_beg && m.cap_beg[i] >= 0)
+                                ? val_string_n(ev->arena, s + (size_t)m.cap_beg[i], (size_t)(m.cap_end[i] - m.cap_beg[i]))
+                                : val_nil());
+                        regex_match_free(&m);
+                        val_array_push(&arr, cap_arr);
+                    }
+                } else {
+                    Value matched = val_string_n(ev->arena, s + (size_t)m.beg, mlen);
+                    regex_match_free(&m);
+                    if (blk) {
+                        Value r = call_block(ev, env, *blk, &matched, 1, site);
+                        if (ev->errored) { *out = val_nil(); return 1; }
+                        if (flow_signal_out(r, out)) return 1;
+                    } else {
+                        val_array_push(&arr, matched);
+                    }
+                }
+                pos = mlen == 0 ? pos + 1 : (size_t)m.end;
+            }
+            *out = blk ? recv : arr;
+            return 1;
+        }
         const char *needle = val_to_s(ev->arena, args[0]);
         size_t nlen = strlen(needle);
         Value arr = val_array_new();
@@ -1062,7 +1122,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             size_t pos = 0;
             int replaced = 0;
             while (pos <= slen) {
-                RegexMatch m;
+                RegexMatch m = {0, 0, 0, NULL, NULL};
                 if (!global && replaced) {
                     size_t rem = slen - pos;
                     while (used + rem + 1 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }
@@ -1078,20 +1138,22 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     break;
                 }
                 size_t pre = (size_t)m.beg - pos;
-                while (used + pre + 1 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }
+                while (used + pre + 1 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); regex_match_free(&m); *out = val_nil(); return 1; } buf = nb; }
                 memcpy(buf + used, s + pos, pre);
                 used += pre;
                 size_t mlen = (size_t)(m.end - m.beg);
                 const char *repl;
                 if (blk) {
                     Value matched = val_string_n(ev->arena, s + (size_t)m.beg, mlen);
+                    regex_match_free(&m);
                     Value r = call_block(ev, env, *blk, &matched, 1, site);
                     if (ev->errored) { free(buf); *out = val_nil(); return 1; }
                     if (val_is_signal(r)) { free(buf); *out = r; return 1; }
                     repl = val_to_s(ev->arena, r);
                 } else {
-                    if (argc < 2) { free(buf); *out = eval_raise_class(ev, site, "ArgumentError", "String#%s requires a replacement or block", name); return 1; }
+                    if (argc < 2) { free(buf); regex_match_free(&m); *out = eval_raise_class(ev, site, "ArgumentError", "String#%s requires a replacement or block", name); return 1; }
                     repl = val_to_s(ev->arena, args[1]);
+                    regex_match_free(&m);
                 }
                 size_t rlen = strlen(repl);
                 while (used + rlen + 1 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }

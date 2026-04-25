@@ -27,8 +27,11 @@ typedef struct {
 } RegexError;
 
 typedef struct {
-    long beg;
-    long end;
+    long    beg;
+    long    end;
+    size_t  capture_count;
+    long   *cap_beg;  /* malloc'd; [i] = start of group i+1; -1 if unmatched */
+    long   *cap_end;  /* malloc'd; [i] = end   of group i+1; -1 if unmatched */
 } RegexMatch;
 
 RegexStatus regex_compile(Arena *arena, const char *pattern, unsigned int options, Regex **out, RegexError *err);
