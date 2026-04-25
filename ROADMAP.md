@@ -95,7 +95,7 @@ This is where “Ruby-like language core” becomes “usable Ruby runtime”.
 #### Strings and regex
 
 - ~~**basic `Regexp` / `MatchData`**: `Regexp.new`, `match`, `=~`, and core `MatchData` methods (`to_s`, `[]`, `begin`, `end`, `pre_match`, `post_match`) now work via reginold~~ done
-- add regexp literals `/.../`
+- ~~add regexp literals `/.../`~~ done (with `i`/`m`/`x` flags; `case/when` dispatch fixed too)
 - ~~add regex-backed forms of `sub`, `gsub`, and `scan`~~ done
 - improve current Unicode handling beyond simple codepoint behavior where MRI semantics matter
 - decide how, or whether, binary-string behavior should coexist with the current UTF-8-only model

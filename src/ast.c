@@ -61,6 +61,7 @@ const char *node_kind_name(NodeKind k) {
         case NODE_SUPER:     return "SUPER";
         case NODE_BLOCK_PASS: return "BLOCK_PASS";
         case NODE_DEFINED:   return "DEFINED";
+        case NODE_REGEXP:    return "REGEXP";
         case NODE_ROPE:      return "ROPE";
         case NODE_BODY:      return "BODY";
         case NODE_PROGRAM:   return "PROGRAM";

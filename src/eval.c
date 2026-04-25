@@ -233,6 +233,23 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         case NODE_STRING: return val_string(ev->arena, node->sval);
         case NODE_SYMBOL: return val_symbol(node->sval);
 
+        case NODE_REGEXP: {
+            Value regexp_class;
+            Regex *compiled = NULL;
+            RegexError err = {0};
+            if (!env_get(ev->top_env, "Regexp", &regexp_class) || regexp_class.kind != VAL_CLASS)
+                return eval_raise_class(ev, node, "NameError", "uninitialized constant Regexp");
+            if (regex_compile(ev->arena, node->regexp_lit.pattern,
+                              node->regexp_lit.options, &compiled, &err) != REGEX_OK)
+                return eval_raise_class(ev, node, "RegexpError", "%s",
+                                       err.message[0] ? err.message : "regexp compile failed");
+            Value obj = val_object(ev->arena, regexp_class);
+            obj.obj->native = compiled;
+            val_object_set_ivar(ev->arena, obj, "source",
+                                val_string(ev->arena, node->regexp_lit.pattern));
+            return obj;
+        }
+
         case NODE_ROPE: {
             const char *s = eval_rope(ev, env, node->interp.rope);
             if (ev->errored) return val_nil();

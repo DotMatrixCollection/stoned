@@ -81,6 +81,9 @@ typedef enum {
     NODE_BLOCK_PASS,
     NODE_DEFINED,
 
+    /* Regexp literal */
+    NODE_REGEXP,
+
     /* Interpolated string (rope) */
     NODE_ROPE,
 
@@ -267,6 +270,12 @@ struct Node {
         struct {
             Node *expr;
         } defined_expr;
+
+        /* NODE_REGEXP */
+        struct {
+            const char  *pattern;
+            unsigned int options;
+        } regexp_lit;
 
         /* NODE_ROPE */
         struct {

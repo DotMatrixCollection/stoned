@@ -230,7 +230,7 @@ static void resolve(Sema *s, Node *node) {
 
         /* ---- Leaves that need no resolution ---- */
         case NODE_INT: case NODE_FLOAT: case NODE_STRING:
-        case NODE_SYMBOL: case NODE_NIL: case NODE_TRUE:
+        case NODE_REGEXP: case NODE_SYMBOL: case NODE_NIL: case NODE_TRUE:
         case NODE_FALSE: case NODE_SELF:
         case NODE_IVAR: case NODE_CVAR: case NODE_GVAR: case NODE_CONST:
             break;

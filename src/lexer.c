@@ -664,6 +664,64 @@ static Token scan_heredoc(Lexer *l, size_t start, uint32_t sline, uint32_t scol)
 }
 
 /* ------------------------------------------------------------------ */
+/* Regexp literal scanner                                               */
+/* ------------------------------------------------------------------ */
+static Token scan_regexp(Lexer *l, size_t start, uint32_t sline, uint32_t scol) {
+    /* opening '/' already consumed */
+    size_t cap = 64;
+    char *buf = arena_alloc(l->arena, cap);
+    size_t blen = 0;
+    int in_class = 0;
+
+#define RBUF_PUSH(ch) do { \
+    if (blen + 1 >= cap) { \
+        char *nb = arena_alloc(l->arena, cap * 2); \
+        memcpy(nb, buf, blen); buf = nb; cap *= 2; \
+    } \
+    buf[blen++] = (ch); \
+} while(0)
+
+    while (!at_end(l)) {
+        char c = peek_ch(l);
+        if (c == '\\') {
+            advance(l); RBUF_PUSH('\\');
+            if (!at_end(l)) RBUF_PUSH(advance(l));
+            continue;
+        }
+        if (c == '[' && !in_class) { in_class = 1; advance(l); RBUF_PUSH('['); continue; }
+        if (c == ']' && in_class)  { in_class = 0; advance(l); RBUF_PUSH(']'); continue; }
+        if (c == '/' && !in_class) break;
+        if (c == '\n') break;
+        RBUF_PUSH(advance(l));
+    }
+    RBUF_PUSH('\0');
+
+    if (at_end(l) || peek_ch(l) != '/') {
+        Token t = make_tok(l, TOK_ERROR, start, sline, scol);
+        t.sval = "unterminated regexp literal";
+        return t;
+    }
+    advance(l); /* consume closing '/' */
+
+    /* flags: i=ignorecase(1), m=multiline(2), x=extended(4) */
+    int64_t flags = 0;
+    while (!at_end(l)) {
+        char f = peek_ch(l);
+        if      (f == 'i') { flags |= 1; advance(l); }
+        else if (f == 'm') { flags |= 2; advance(l); }
+        else if (f == 'x') { flags |= 4; advance(l); }
+        else if (isalpha((unsigned char)f)) { advance(l); } /* skip unknown */
+        else break;
+    }
+
+    Token t = make_tok(l, TOK_REGEXP, start, sline, scol);
+    t.sval = buf;
+    t.ival = flags;
+    return t;
+#undef RBUF_PUSH
+}
+
+/* ------------------------------------------------------------------ */
 /* Main scan                                                            */
 /* ------------------------------------------------------------------ */
 static Token scan(Lexer *l) {
@@ -750,6 +808,8 @@ static Token scan(Lexer *l) {
 
         case '/':
             if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_SLASH_EQ); }
+            if (l->state == LEX_EXPR_BEG || l->state == LEX_EXPR_MID)
+                return scan_regexp(l, start, sline, scol);
             SIMPLE(TOK_SLASH);
 
         case '&':
@@ -902,11 +962,31 @@ void lexer_init(Lexer *l, const char *src, size_t len, Arena *arena) {
 }
 
 Token lexer_next(Lexer *l) {
+    Token t;
     if (l->has_peeked) {
         l->has_peeked = 0;
-        return l->peeked;
+        t = l->peeked;
+    } else {
+        t = scan(l);
     }
-    return scan(l);
+    /* Track expr state so '/' disambiguation works on the next token. */
+    switch (t.kind) {
+        case TOK_IDENT: case TOK_CONST:
+        case TOK_IVAR:  case TOK_CVAR:  case TOK_GVAR:
+        case TOK_INT:   case TOK_FLOAT:
+        case TOK_STRING: case TOK_SYMBOL:
+        case TOK_WORDS:  case TOK_SYMBOLS: case TOK_REGEXP:
+        case TOK_INTERP_END:
+        case TOK_NIL:  case TOK_TRUE:  case TOK_FALSE:  case TOK_SELF:
+        case TOK_RPAREN: case TOK_RBRACKET: case TOK_RBRACE:
+        case TOK_RETRY:
+            l->state = LEX_EXPR_END;
+            break;
+        default:
+            l->state = LEX_EXPR_BEG;
+            break;
+    }
+    return t;
 }
 
 Token lexer_peek(Lexer *l) {
@@ -928,6 +1008,7 @@ const char *token_kind_name(TokenKind k) {
         case TOK_STRING:          return "STRING";
         case TOK_SYMBOL:          return "SYMBOL";
         case TOK_HEREDOC:         return "HEREDOC";
+        case TOK_REGEXP:          return "REGEXP";
         case TOK_INTERP_BEG:      return "INTERP_BEG";
         case TOK_INTERP_LIT:      return "INTERP_LIT";
         case TOK_INTERP_EXPR_BEG: return "INTERP_EXPR_BEG";

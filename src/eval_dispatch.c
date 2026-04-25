@@ -905,6 +905,9 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             Value m; RubyClass *owner;
             if (ruby_class_find_instance_method(recv.obj->klass.klass, "===", &m, &owner))
                 return call_method_value(ev, env, recv, m, owner, "===", args, argc, blk, site);
+            Value disp_out;
+            if (dispatch_object(ev, env, recv, "===", args, argc, blk, site, &disp_out, public_only, explicit_receiver))
+                return disp_out;
         }
         return val_bool(val_equal(recv, args[0]));
     }

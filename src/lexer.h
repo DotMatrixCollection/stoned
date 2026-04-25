@@ -13,6 +13,7 @@ typedef enum {
     TOK_WORDS,          /* %w[...] */
     TOK_SYMBOLS,        /* %i[...] */
     TOK_HEREDOC,
+    TOK_REGEXP,          /* /pattern/flags */
 
     /* Interpolated string tokens */
     TOK_INTERP_BEG,     /* opening " */
