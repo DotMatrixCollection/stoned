@@ -253,7 +253,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "each_char", "reverse", "next", "succ", "replace", "inspect", "chomp", "chop",
         "lstrip", "rstrip", "capitalize", "swapcase", "ljust", "rjust", "center", "ord",
         "hex", "oct", "bytes", "<<", "index", "rindex", "[]", "slice", "lines",
-        "each_line", "tr", "count", "delete", "squeeze", "scan", "sub", "gsub", "*", NULL
+        "each_line", "tr", "count", "delete", "squeeze", "scan", "sub", "gsub", "match", "=~", "*", NULL
     };
     static const char *arr_methods[] = {
         "length", "size", "count", "empty?", "first", "last", "push", "append", "pop",

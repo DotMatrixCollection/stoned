@@ -1016,9 +1016,105 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = blk ? recv : arr;
         return 1;
     }
+    if (strcmp(name, "match") == 0) {
+        if (argc < 1) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "String#match requires an argument");
+            return 1;
+        }
+        if (value_is_regexp(args[0])) {
+            *out = regexp_search_value(ev, args[0], recv, 0, site);
+            return 1;
+        }
+    }
+    if (strcmp(name, "=~") == 0) {
+        if (argc < 1) {
+            *out = val_nil();
+            return 1;
+        }
+        if (value_is_regexp(args[0])) {
+            *out = regexp_search_value(ev, args[0], recv, 1, site);
+            return 1;
+        }
+    }
     if (strcmp(name, "sub") == 0 || strcmp(name, "gsub") == 0) {
         int global = strcmp(name, "gsub") == 0;
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#%s requires an argument", name); return 1; }
+        if (value_is_regexp(args[0])) {
+            Regex *compiled = args[0].obj->native;
+            if (!compiled) {
+                Value src;
+                RegexError rerr = {0};
+                if (!val_object_get_ivar(args[0], "source", &src) || src.kind != VAL_STRING) {
+                    *out = eval_raise_class(ev, site, "RuntimeError", "invalid Regexp object");
+                    return 1;
+                }
+                if (regex_compile(ev->arena, src.sval, 0, &compiled, &rerr) != REGEX_OK) {
+                    *out = eval_raise_class(ev, site, "RegexpError", "%s",
+                                           rerr.message[0] ? rerr.message : "regexp compile failed");
+                    return 1;
+                }
+                args[0].obj->native = compiled;
+            }
+            size_t slen = strlen(s);
+            size_t cap = slen * 2 + 64, used = 0;
+            char *buf = malloc(cap);
+            if (!buf) { *out = eval_raise_class(ev, site, "RuntimeError", "out of memory"); return 1; }
+            size_t pos = 0;
+            int replaced = 0;
+            while (pos <= slen) {
+                RegexMatch m;
+                if (!global && replaced) {
+                    size_t rem = slen - pos;
+                    while (used + rem + 1 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }
+                    memcpy(buf + used, s + pos, rem);
+                    used += rem;
+                    break;
+                }
+                if (regex_search(compiled, s, slen, pos, &m) != REGEX_OK) {
+                    size_t rem = slen - pos;
+                    while (used + rem + 1 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }
+                    memcpy(buf + used, s + pos, rem);
+                    used += rem;
+                    break;
+                }
+                size_t pre = (size_t)m.beg - pos;
+                while (used + pre + 1 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }
+                memcpy(buf + used, s + pos, pre);
+                used += pre;
+                size_t mlen = (size_t)(m.end - m.beg);
+                const char *repl;
+                if (blk) {
+                    Value matched = val_string_n(ev->arena, s + (size_t)m.beg, mlen);
+                    Value r = call_block(ev, env, *blk, &matched, 1, site);
+                    if (ev->errored) { free(buf); *out = val_nil(); return 1; }
+                    if (val_is_signal(r)) { free(buf); *out = r; return 1; }
+                    repl = val_to_s(ev->arena, r);
+                } else {
+                    if (argc < 2) { free(buf); *out = eval_raise_class(ev, site, "ArgumentError", "String#%s requires a replacement or block", name); return 1; }
+                    repl = val_to_s(ev->arena, args[1]);
+                }
+                size_t rlen = strlen(repl);
+                while (used + rlen + 1 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }
+                memcpy(buf + used, repl, rlen);
+                used += rlen;
+                replaced = 1;
+                if (mlen == 0) {
+                    if (pos < slen) {
+                        while (used + 2 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }
+                        buf[used++] = s[pos];
+                    }
+                    pos++;
+                } else {
+                    pos = (size_t)m.end;
+                }
+            }
+            buf[used] = '\0';
+            char *result = arena_alloc(ev->arena, used + 1);
+            memcpy(result, buf, used + 1);
+            free(buf);
+            *out = val_string(ev->arena, result);
+            return 1;
+        }
         const char *needle = val_to_s(ev->arena, args[0]);
         size_t nlen = strlen(needle);
         size_t slen = strlen(s);

@@ -2,6 +2,7 @@
 #define STONED_EVAL_INTERNAL_H
 
 #include "eval.h"
+#include "regex.h"
 #include "rope.h"
 
 Value eval_error(Eval *ev, Node *n, const char *fmt, ...);
@@ -80,6 +81,8 @@ void collect_own_instance_methods(Env *class_env, Value *arr, int vis_mask);
 void collect_all_instance_methods(RubyClass *klass, Value *arr, int vis_mask,
                                   RubyClass **visited, int *nv);
 Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name);
+int value_is_regexp(Value v);
+Value regexp_search_value(Eval *ev, Value regexp, Value string, int return_index, Node *site);
 
 static inline int flow_signal_out(Value v, Value *out) {
     if (v.kind == VAL_BREAK) {

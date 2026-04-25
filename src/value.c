@@ -20,6 +20,7 @@ Value val_object(Arena *a, Value klass) {
     obj->klass = klass;
     obj->ivars = NULL;
     obj->singleton_env = NULL;
+    obj->native = NULL;
     Value v; v.kind = VAL_OBJECT; v.obj = obj;
     return v;
 }

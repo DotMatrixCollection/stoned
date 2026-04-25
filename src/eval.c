@@ -706,9 +706,9 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         "Object", "BasicObject", "Numeric",
         "Integer", "Float", "String", "Symbol",
         "Array", "Hash", "Range", "NilClass", "TrueClass", "FalseClass", "IO", "File",
-        "Class", "Module", "Method", "UnboundMethod", "Proc", "Comparable", "Enumerable",
+        "Class", "Module", "Method", "UnboundMethod", "Proc", "Regexp", "MatchData", "Comparable", "Enumerable",
         "Exception", "StandardError", "RuntimeError",
-        "ArgumentError", "TypeError", "NameError", "NoMethodError",
+        "ArgumentError", "TypeError", "NameError", "NoMethodError", "RegexpError",
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError", "StopIteration",
         "SystemStackError", "IOError", "EncodingError", "FrozenError",
         NULL
@@ -721,7 +721,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         env_define(arena, ev->top_env, builtins[i], klass);
     }
 
-    Value exception, standard_error, runtime_error, argument_error, type_error, name_error, no_method_error;
+    Value exception, standard_error, runtime_error, argument_error, type_error, name_error, no_method_error, regexp_error;
     Value zero_division_error, local_jump_error, key_error, load_error, stop_iteration, system_stack_error, io_error, encoding_error, frozen_error;
     if (env_get(ev->top_env, "Exception", &exception) && exception.kind == VAL_CLASS &&
         env_get(ev->top_env, "StandardError", &standard_error) && standard_error.kind == VAL_CLASS &&
@@ -730,6 +730,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         env_get(ev->top_env, "TypeError", &type_error) && type_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "NameError", &name_error) && name_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "NoMethodError", &no_method_error) && no_method_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "RegexpError", &regexp_error) && regexp_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "ZeroDivisionError", &zero_division_error) && zero_division_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "LocalJumpError", &local_jump_error) && local_jump_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "KeyError", &key_error) && key_error.kind == VAL_CLASS &&
@@ -745,6 +746,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         type_error.klass->superclass = standard_error;
         name_error.klass->superclass = standard_error;
         no_method_error.klass->superclass = standard_error;
+        regexp_error.klass->superclass = standard_error;
         zero_division_error.klass->superclass = standard_error;
         local_jump_error.klass->superclass = standard_error;
         key_error.klass->superclass = standard_error;

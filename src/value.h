@@ -111,6 +111,7 @@ typedef struct RubyObject {
     Value       klass;       /* VAL_CLASS: the object's class */
     IVarEntry  *ivars;       /* Instance variables */
     struct Env *singleton_env; /* Methods added via extend */
+    void       *native;      /* optional native payload */
     int         frozen;      /* 1 after freeze */
 } RubyObject;
 
