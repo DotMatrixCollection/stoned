@@ -554,6 +554,52 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "split") == 0) {
+        int64_t limit = (argc >= 2 && args[1].kind == VAL_INT) ? args[1].ival : 0;
+        if (argc >= 1 && value_is_regexp(args[0])) {
+            Regex *compiled = args[0].obj->native;
+            if (!compiled) {
+                Value src; RegexError rerr = {0};
+                if (!val_object_get_ivar(args[0], "source", &src) || src.kind != VAL_STRING) {
+                    *out = eval_raise_class(ev, site, "RuntimeError", "invalid Regexp object"); return 1;
+                }
+                if (regex_compile(ev->arena, src.sval, 0, &compiled, &rerr) != REGEX_OK) {
+                    *out = eval_raise_class(ev, site, "RegexpError", "%s", rerr.message[0] ? rerr.message : "regexp compile failed"); return 1;
+                }
+                args[0].obj->native = compiled;
+            }
+            size_t slen = strlen(s);
+            Value arr = val_array_new();
+            size_t pos = 0;
+            int64_t count = 0;
+            while (pos <= slen) {
+                if (limit > 0 && count >= limit - 1) break;
+                RegexMatch m = {0, 0, 0, NULL, NULL};
+                if (regex_search(compiled, s, slen, pos, &m) != REGEX_OK) break;
+                size_t mlen = (size_t)(m.end - m.beg);
+                if (mlen == 0 && (long)pos == m.beg) { regex_match_free(&m); if (pos < slen) pos++; else break; continue; }
+                val_array_push(&arr, val_string_n(ev->arena, s + pos, (size_t)(m.beg - pos)));
+                count++;
+                for (size_t i = 0; i < m.capture_count; i++) {
+                    long gb = m.cap_beg ? m.cap_beg[i] : -1;
+                    long ge = m.cap_end ? m.cap_end[i] : -1;
+                    val_array_push(&arr, (gb < 0) ? val_nil()
+                                                  : val_string_n(ev->arena, s + (size_t)gb, (size_t)(ge - gb)));
+                }
+                pos = (size_t)m.end;
+                regex_match_free(&m);
+            }
+            val_array_push(&arr, val_string_n(ev->arena, s + pos, slen - pos));
+            if (limit == 0) {
+                while (arr.array->len > 0) {
+                    Value last = arr.array->elems[arr.array->len - 1];
+                    if (last.kind == VAL_STRING && last.sval && last.sval[0] == '\0')
+                        arr.array->len--;
+                    else break;
+                }
+            }
+            *out = arr;
+            return 1;
+        }
         Value arr = val_array_new();
         const char *sep = argc > 0 ? val_to_s(ev->arena, args[0]) : " ";
         size_t seplen = strlen(sep);
@@ -567,9 +613,12 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             }
         } else {
             const char *p = s, *found;
+            int64_t count = 0;
             while ((found = strstr(p, sep)) != NULL) {
+                if (limit > 0 && count >= limit - 1) break;
                 val_array_push(&arr, val_string_n(ev->arena, p, (size_t)(found - p)));
                 p = found + seplen;
+                count++;
             }
             val_array_push(&arr, val_string(ev->arena, p));
         }
@@ -1082,9 +1131,31 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (value_is_regexp(args[0])) {
-            *out = regexp_search_value(ev, args[0], recv, 0, site);
+            Value md = regexp_search_value(ev, args[0], recv, 0, site);
+            if (ev->errored) { *out = md; return 1; }
+            if (blk && md.kind != VAL_NIL) {
+                Value r = call_block(ev, env, *blk, &md, 1, site);
+                if (ev->errored || val_is_signal(r)) { *out = r; return 1; }
+                *out = r;
+                return 1;
+            }
+            *out = md;
             return 1;
         }
+    }
+    if (strcmp(name, "match?") == 0) {
+        if (argc < 1) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "String#match? requires an argument");
+            return 1;
+        }
+        if (value_is_regexp(args[0])) {
+            Value md = regexp_search_value(ev, args[0], recv, 0, site);
+            if (ev->errored) { *out = md; return 1; }
+            *out = val_bool(md.kind != VAL_NIL);
+            return 1;
+        }
+        *out = val_bool(strstr(s, val_to_s(ev->arena, args[0])) != NULL);
+        return 1;
     }
     if (strcmp(name, "=~") == 0) {
         if (argc < 1) {

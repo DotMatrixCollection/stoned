@@ -2,6 +2,15 @@
 
 #include <string.h>
 
+static void mark_assign_targets_stmt(Parser *p, Node *target) {
+    if (!target) return;
+    if (target->kind == NODE_LVAR)
+        lexer_mark_local(&p->lexer, target->sval);
+    else if (target->kind == NODE_ARRAY)
+        for (NodeList *el = target->array.elements; el; el = el->next)
+            mark_assign_targets_stmt(p, el->node);
+}
+
 static Node *parse_expr_list(Parser *p, Node *first, int elem_min_bp, int assignment_target);
 
 static const char *method_name_from_token(Parser *p, Token tok) {
@@ -61,6 +70,7 @@ static Node *wrap_rescue_ensure(Parser *p, Span s, Node *body) {
                 return NULL;
             }
             rc->rescue_clause.exception_var = var_tok.sval;
+            lexer_mark_local(&p->lexer, var_tok.sval);
         }
         skip_terminators(p);
         rc->rescue_clause.body = parse_body(p, 0);
@@ -234,6 +244,9 @@ Node *parse_stmt(Parser *p) {
 
         if (match(p, TOK_LPAREN)) {
             n->def.params = parse_params(p);
+            for (NodeList *pl = n->def.params; pl; pl = pl->next)
+                if (pl->node && pl->node->kind == NODE_PARAM && pl->node->param.name)
+                    lexer_mark_local(&p->lexer, pl->node->param.name);
             expect(p, TOK_RPAREN, "expected ')'");
         }
 
@@ -391,6 +404,7 @@ Node *parse_stmt(Parser *p) {
         Node *n = node_new(p->arena, NODE_ASSIGN, s);
         n->assign.target = lhs;
         n->assign.value = rhs;
+        mark_assign_targets_stmt(p, lhs);
         return n;
     }
 
@@ -409,6 +423,7 @@ Node *parse_stmt(Parser *p) {
         Node *n = node_new(p->arena, NODE_ASSIGN, s);
         n->assign.target = lhs;
         n->assign.value = rhs;
+        mark_assign_targets_stmt(p, lhs);
         return n;
     }
 

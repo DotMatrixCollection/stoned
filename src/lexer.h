@@ -157,6 +157,11 @@ typedef enum {
     LMODE_INTERP_EXPR,  /* inside #{...} — scanning expression */
 } LexMode;
 
+typedef struct LexLocalVar {
+    const char *name;
+    struct LexLocalVar *next;
+} LexLocalVar;
+
 typedef struct {
     const char *src;
     size_t      len;
@@ -185,12 +190,17 @@ typedef struct {
     /* one-token lookahead buffer */
     Token       peeked;
     int         has_peeked;
+
+    /* local-variable table for '/' disambiguation */
+    LexLocalVar *local_vars;
+    int          had_space;   /* set by skip_whitespace; used by '/' scanner */
 } Lexer;
 
 void  lexer_init(Lexer *l, const char *src, size_t len, Arena *arena);
 Token lexer_next(Lexer *l);
 Token lexer_peek(Lexer *l);
 void  lexer_consume(Lexer *l);
+void  lexer_mark_local(Lexer *l, const char *name);
 
 const char *token_kind_name(TokenKind k);
 

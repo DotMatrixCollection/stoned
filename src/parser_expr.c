@@ -3,6 +3,21 @@
 
 #include <string.h>
 
+static void mark_assign_targets(Parser *p, Node *target) {
+    if (!target) return;
+    if (target->kind == NODE_LVAR)
+        lexer_mark_local(&p->lexer, target->sval);
+    else if (target->kind == NODE_ARRAY)
+        for (NodeList *el = target->array.elements; el; el = el->next)
+            mark_assign_targets(p, el->node);
+}
+
+static void mark_params_locals(Parser *p, NodeList *params) {
+    for (NodeList *pl = params; pl; pl = pl->next)
+        if (pl->node && pl->node->kind == NODE_PARAM && pl->node->param.name)
+            lexer_mark_local(&p->lexer, pl->node->param.name);
+}
+
 typedef struct { int lbp; int rbp; } BP;
 
 static Node *parse_hash_key(Parser *p, int *used_label);
@@ -343,6 +358,7 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
             Node *n = node_new(p->arena, NODE_ASSIGN, left->span);
             n->assign.target = left;
             n->assign.value = right;
+            mark_assign_targets(p, left);
             left = n;
             continue;
         }
@@ -513,6 +529,7 @@ Node *parse_block(Parser *p) {
         int saved_stop_at_param_pipe = p->stop_at_param_pipe;
         p->stop_at_param_pipe = 1;
         n->block.params = parse_params(p);
+        mark_params_locals(p, n->block.params);
         p->stop_at_param_pipe = saved_stop_at_param_pipe;
         expect(p, TOK_PIPE, "expected '|' to close block params");
     }

@@ -247,6 +247,8 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             obj.obj->native = compiled;
             val_object_set_ivar(ev->arena, obj, "source",
                                 val_string(ev->arena, node->regexp_lit.pattern));
+            val_object_set_ivar(ev->arena, obj, "__options__",
+                                val_int((int64_t)node->regexp_lit.options));
             return obj;
         }
 

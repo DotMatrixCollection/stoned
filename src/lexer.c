@@ -81,12 +81,29 @@ static uint32_t col_of(Lexer *l, size_t pos) {
 static void skip_whitespace(Lexer *l) {
     while (!at_end(l)) {
         char c = peek_ch(l);
-        if (c == ' ' || c == '\t' || c == '\r') { advance(l); }
+        if (c == ' ' || c == '\t' || c == '\r') { advance(l); l->had_space = 1; }
         else if (c == '#') {
             while (!at_end(l) && peek_ch(l) != '\n') advance(l);
+            l->had_space = 1;
         }
         else break;
     }
+}
+
+static int is_local_var(Lexer *l, const char *name) {
+    for (LexLocalVar *e = l->local_vars; e; e = e->next)
+        if (strcmp(e->name, name) == 0) return 1;
+    return 0;
+}
+
+void lexer_mark_local(Lexer *l, const char *name) {
+    if (!name) return;
+    for (LexLocalVar *e = l->local_vars; e; e = e->next)
+        if (strcmp(e->name, name) == 0) return;
+    LexLocalVar *entry = arena_alloc(l->arena, sizeof(*entry));
+    entry->name = name;
+    entry->next = l->local_vars;
+    l->local_vars = entry;
 }
 
 static const char *intern(Lexer *l, const char *start, size_t len) {
@@ -731,6 +748,7 @@ static Token scan(Lexer *l) {
         return scan_interp_str_content(l);
     }
 
+    l->had_space = 0;
     skip_whitespace(l);
 
     if (at_end(l)) {
@@ -808,7 +826,8 @@ static Token scan(Lexer *l) {
 
         case '/':
             if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_SLASH_EQ); }
-            if (l->state == LEX_EXPR_BEG || l->state == LEX_EXPR_MID)
+            if (l->state == LEX_EXPR_BEG || l->state == LEX_EXPR_MID ||
+                (l->state == LEX_EXPR_ARG && l->had_space))
                 return scan_regexp(l, start, sline, scol);
             SIMPLE(TOK_SLASH);
 
@@ -971,7 +990,11 @@ Token lexer_next(Lexer *l) {
     }
     /* Track expr state so '/' disambiguation works on the next token. */
     switch (t.kind) {
-        case TOK_IDENT: case TOK_CONST:
+        case TOK_IDENT:
+            /* Known local var → value expression; unknown → might be method call */
+            l->state = is_local_var(l, t.sval) ? LEX_EXPR_END : LEX_EXPR_ARG;
+            break;
+        case TOK_CONST:
         case TOK_IVAR:  case TOK_CVAR:  case TOK_GVAR:
         case TOK_INT:   case TOK_FLOAT:
         case TOK_STRING: case TOK_SYMBOL:
