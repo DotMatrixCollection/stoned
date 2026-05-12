@@ -1237,6 +1237,34 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = sync;
             return 1;
         }
+        if (strcmp(name, "flush") == 0) {
+            NativeFile *nf = NULL;
+            if (!ensure_open_native_file(ev, recv, site, &nf)) {
+                *out = invalid_file_object(ev, site);
+                return 1;
+            }
+            fflush(nf->fp);
+            *out = recv;
+            return 1;
+        }
+        if (strcmp(name, "fileno") == 0) {
+            NativeFile *nf = NULL;
+            if (!ensure_open_native_file(ev, recv, site, &nf)) {
+                *out = invalid_file_object(ev, site);
+                return 1;
+            }
+            *out = val_int(fileno(nf->fp));
+            return 1;
+        }
+        if (strcmp(name, "isatty") == 0 || strcmp(name, "tty?") == 0) {
+            NativeFile *nf = NULL;
+            if (!ensure_open_native_file(ev, recv, site, &nf)) {
+                *out = invalid_file_object(ev, site);
+                return 1;
+            }
+            *out = val_bool(isatty(fileno(nf->fp)));
+            return 1;
+        }
         if (strcmp(name, "close") == 0) {
             Value closed_result = file_close_stream(ev, recv, site);
             val_object_set_ivar(ev->arena, recv, "closed", val_true());
