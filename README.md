@@ -1,5 +1,11 @@
 # stoned
 
+## ELI5 Summary
+
+This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
+
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, the README says `151` tests are passing, and recent work added deeper regexp behavior, but it is still honest about not being Ruby-complete yet.
+
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
 ## Building
