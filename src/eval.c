@@ -782,9 +782,19 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     if (env_get(ev->top_env, "IO", &io_class) && io_class.kind == VAL_CLASS) {
         static const char *fds[] = { "stdout", "stderr", "stdin", NULL };
         static const char *consts[] = { "STDOUT", "STDERR", "STDIN", NULL };
+        static FILE *streams[] = { NULL, NULL, NULL };
+        streams[0] = stdout;
+        streams[1] = stderr;
+        streams[2] = stdin;
+        static int fd_nums[] = { 1, 2, 0 };
+        static const char *modes[] = { "w", "w", "r" };
         for (int i = 0; fds[i]; i++) {
             Value obj = val_object(arena, io_class);
             val_object_set_ivar(arena, obj, "__fd__", val_string(arena, fds[i]));
+            val_object_set_ivar(arena, obj, "__fd_num__", val_int(fd_nums[i]));
+            val_object_set_ivar(arena, obj, "mode", val_string(arena, modes[i]));
+            val_object_set_ivar(arena, obj, "closed", val_false());
+            obj.obj->native = alloc_native_file(arena, streams[i], 0);
             global_set(arena, &ev->globals, fds[i], obj);
             env_define(arena, ev->top_env, consts[i], obj);
         }

@@ -4,6 +4,19 @@
 #include "eval.h"
 #include "regex.h"
 #include "rope.h"
+#include <stdio.h>
+
+typedef struct {
+    FILE *fp;
+    int   owns_fp;
+} NativeFile;
+
+static inline NativeFile *alloc_native_file(Arena *a, FILE *fp, int owns_fp) {
+    NativeFile *nf = arena_alloc(a, sizeof(NativeFile));
+    nf->fp = fp;
+    nf->owns_fp = owns_fp;
+    return nf;
+}
 
 Value eval_error(Eval *ev, Node *n, const char *fmt, ...);
 Value eval_raise(Eval *ev, Node *n, const char *fmt, ...);

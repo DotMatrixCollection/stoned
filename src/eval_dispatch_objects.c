@@ -1,15 +1,12 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "eval_internal.h"
 #include "utf8.h"
 
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-typedef struct {
-    FILE *fp;
-    int   owns_fp;
-} NativeFile;
+#include <unistd.h>
 
 static const char *file_fopen_mode(const char *mode) {
     if (strcmp(mode, "r") == 0) return "rb";
@@ -52,9 +49,7 @@ static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node
     if (!fp)
         return eval_raise_class(ev, site, "LoadError", "cannot open file -- %s", path);
 
-    NativeFile *nf = arena_alloc(ev->arena, sizeof(NativeFile));
-    nf->fp = fp;
-    nf->owns_fp = 1;
+    NativeFile *nf = alloc_native_file(ev->arena, fp, 1);
 
     Value wrapper = val_nil();
     wrapper.kind = VAL_OBJECT;
@@ -71,6 +66,29 @@ static Value file_close_stream(Eval *ev, Value recv, Node *site) {
     }
     nf->fp = NULL;
     return val_nil();
+}
+
+static Value io_open_fd(Eval *ev, int64_t fd_num, const char *mode, Node *site) {
+    const char *fmode = file_fopen_mode(mode);
+    if (!fmode)
+        return eval_raise_class(ev, site, "ArgumentError", "unsupported IO.new mode -- %s", mode);
+    if (fd_num < 0)
+        return eval_raise_class(ev, site, "ArgumentError", "invalid file descriptor -- %lld", (long long)fd_num);
+
+    int dup_fd = dup((int)fd_num);
+    if (dup_fd < 0)
+        return eval_raise_class(ev, site, "IOError", "cannot dup file descriptor -- %lld", (long long)fd_num);
+
+    FILE *fp = fdopen(dup_fd, fmode);
+    if (!fp) {
+        close(dup_fd);
+        return eval_raise_class(ev, site, "IOError", "cannot open file descriptor -- %lld", (long long)fd_num);
+    }
+
+    Value wrapper = val_nil();
+    wrapper.kind = VAL_OBJECT;
+    wrapper.obj = (RubyObject *)alloc_native_file(ev->arena, fp, 1);
+    return wrapper;
 }
 
 static Value file_read_stream(Eval *ev, Value recv, const char *mode, Node *site) {
@@ -326,7 +344,32 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = val_bool(val_is_a(args[0], recv));
         return 1;
     }
-        if (strcmp(recv.klass->name, "File") == 0) {
+    if (strcmp(name, "new") == 0 && strcmp(recv.klass->name, "IO") == 0) {
+        if (argc < 1 || argc > 2) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        } else if (args[0].kind != VAL_INT) {
+            *out = eval_raise_class(ev, site, "TypeError", "IO.new file descriptor must be an Integer");
+        } else {
+            Value mode = argc >= 2 ? args[1] : val_string(ev->arena, "r");
+            if (mode.kind != VAL_STRING) {
+                *out = eval_raise_class(ev, site, "TypeError", "IO.new mode must be a String");
+                return 1;
+            }
+            Value opened = io_open_fd(ev, args[0].ival, mode.sval, site);
+            if (val_is_signal(opened)) {
+                *out = opened;
+                return 1;
+            }
+            Value io_obj = val_object(ev->arena, recv);
+            val_object_set_ivar(ev->arena, io_obj, "__fd_num__", args[0]);
+            val_object_set_ivar(ev->arena, io_obj, "mode", mode);
+            val_object_set_ivar(ev->arena, io_obj, "closed", val_false());
+            io_obj.obj->native = opened.obj;
+            *out = io_obj;
+        }
+        return 1;
+    }
+    if (strcmp(recv.klass->name, "File") == 0) {
         if (strcmp(name, "read") == 0) {
             if (argc < 1) {
                 *out = eval_raise_class(ev, site, "ArgumentError", "File.read requires a path");
@@ -916,15 +959,40 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
 
     if (recv.obj->klass.kind == VAL_CLASS && strcmp(recv.obj->klass.klass->name, "IO") == 0) {
-        Value fd_val;
-        if (!val_object_get_ivar(recv, "__fd__", &fd_val) || fd_val.kind != VAL_STRING) {
+        Value mode = val_string(ev->arena, "r");
+        Value closed;
+        Value fd_num_val = val_int(-1);
+        if (strcmp(name, "close") == 0) {
+            Value closed_result = file_close_stream(ev, recv, site);
+            val_object_set_ivar(ev->arena, recv, "closed", val_true());
+            *out = closed_result;
+            return 1;
+        }
+        if (strcmp(name, "closed?") == 0) {
+            if (val_object_get_ivar(recv, "closed", &closed)) *out = closed;
+            else *out = val_false();
+            return 1;
+        }
+        if (val_object_get_ivar(recv, "closed", &closed) && val_truthy(closed) &&
+            strcmp(name, "closed?") != 0 && strcmp(name, "close") != 0) {
+            *out = closed_file_error(ev, site);
+            return 1;
+        }
+        if (val_object_get_ivar(recv, "mode", &mode) && mode.kind != VAL_STRING) {
             *out = eval_raise_class(ev, site, "IOError", "invalid IO object");
             return 1;
         }
-        int is_stdin = strcmp(fd_val.sval, "stdin") == 0;
-        FILE *stream = is_stdin ? stdin
-                     : strcmp(fd_val.sval, "stderr") == 0 ? stderr
-                     : ev->out;
+        NativeFile *nf = NULL;
+        if (!ensure_open_native_file(ev, recv, site, &nf)) {
+            *out = eval_raise_class(ev, site, "IOError", "invalid IO object");
+            return 1;
+        }
+        FILE *stream = nf->fp;
+        if (val_object_get_ivar(recv, "__fd_num__", &fd_num_val) && fd_num_val.kind != VAL_INT) {
+            *out = eval_raise_class(ev, site, "IOError", "invalid IO object");
+            return 1;
+        }
+        int64_t fd_num = fd_num_val.kind == VAL_INT ? fd_num_val.ival : -1;
 
         if (strcmp(name, "puts") == 0) {
             if (argc == 0) {
@@ -978,45 +1046,45 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "fileno") == 0) {
-            *out = val_int(is_stdin ? 0 : strcmp(fd_val.sval, "stderr") == 0 ? 2 : 1);
+            if (fd_num >= 0) *out = val_int(fd_num);
+            else *out = val_int(fileno(stream));
             return 1;
         }
         if (strcmp(name, "isatty") == 0 || strcmp(name, "tty?") == 0) {
             *out = val_false();
             return 1;
         }
-        if (is_stdin && strcmp(name, "gets") == 0) {
+        if (strcmp(name, "gets") == 0) {
             char buf[4096];
-            if (!fgets(buf, sizeof(buf), stdin)) {
+            if (!fgets(buf, sizeof(buf), stream)) {
                 *out = val_nil();
                 return 1;
             }
             if (!utf8_validate(buf, strlen(buf), NULL)) {
-                *out = eval_raise_encoding_error(ev, site, "$stdin.gets");
+                *out = eval_raise_encoding_error(ev, site, "IO#gets");
                 return 1;
             }
             *out = val_string(ev->arena, buf);
             return 1;
         }
-        if (is_stdin && strcmp(name, "read") == 0) {
-            size_t cap = 65536, len = 0;
-            char *buf = arena_alloc(ev->arena, cap);
-            int c;
-            while ((c = fgetc(stdin)) != EOF) {
-                if (len + 2 >= cap) {
-                    char *nb = arena_alloc(ev->arena, cap * 2);
-                    memcpy(nb, buf, len);
-                    buf = nb;
-                    cap *= 2;
-                }
-                buf[len++] = (char)c;
-            }
-            buf[len] = '\0';
-            if (!utf8_validate(buf, len, NULL)) {
-                *out = eval_raise_encoding_error(ev, site, "$stdin.read");
+        if (strcmp(name, "read") == 0) {
+            *out = file_read_stream(ev, recv, mode.sval, site);
+            return 1;
+        }
+        if (strcmp(name, "tell") == 0) {
+            *out = file_tell_stream(ev, recv, site);
+            return 1;
+        }
+        if (strcmp(name, "seek") == 0) {
+            *out = file_seek_stream(ev, recv, args, argc, site);
+            return 1;
+        }
+        if (strcmp(name, "rewind") == 0) {
+            if (argc != 0) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
                 return 1;
             }
-            *out = val_string(ev->arena, buf);
+            *out = file_rewind_stream(ev, recv, site);
             return 1;
         }
         return 0;
