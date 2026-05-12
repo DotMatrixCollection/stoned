@@ -20,11 +20,11 @@ static NativeFile *native_file(Value recv) {
 }
 
 static Value invalid_file_object(Eval *ev, Node *site) {
-    return eval_raise_class(ev, site, "LoadError", "invalid File object");
+    return eval_raise_class(ev, site, "IOError", "invalid File object");
 }
 
 static Value closed_file_error(Eval *ev, Node *site) {
-    return eval_raise_class(ev, site, "LoadError", "closed file");
+    return eval_raise_class(ev, site, "IOError", "closed stream");
 }
 
 static int ensure_open_native_file(Eval *ev __attribute__((unused)),
@@ -47,7 +47,7 @@ static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node
 
     FILE *fp = fopen(path, fmode);
     if (!fp)
-        return eval_raise_class(ev, site, "LoadError", "cannot open file -- %s", path);
+        return eval_raise_class(ev, site, "Errno::ENOENT", "No such file or directory - %s", path);
 
     NativeFile *nf = alloc_native_file(ev->arena, fp, 1);
 
@@ -93,7 +93,7 @@ static Value io_open_fd(Eval *ev, int64_t fd_num, const char *mode, Node *site) 
 
 static Value file_read_stream(Eval *ev, Value recv, const char *mode, const char *context, Node *site) {
     if (strcmp(mode, "w") == 0 || strcmp(mode, "a") == 0)
-        return eval_raise_class(ev, site, "LoadError", "not opened for reading");
+        return eval_raise_class(ev, site, "IOError", "not opened for reading");
 
     NativeFile *nf = NULL;
     if (!ensure_open_native_file(ev, recv, site, &nf))
@@ -139,7 +139,7 @@ static Value file_read_stream(Eval *ev, Value recv, const char *mode, const char
 
 static Value file_write_stream(Eval *ev, Value recv, const char *mode, const char *content, size_t len, Node *site) {
     if (strcmp(mode, "r") == 0)
-        return eval_raise_class(ev, site, "LoadError", "not opened for writing");
+        return eval_raise_class(ev, site, "IOError", "not opened for writing");
 
     NativeFile *nf = NULL;
     if (!ensure_open_native_file(ev, recv, site, &nf))
@@ -343,6 +343,13 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         if (argc < 1) { *out = val_false(); return 1; }
         *out = val_bool(val_is_a(args[0], recv));
         return 1;
+    }
+    if (recv.klass->is_module && recv.klass->class_env) {
+        Value const_val;
+        if (env_get(recv.klass->class_env, name, &const_val) && const_val.kind == VAL_CLASS) {
+            *out = const_val;
+            return 1;
+        }
     }
     if (strcmp(name, "new") == 0 && strcmp(recv.klass->name, "IO") == 0) {
         if (argc < 1 || argc > 2) {
@@ -996,7 +1003,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
 
         if (strcmp(name, "puts") == 0) {
             if (strcmp(mode.sval, "r") == 0) {
-                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
+                *out = eval_raise_class(ev, site, "IOError", "not opened for writing");
                 return 1;
             }
             if (argc == 0) {
@@ -1016,7 +1023,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "print") == 0) {
             if (strcmp(mode.sval, "r") == 0) {
-                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
+                *out = eval_raise_class(ev, site, "IOError", "not opened for writing");
                 return 1;
             }
             for (int i = 0; i < argc; i++)
@@ -1034,7 +1041,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "<<") == 0) {
             if (strcmp(mode.sval, "r") == 0) {
-                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
+                *out = eval_raise_class(ev, site, "IOError", "not opened for writing");
                 return 1;
             }
             if (argc >= 1)
@@ -1066,7 +1073,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "gets") == 0) {
             if (strcmp(mode.sval, "w") == 0 || strcmp(mode.sval, "a") == 0) {
-                *out = eval_raise_class(ev, site, "LoadError", "not opened for reading");
+                *out = eval_raise_class(ev, site, "IOError", "not opened for reading");
                 return 1;
             }
             char buf[4096];

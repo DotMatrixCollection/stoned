@@ -1,7 +1,7 @@
 
 true
 
-LoadError
-closed file
-LoadError
-closed file
+IOError
+closed stream
+IOError
+closed stream

@@ -1,2 +1,2 @@
-LoadError
-cannot delete file -- /tmp/stoned_io_missing_delete.txt
+Errno::ENOENT
+No such file or directory - /tmp/stoned_io_missing_delete.txt

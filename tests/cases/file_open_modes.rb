@@ -21,6 +21,6 @@ f.close
 
 begin
   f.read
-rescue LoadError => e
+rescue IOError => e
   puts e.message
 end

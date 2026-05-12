@@ -729,7 +729,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NameError", "NoMethodError", "RegexpError",
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError", "StopIteration",
-        "SystemStackError", "IOError", "EncodingError", "FrozenError",
+        "SystemStackError", "IOError", "EncodingError", "FrozenError", "SystemCallError",
         NULL
     };
     for (int i = 0; builtins[i]; i++) {
@@ -741,7 +741,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     }
 
     Value exception, standard_error, runtime_error, argument_error, type_error, name_error, no_method_error, regexp_error;
-    Value zero_division_error, local_jump_error, key_error, load_error, stop_iteration, system_stack_error, io_error, encoding_error, frozen_error;
+    Value zero_division_error, local_jump_error, key_error, load_error, stop_iteration, system_stack_error, io_error, encoding_error, frozen_error, system_call_error;
     if (env_get(ev->top_env, "Exception", &exception) && exception.kind == VAL_CLASS &&
         env_get(ev->top_env, "StandardError", &standard_error) && standard_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "RuntimeError", &runtime_error) && runtime_error.kind == VAL_CLASS &&
@@ -758,7 +758,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         env_get(ev->top_env, "SystemStackError", &system_stack_error) && system_stack_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "IOError", &io_error) && io_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "EncodingError", &encoding_error) && encoding_error.kind == VAL_CLASS &&
-        env_get(ev->top_env, "FrozenError", &frozen_error) && frozen_error.kind == VAL_CLASS) {
+        env_get(ev->top_env, "FrozenError", &frozen_error) && frozen_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "SystemCallError", &system_call_error) && system_call_error.kind == VAL_CLASS) {
         standard_error.klass->superclass = exception;
         runtime_error.klass->superclass = standard_error;
         argument_error.klass->superclass = standard_error;
@@ -776,6 +777,26 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         encoding_error.klass->superclass = standard_error;
         frozen_error.klass->superclass = runtime_error;
         no_method_error.klass->superclass = name_error;
+        system_call_error.klass->superclass = standard_error;
+    }
+
+    {
+        Value scerr;
+        if (env_get(ev->top_env, "SystemCallError", &scerr) && scerr.kind == VAL_CLASS) {
+            Value errno_mod = val_class(arena, "Errno", val_nil());
+            errno_mod.klass->is_module = 1;
+            errno_mod.klass->class_env = env_new(arena, ev->top_env, 1);
+            env_define(arena, ev->top_env, "Errno", errno_mod);
+
+            static const char *short_names[] = { "ENOENT", "EACCES", "EEXIST", "EBADF", "EPERM", NULL };
+            static const char *full_names[]  = { "Errno::ENOENT", "Errno::EACCES", "Errno::EEXIST", "Errno::EBADF", "Errno::EPERM", NULL };
+            for (int i = 0; short_names[i]; i++) {
+                Value ec = val_class(arena, full_names[i], scerr);
+                ec.klass->class_env = env_new(arena, ev->top_env, 1);
+                env_define(arena, ev->top_env, full_names[i], ec);
+                env_define(arena, errno_mod.klass->class_env, short_names[i], ec);
+            }
+        }
     }
 
     Value io_class;

@@ -1,2 +1,2 @@
-LoadError
-cannot read file -- /tmp/stoned_io_missing.txt
+Errno::ENOENT
+No such file or directory - /tmp/stoned_io_missing.txt

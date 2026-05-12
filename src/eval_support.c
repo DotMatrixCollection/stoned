@@ -1180,7 +1180,7 @@ Value eval_file_read(Eval *ev, const char *path, Node *site) {
     size_t len = 0;
     char *src = read_file_bytes(path, &len);
     if (!src)
-        return eval_raise_class(ev, site, "LoadError", "cannot read file -- %s", path);
+        return eval_raise_class(ev, site, "Errno::ENOENT", "No such file or directory - %s", path);
     if (!utf8_validate(src, len, NULL)) {
         free(src);
         return eval_raise_encoding_error(ev, site, "File.read");
@@ -1194,14 +1194,14 @@ Value eval_file_read(Eval *ev, const char *path, Node *site) {
 Value eval_file_write(Eval *ev, const char *path, const char *content, Node *site) {
     size_t len = strlen(content);
     if (!write_file_bytes(path, content, len))
-        return eval_raise_class(ev, site, "LoadError", "cannot write file -- %s", path);
+        return eval_raise_class(ev, site, "Errno::ENOENT", "No such file or directory - %s", path);
     return val_int((int64_t)len);
 }
 
 Value eval_file_append(Eval *ev, const char *path, const char *content, Node *site) {
     size_t len = strlen(content);
     if (!append_file_bytes(path, content, len))
-        return eval_raise_class(ev, site, "LoadError", "cannot write file -- %s", path);
+        return eval_raise_class(ev, site, "Errno::ENOENT", "No such file or directory - %s", path);
     return val_int((int64_t)len);
 }
 
@@ -1213,7 +1213,7 @@ Value eval_file_exist(Eval *ev, const char *path) {
 
 Value eval_file_delete(Eval *ev, const char *path, Node *site) {
     if (remove(path) != 0)
-        return eval_raise_class(ev, site, "LoadError", "cannot delete file -- %s", path);
+        return eval_raise_class(ev, site, "Errno::ENOENT", "No such file or directory - %s", path);
     return val_int(1);
 }
 
@@ -1221,7 +1221,7 @@ Value eval_file_touch_mode(Eval *ev, const char *path, const char *mode, Node *s
     const char *fmode = NULL;
     if (strcmp(mode, "r") == 0) {
         if (!val_truthy(eval_file_exist(ev, path)))
-            return eval_raise_class(ev, site, "LoadError", "cannot read file -- %s", path);
+            return eval_raise_class(ev, site, "Errno::ENOENT", "No such file or directory - %s", path);
         return val_nil();
     }
     if (strcmp(mode, "w") == 0) fmode = "wb";
@@ -1230,7 +1230,7 @@ Value eval_file_touch_mode(Eval *ev, const char *path, const char *mode, Node *s
 
     FILE *f = fopen(path, fmode);
     if (!f)
-        return eval_raise_class(ev, site, "LoadError", "cannot open file -- %s", path);
+        return eval_raise_class(ev, site, "Errno::ENOENT", "No such file or directory - %s", path);
     fclose(f);
     return val_nil();
 }
