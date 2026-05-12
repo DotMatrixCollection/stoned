@@ -91,7 +91,7 @@ static Value io_open_fd(Eval *ev, int64_t fd_num, const char *mode, Node *site) 
     return wrapper;
 }
 
-static Value file_read_stream(Eval *ev, Value recv, const char *mode, Node *site) {
+static Value file_read_stream(Eval *ev, Value recv, const char *mode, const char *context, Node *site) {
     if (strcmp(mode, "w") == 0 || strcmp(mode, "a") == 0)
         return eval_raise_class(ev, site, "LoadError", "not opened for reading");
 
@@ -129,7 +129,7 @@ static Value file_read_stream(Eval *ev, Value recv, const char *mode, Node *site
     buf[len] = '\0';
     if (!utf8_validate(buf, len, NULL)) {
         free(buf);
-        return eval_raise_encoding_error(ev, site, "File#read");
+        return eval_raise_encoding_error(ev, site, context);
     }
 
     Value out = val_string_n(ev->arena, buf, len);
@@ -995,6 +995,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         int64_t fd_num = fd_num_val.kind == VAL_INT ? fd_num_val.ival : -1;
 
         if (strcmp(name, "puts") == 0) {
+            if (strcmp(mode.sval, "r") == 0) {
+                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
+                return 1;
+            }
             if (argc == 0) {
                 fprintf(stream, "\n");
             } else {
@@ -1011,6 +1015,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "print") == 0) {
+            if (strcmp(mode.sval, "r") == 0) {
+                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
+                return 1;
+            }
             for (int i = 0; i < argc; i++)
                 fprintf(stream, "%s", val_to_s(ev->arena, args[i]));
             *out = val_nil();
@@ -1021,12 +1029,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 *out = eval_raise_class(ev, site, "TypeError", "IO#write requires a String");
                 return 1;
             }
-            size_t len = strlen(args[0].sval);
-            fwrite(args[0].sval, 1, len, stream);
-            *out = val_int((int64_t)len);
+            *out = file_write_stream(ev, recv, mode.sval, args[0].sval, strlen(args[0].sval), site);
             return 1;
         }
         if (strcmp(name, "<<") == 0) {
+            if (strcmp(mode.sval, "r") == 0) {
+                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
+                return 1;
+            }
             if (argc >= 1)
                 fprintf(stream, "%s", val_to_s(ev->arena, args[0]));
             *out = recv;
@@ -1055,6 +1065,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "gets") == 0) {
+            if (strcmp(mode.sval, "w") == 0 || strcmp(mode.sval, "a") == 0) {
+                *out = eval_raise_class(ev, site, "LoadError", "not opened for reading");
+                return 1;
+            }
             char buf[4096];
             if (!fgets(buf, sizeof(buf), stream)) {
                 *out = val_nil();
@@ -1068,7 +1082,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "read") == 0) {
-            *out = file_read_stream(ev, recv, mode.sval, site);
+            *out = file_read_stream(ev, recv, mode.sval, "IO#read", site);
             return 1;
         }
         if (strcmp(name, "tell") == 0) {
@@ -1131,7 +1145,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             if (argc != 0) {
                 *out = eval_raise_class(ev, site, "ArgumentError", "File#read takes no arguments");
             } else {
-                *out = file_read_stream(ev, recv, mode.sval, site);
+                *out = file_read_stream(ev, recv, mode.sval, "File#read", site);
             }
             return 1;
         }
