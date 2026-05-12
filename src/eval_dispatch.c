@@ -482,7 +482,12 @@ static Value dispatch_method_missing(Eval *ev, Env *env, Value recv, const char 
 
 static Value builtin_kernel(Eval *ev, Env *env, const char *name,
                             Value *args, int argc, Value *blk, Node *site) {
+    Value stdout_obj = val_nil();
+    int have_stdout = global_get(&ev->globals, "stdout", &stdout_obj);
+
     if (strcmp(name, "puts") == 0) {
+        if (have_stdout)
+            return dispatch_method(ev, env, stdout_obj, "puts", args, argc, NULL, site, 0, 1);
         if (argc == 0) {
             fprintf(ev->out, "\n");
             return val_nil();
@@ -498,11 +503,25 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         return val_nil();
     }
     if (strcmp(name, "print") == 0) {
+        if (have_stdout)
+            return dispatch_method(ev, env, stdout_obj, "print", args, argc, NULL, site, 0, 1);
         for (int i = 0; i < argc; i++)
             fprintf(ev->out, "%s", val_to_s(ev->arena, args[i]));
         return val_nil();
     }
     if (strcmp(name, "p") == 0 || strcmp(name, "pp") == 0) {
+        if (have_stdout) {
+            Value inspected[64];
+            int n = argc < 64 ? argc : 64;
+            for (int i = 0; i < n; i++)
+                inspected[i] = val_string(ev->arena, val_inspect(ev->arena, args[i]));
+            Value out = dispatch_method(ev, env, stdout_obj, "puts", inspected, n, NULL, site, 0, 1);
+            if (val_is_signal(out)) return out;
+            if (argc == 1) return args[0];
+            Value arr = val_array_new();
+            for (int i = 0; i < argc; i++) val_array_push(&arr, args[i]);
+            return arr;
+        }
         for (int i = 0; i < argc; i++)
             fprintf(ev->out, "%s\n", val_inspect(ev->arena, args[i]));
         if (argc == 1) return args[0];
