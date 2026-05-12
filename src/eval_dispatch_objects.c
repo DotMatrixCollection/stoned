@@ -1334,6 +1334,16 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             }
             return 1;
         }
+        if (strcmp(name, "<<") == 0) {
+            const char *content = argc >= 1 ? val_to_s(ev->arena, args[0]) : "";
+            Value wrote = file_write_stream(ev, recv, mode.sval, content, strlen(content), site);
+            if (val_is_signal(wrote)) {
+                *out = wrote;
+                return 1;
+            }
+            *out = recv;
+            return 1;
+        }
         if (strcmp(name, "print") == 0) {
             size_t total = 1;
             for (int i = 0; i < argc; i++)
