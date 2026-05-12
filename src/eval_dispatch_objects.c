@@ -46,8 +46,10 @@ static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node
         return eval_raise_class(ev, site, "ArgumentError", "unsupported File.open mode -- %s", mode);
 
     FILE *fp = fopen(path, fmode);
-    if (!fp)
-        return eval_raise_class(ev, site, "Errno::ENOENT", "No such file or directory - %s", path);
+    if (!fp) {
+        int err = errno;
+        return eval_raise_class(ev, site, errno_class_name(err), "%s - %s", strerror(err), path);
+    }
 
     NativeFile *nf = alloc_native_file(ev->arena, fp, 1);
 
@@ -76,13 +78,16 @@ static Value io_open_fd(Eval *ev, int64_t fd_num, const char *mode, Node *site) 
         return eval_raise_class(ev, site, "ArgumentError", "invalid file descriptor -- %lld", (long long)fd_num);
 
     int dup_fd = dup((int)fd_num);
-    if (dup_fd < 0)
-        return eval_raise_class(ev, site, "IOError", "cannot dup file descriptor -- %lld", (long long)fd_num);
+    if (dup_fd < 0) {
+        int err = errno;
+        return eval_raise_class(ev, site, errno_class_name(err), "%s - %lld", strerror(err), (long long)fd_num);
+    }
 
     FILE *fp = fdopen(dup_fd, fmode);
     if (!fp) {
+        int err = errno;
         close(dup_fd);
-        return eval_raise_class(ev, site, "IOError", "cannot open file descriptor -- %lld", (long long)fd_num);
+        return eval_raise_class(ev, site, errno_class_name(err), "%s - %lld", strerror(err), (long long)fd_num);
     }
 
     Value wrapper = val_nil();

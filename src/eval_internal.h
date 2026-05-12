@@ -4,7 +4,20 @@
 #include "eval.h"
 #include "regex.h"
 #include "rope.h"
+#include <errno.h>
 #include <stdio.h>
+#include <string.h>
+
+static inline const char *errno_class_name(int err) {
+    switch (err) {
+        case ENOENT: return "Errno::ENOENT";
+        case EACCES: return "Errno::EACCES";
+        case EPERM:  return "Errno::EPERM";
+        case EEXIST: return "Errno::EEXIST";
+        case EBADF:  return "Errno::EBADF";
+        default:     return "IOError";
+    }
+}
 
 typedef struct {
     FILE *fp;
