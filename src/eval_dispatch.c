@@ -8,7 +8,6 @@
 
 #define CHECK(v) do { if (ev->errored || val_is_signal(v)) return (v); } while(0)
 
-static int val_responds_to(Eval *ev, Value recv, const char *name, int include_private);
 static Value val_class_of(Eval *ev, Value v);
 
 static void copy_module_methods(Eval *ev, Env *target, RubyClass *mod, int singleton_prefix) {
@@ -306,7 +305,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     return 0;
 }
 
-static int val_responds_to(Eval *ev, Value recv, const char *name, int include_private) {
+int val_responds_to(Eval *ev, Value recv, const char *name, int include_private) {
     if (strcmp(name, "is_a?") == 0 || strcmp(name, "kind_of?") == 0 ||
         strcmp(name, "instance_of?") == 0 || strcmp(name, "class") == 0 ||
         strcmp(name, "nil?") == 0 || strcmp(name, "respond_to?") == 0 ||
@@ -485,9 +484,66 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     Value stdout_obj = val_nil();
     int have_stdout = global_get(&ev->globals, "stdout", &stdout_obj);
 
+    if (have_stdout && (strcmp(name, "puts") == 0 || strcmp(name, "print") == 0 ||
+                        strcmp(name, "p") == 0 || strcmp(name, "pp") == 0)) {
+        if (strcmp(name, "puts") == 0) {
+            if (argc == 0) {
+                Value nl = val_string(ev->arena, "\n");
+                return dispatch_method(ev, env, stdout_obj, "write", &nl, 1, NULL, site, 0, 1);
+            }
+            for (int i = 0; i < argc; i++) {
+                if (args[i].kind == VAL_ARRAY) {
+                    for (size_t j = 0; j < args[i].array->len; j++) {
+                        const char *s = val_to_s(ev->arena, args[i].array->elems[j]);
+                        size_t len = strlen(s);
+                        char *buf = arena_alloc(ev->arena, len + 2);
+                        memcpy(buf, s, len);
+                        buf[len] = '\n';
+                        buf[len + 1] = '\0';
+                        Value line = val_string(ev->arena, buf);
+                        Value out = dispatch_method(ev, env, stdout_obj, "write", &line, 1, NULL, site, 0, 1);
+                        if (val_is_signal(out)) return out;
+                    }
+                } else {
+                    const char *s = val_to_s(ev->arena, args[i]);
+                    size_t len = strlen(s);
+                    char *buf = arena_alloc(ev->arena, len + 2);
+                    memcpy(buf, s, len);
+                    buf[len] = '\n';
+                    buf[len + 1] = '\0';
+                    Value line = val_string(ev->arena, buf);
+                    Value out = dispatch_method(ev, env, stdout_obj, "write", &line, 1, NULL, site, 0, 1);
+                    if (val_is_signal(out)) return out;
+                }
+            }
+            return val_nil();
+        }
+        if (strcmp(name, "print") == 0) {
+            for (int i = 0; i < argc; i++) {
+                Value str = val_string(ev->arena, val_to_s(ev->arena, args[i]));
+                Value out = dispatch_method(ev, env, stdout_obj, "write", &str, 1, NULL, site, 0, 1);
+                if (val_is_signal(out)) return out;
+            }
+            return val_nil();
+        }
+        for (int i = 0; i < argc; i++) {
+            const char *s = val_inspect(ev->arena, args[i]);
+            size_t len = strlen(s);
+            char *buf = arena_alloc(ev->arena, len + 2);
+            memcpy(buf, s, len);
+            buf[len] = '\n';
+            buf[len + 1] = '\0';
+            Value line = val_string(ev->arena, buf);
+            Value out = dispatch_method(ev, env, stdout_obj, "write", &line, 1, NULL, site, 0, 1);
+            if (val_is_signal(out)) return out;
+        }
+        if (argc == 1) return args[0];
+        Value arr = val_array_new();
+        for (int i = 0; i < argc; i++) val_array_push(&arr, args[i]);
+        return arr;
+    }
+
     if (strcmp(name, "puts") == 0) {
-        if (have_stdout)
-            return dispatch_method(ev, env, stdout_obj, "puts", args, argc, NULL, site, 0, 1);
         if (argc == 0) {
             fprintf(ev->out, "\n");
             return val_nil();
@@ -503,25 +559,11 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         return val_nil();
     }
     if (strcmp(name, "print") == 0) {
-        if (have_stdout)
-            return dispatch_method(ev, env, stdout_obj, "print", args, argc, NULL, site, 0, 1);
         for (int i = 0; i < argc; i++)
             fprintf(ev->out, "%s", val_to_s(ev->arena, args[i]));
         return val_nil();
     }
     if (strcmp(name, "p") == 0 || strcmp(name, "pp") == 0) {
-        if (have_stdout) {
-            Value inspected[64];
-            int n = argc < 64 ? argc : 64;
-            for (int i = 0; i < n; i++)
-                inspected[i] = val_string(ev->arena, val_inspect(ev->arena, args[i]));
-            Value out = dispatch_method(ev, env, stdout_obj, "puts", inspected, n, NULL, site, 0, 1);
-            if (val_is_signal(out)) return out;
-            if (argc == 1) return args[0];
-            Value arr = val_array_new();
-            for (int i = 0; i < argc; i++) val_array_push(&arr, args[i]);
-            return arr;
-        }
         for (int i = 0; i < argc; i++)
             fprintf(ev->out, "%s\n", val_inspect(ev->arena, args[i]));
         if (argc == 1) return args[0];

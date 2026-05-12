@@ -1,0 +1,4 @@
+TypeError
+$stdout must have write method, Integer given
+TypeError
+$stderr must have write method, Integer given

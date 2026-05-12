@@ -12,6 +12,17 @@ static void assign_lvar(Eval *ev, Env *env, const char *name, Value val) {
         env_set(ev->arena, env, name, val);
 }
 
+static int validate_special_global_assignment(Eval *ev, Node *target, Value val) {
+    if (!target || target->kind != NODE_GVAR) return 1;
+    if ((strcmp(target->sval, "stdout") == 0 || strcmp(target->sval, "stderr") == 0) &&
+        !val_responds_to(ev, val, "write", 1)) {
+        eval_raise_class(ev, target, "TypeError", "$%s must have write method, %s given",
+                         target->sval, value_class_name(ev, val));
+        return 0;
+    }
+    return 1;
+}
+
 static void assign_target(Eval *ev, Env *env, Node *target, Value val) {
     if (!target) return;
 
@@ -82,6 +93,7 @@ static void assign_target(Eval *ev, Env *env, Node *target, Value val) {
             global_set(ev->arena, &ev->globals, target->sval, val);
         }
     } else if (target->kind == NODE_GVAR) {
+        if (!validate_special_global_assignment(ev, target, val)) return;
         global_set(ev->arena, &ev->globals, target->sval, val);
     } else if (target->kind == NODE_CONST) {
         env_set(ev->arena, ev->top_env, target->sval, val);
