@@ -789,6 +789,9 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
             env_define(arena, ev->top_env, consts[i], obj);
         }
     }
+    env_define(arena, ev->top_env, "SEEK_SET", val_int(0));
+    env_define(arena, ev->top_env, "SEEK_CUR", val_int(1));
+    env_define(arena, ev->top_env, "SEEK_END", val_int(2));
 
     static const char *prelude_comparable =
         "module Comparable\n"
