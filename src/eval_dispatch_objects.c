@@ -64,6 +64,17 @@ static Value wrong_arg_count(Eval *ev, Node *site, int given, int expected) {
                             given, expected);
 }
 
+static const char *join_write_args(Eval *ev, Value *args, int argc) {
+    size_t total = 1;
+    for (int i = 0; i < argc; i++)
+        total += strlen(val_to_s(ev->arena, args[i]));
+    char *buf = arena_alloc(ev->arena, total);
+    buf[0] = '\0';
+    for (int i = 0; i < argc; i++)
+        strcat(buf, val_to_s(ev->arena, args[i]));
+    return buf;
+}
+
 static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node *site) {
     const char *fmode = file_fopen_mode(mode);
     if (!fmode)
@@ -1168,11 +1179,8 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "write") == 0) {
-            if (argc < 1 || args[0].kind != VAL_STRING) {
-                *out = eval_raise_class(ev, site, "TypeError", "IO#write requires a String");
-                return 1;
-            }
-            *out = file_write_stream(ev, recv, mode.sval, args[0].sval, strlen(args[0].sval), site);
+            const char *content = join_write_args(ev, args, argc);
+            *out = file_write_stream(ev, recv, mode.sval, content, strlen(content), site);
             return 1;
         }
         if (strcmp(name, "<<") == 0) {
@@ -1400,13 +1408,8 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "write") == 0) {
-            if (argc < 1) {
-                *out = eval_raise_class(ev, site, "ArgumentError", "File#write requires content");
-            } else if (args[0].kind != VAL_STRING) {
-                *out = eval_raise_class(ev, site, "TypeError", "File#write content must be a String");
-            } else {
-                *out = file_write_stream(ev, recv, mode.sval, args[0].sval, strlen(args[0].sval), site);
-            }
+            const char *content = join_write_args(ev, args, argc);
+            *out = file_write_stream(ev, recv, mode.sval, content, strlen(content), site);
             return 1;
         }
         if (strcmp(name, "<<") == 0) {
