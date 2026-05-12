@@ -1227,15 +1227,15 @@ Value eval_file_delete(Eval *ev, const char *path, Node *site) {
 
 Value eval_file_touch_mode(Eval *ev, const char *path, const char *mode, Node *site) {
     const char *fmode = NULL;
-    if (strcmp(mode, "r") == 0) {
+    if (mode[0] == 'r') {
         if (!val_truthy(eval_file_exist(ev, path))) {
             int err = errno;
             return eval_raise_class(ev, site, errno_class_name(err), "%s - %s", strerror(err), path);
         }
         return val_nil();
     }
-    if (strcmp(mode, "w") == 0) fmode = "wb";
-    else if (strcmp(mode, "a") == 0) fmode = "ab";
+    if (mode[0] == 'w') fmode = strchr(mode, 'b') ? "wb" : "wb";
+    else if (mode[0] == 'a') fmode = strchr(mode, 'b') ? "ab" : "ab";
     else return eval_raise_class(ev, site, "ArgumentError", "unsupported File.open mode -- %s", mode);
 
     FILE *f = fopen(path, fmode);

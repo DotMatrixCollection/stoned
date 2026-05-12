@@ -9,11 +9,16 @@
 #include <unistd.h>
 
 static const char *file_fopen_mode(const char *mode) {
-    if (strcmp(mode, "r") == 0) return "rb";
-    if (strcmp(mode, "w") == 0) return "wb";
-    if (strcmp(mode, "a") == 0) return "ab";
+    if (strcmp(mode, "r") == 0 || strcmp(mode, "rb") == 0) return "rb";
+    if (strcmp(mode, "w") == 0 || strcmp(mode, "wb") == 0) return "wb";
+    if (strcmp(mode, "a") == 0 || strcmp(mode, "ab") == 0) return "ab";
     return NULL;
 }
+
+static int mode_is_read(const char *mode)   { return mode && mode[0] == 'r'; }
+static int mode_is_write(const char *mode)  { return mode && mode[0] == 'w'; }
+static int mode_is_append(const char *mode) { return mode && mode[0] == 'a'; }
+static int mode_is_binary(const char *mode) { return mode && strchr(mode, 'b') != NULL; }
 
 static NativeFile *native_file(Value recv) {
     return recv.kind == VAL_OBJECT ? (NativeFile *)recv.obj->native : NULL;
@@ -97,7 +102,7 @@ static Value io_open_fd(Eval *ev, int64_t fd_num, const char *mode, Node *site) 
 }
 
 static Value file_read_stream(Eval *ev, Value recv, const char *mode, const char *context, Node *site) {
-    if (strcmp(mode, "w") == 0 || strcmp(mode, "a") == 0)
+    if (mode_is_write(mode) || mode_is_append(mode))
         return eval_raise_class(ev, site, "IOError", "not opened for reading");
 
     NativeFile *nf = NULL;
@@ -132,7 +137,7 @@ static Value file_read_stream(Eval *ev, Value recv, const char *mode, const char
     }
 
     buf[len] = '\0';
-    if (!utf8_validate(buf, len, NULL)) {
+    if (!mode_is_binary(mode) && !utf8_validate(buf, len, NULL)) {
         free(buf);
         return eval_raise_encoding_error(ev, site, context);
     }
@@ -143,7 +148,7 @@ static Value file_read_stream(Eval *ev, Value recv, const char *mode, const char
 }
 
 static Value file_write_stream(Eval *ev, Value recv, const char *mode, const char *content, size_t len, Node *site) {
-    if (strcmp(mode, "r") == 0)
+    if (mode_is_read(mode))
         return eval_raise_class(ev, site, "IOError", "not opened for writing");
 
     NativeFile *nf = NULL;
@@ -1007,7 +1012,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         int64_t fd_num = fd_num_val.kind == VAL_INT ? fd_num_val.ival : -1;
 
         if (strcmp(name, "puts") == 0) {
-            if (strcmp(mode.sval, "r") == 0) {
+            if (mode_is_read(mode.sval)) {
                 *out = eval_raise_class(ev, site, "IOError", "not opened for writing");
                 return 1;
             }
@@ -1027,7 +1032,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "print") == 0) {
-            if (strcmp(mode.sval, "r") == 0) {
+            if (mode_is_read(mode.sval)) {
                 *out = eval_raise_class(ev, site, "IOError", "not opened for writing");
                 return 1;
             }
@@ -1045,7 +1050,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "<<") == 0) {
-            if (strcmp(mode.sval, "r") == 0) {
+            if (mode_is_read(mode.sval)) {
                 *out = eval_raise_class(ev, site, "IOError", "not opened for writing");
                 return 1;
             }
@@ -1077,7 +1082,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "gets") == 0) {
-            if (strcmp(mode.sval, "w") == 0 || strcmp(mode.sval, "a") == 0) {
+            if (mode_is_write(mode.sval) || mode_is_append(mode.sval)) {
                 *out = eval_raise_class(ev, site, "IOError", "not opened for reading");
                 return 1;
             }
@@ -1086,7 +1091,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 *out = val_nil();
                 return 1;
             }
-            if (!utf8_validate(buf, strlen(buf), NULL)) {
+            if (!mode_is_binary(mode.sval) && !utf8_validate(buf, strlen(buf), NULL)) {
                 *out = eval_raise_encoding_error(ev, site, "IO#gets");
                 return 1;
             }
