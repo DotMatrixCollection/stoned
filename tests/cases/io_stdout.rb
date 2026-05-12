@@ -7,5 +7,6 @@ $stdout << "chain"
 $stdout << "\n"
 puts $stdout.sync
 $stdout.sync = false
+puts $stdout.sync
 puts $stdout.fileno
 STDOUT.puts "constant"

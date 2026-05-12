@@ -462,6 +462,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             val_object_set_ivar(ev->arena, io_obj, "__fd_num__", args[0]);
             val_object_set_ivar(ev->arena, io_obj, "mode", mode);
             val_object_set_ivar(ev->arena, io_obj, "closed", val_false());
+            val_object_set_ivar(ev->arena, io_obj, "sync", val_false());
             io_obj.obj->native = opened.obj;
             *out = io_obj;
         }
@@ -530,6 +531,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 val_object_set_ivar(ev->arena, file_obj, "path", args[0]);
                 val_object_set_ivar(ev->arena, file_obj, "mode", mode);
                 val_object_set_ivar(ev->arena, file_obj, "closed", val_false());
+                val_object_set_ivar(ev->arena, file_obj, "sync", val_false());
                 file_obj.obj->native = opened.obj;
                 if (blk) {
                     Value result = call_block(ev, env, *blk, &file_obj, 1, site);
@@ -1148,11 +1150,18 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "sync") == 0) {
-            *out = val_true();
+            Value sync = val_false();
+            if (val_object_get_ivar(recv, "sync", &sync))
+                *out = sync;
+            else
+                *out = val_false();
             return 1;
         }
         if (strcmp(name, "sync=") == 0) {
-            *out = argc > 0 ? args[0] : val_nil();
+            Value sync = argc > 0 ? val_bool(val_truthy(args[0])) : val_nil();
+            if (argc > 0)
+                val_object_set_ivar(ev->arena, recv, "sync", sync);
+            *out = sync;
             return 1;
         }
         if (strcmp(name, "fileno") == 0) {
@@ -1211,6 +1220,21 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "mode") == 0) {
             *out = mode;
+            return 1;
+        }
+        if (strcmp(name, "sync") == 0) {
+            Value sync = val_false();
+            if (val_object_get_ivar(recv, "sync", &sync))
+                *out = sync;
+            else
+                *out = val_false();
+            return 1;
+        }
+        if (strcmp(name, "sync=") == 0) {
+            Value sync = argc > 0 ? val_bool(val_truthy(args[0])) : val_nil();
+            if (argc > 0)
+                val_object_set_ivar(ev->arena, recv, "sync", sync);
+            *out = sync;
             return 1;
         }
         if (strcmp(name, "close") == 0) {
