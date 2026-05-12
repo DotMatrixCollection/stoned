@@ -263,6 +263,8 @@ static const char *normalize_path(Arena *a, const char *path) {
 
 static const char *resolve_relative_path(Arena *a, const char *base_file, const char *rel) {
     if (!base_file || !rel) return NULL;
+    if (rel[0] == '/')
+        return normalize_path(a, rel);
 
     const char *slash = strrchr(base_file, '/');
     size_t dir_len = slash ? (size_t)(slash - base_file) : 0;
@@ -289,6 +291,8 @@ static const char *resolve_relative_path(Arena *a, const char *base_file, const 
 
 static const char *resolve_from_dir(Arena *a, const char *dir, const char *rel) {
     if (!dir || !rel) return NULL;
+    if (rel[0] == '/')
+        return normalize_path(a, rel);
     size_t dir_len = strlen(dir);
     size_t rel_len = strlen(rel);
     int needs_rb = rel_len < 3 || strcmp(rel + rel_len - 3, ".rb") != 0;
@@ -370,11 +374,17 @@ static Value eval_require_path(Eval *ev, const char *resolved, Node *site) {
     return val_true();
 }
 
-static const char *resolve_require_path(Arena *a, const char *base_file, const char *path, int current_dir) {
+static const char *resolve_require_path(Arena *a, const char *base_file, const char *path, int base_is_dir) {
     if (!path) return NULL;
+    if (path[0] == '/')
+        return normalize_path(a, path);
+
     if (strchr(path, '/')) {
-        if (base_file)
+        if (base_file) {
+            if (base_is_dir)
+                return resolve_from_dir(a, base_file, path);
             return resolve_relative_path(a, base_file, path);
+        }
         size_t len = strlen(path);
         int needs_rb = len < 3 || strcmp(path + len - 3, ".rb") != 0;
         char *joined = malloc(len + (needs_rb ? 3 : 0) + 1);
@@ -386,8 +396,8 @@ static const char *resolve_require_path(Arena *a, const char *base_file, const c
         return copy;
     }
 
-    if (current_dir)
-        return resolve_from_dir(a, ".", path);
+    if (base_is_dir)
+        return resolve_from_dir(a, base_file ? base_file : ".", path);
     return resolve_from_dir(a, base_file, path);
 }
 
@@ -1215,7 +1225,7 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         for (size_t i = 0; i < load_path.array->len; i++) {
             Value entry = load_path.array->elems[i];
             if (entry.kind != VAL_STRING) continue;
-            resolved = resolve_require_path(ev->arena, entry.sval, path, 0);
+            resolved = resolve_require_path(ev->arena, entry.sval, path, 1);
             if (!resolved) continue;
             FILE *f = fopen(resolved, "rb");
             if (f) {
