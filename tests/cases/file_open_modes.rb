@@ -9,7 +9,9 @@ File.open(path, "w") { |f|
 
 File.open(path, "a") { |f|
   puts f.mode
+  puts f.tell
   puts f.write("g")
+  puts f.tell
 }
 
 f = File.open(path, "r")
