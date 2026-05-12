@@ -1,8 +1,183 @@
 #include "eval_internal.h"
 #include "utf8.h"
 
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+typedef struct {
+    FILE *fp;
+    int   owns_fp;
+} NativeFile;
+
+static const char *file_fopen_mode(const char *mode) {
+    if (strcmp(mode, "r") == 0) return "rb";
+    if (strcmp(mode, "w") == 0) return "wb";
+    if (strcmp(mode, "a") == 0) return "ab";
+    return NULL;
+}
+
+static NativeFile *native_file(Value recv) {
+    return recv.kind == VAL_OBJECT ? (NativeFile *)recv.obj->native : NULL;
+}
+
+static Value invalid_file_object(Eval *ev, Node *site) {
+    return eval_raise_class(ev, site, "LoadError", "invalid File object");
+}
+
+static Value closed_file_error(Eval *ev, Node *site) {
+    return eval_raise_class(ev, site, "LoadError", "closed file");
+}
+
+static int ensure_open_native_file(Eval *ev __attribute__((unused)),
+                                   Value recv,
+                                   Node *site __attribute__((unused)),
+                                   NativeFile **out) {
+    NativeFile *nf = native_file(recv);
+    if (!nf || !nf->fp) {
+        *out = NULL;
+        return 0;
+    }
+    *out = nf;
+    return 1;
+}
+
+static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node *site) {
+    const char *fmode = file_fopen_mode(mode);
+    if (!fmode)
+        return eval_raise_class(ev, site, "ArgumentError", "unsupported File.open mode -- %s", mode);
+
+    FILE *fp = fopen(path, fmode);
+    if (!fp)
+        return eval_raise_class(ev, site, "LoadError", "cannot open file -- %s", path);
+
+    NativeFile *nf = arena_alloc(ev->arena, sizeof(NativeFile));
+    nf->fp = fp;
+    nf->owns_fp = 1;
+
+    Value wrapper = val_nil();
+    wrapper.kind = VAL_OBJECT;
+    wrapper.obj = (RubyObject *)nf;
+    return wrapper;
+}
+
+static Value file_close_stream(Eval *ev, Value recv, Node *site) {
+    NativeFile *nf = native_file(recv);
+    if (!nf || !nf->fp) return val_nil();
+    if (nf->owns_fp && fclose(nf->fp) != 0) {
+        nf->fp = NULL;
+        return eval_raise_class(ev, site, "IOError", "cannot close file");
+    }
+    nf->fp = NULL;
+    return val_nil();
+}
+
+static Value file_read_stream(Eval *ev, Value recv, const char *mode, Node *site) {
+    if (strcmp(mode, "w") == 0 || strcmp(mode, "a") == 0)
+        return eval_raise_class(ev, site, "LoadError", "not opened for reading");
+
+    NativeFile *nf = NULL;
+    if (!ensure_open_native_file(ev, recv, site, &nf))
+        return invalid_file_object(ev, site);
+
+    size_t cap = 4096;
+    size_t len = 0;
+    char *buf = malloc(cap);
+    if (!buf)
+        return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+
+    int ch;
+    while ((ch = fgetc(nf->fp)) != EOF) {
+        if (len + 1 >= cap) {
+            size_t next = cap * 2;
+            char *nb = realloc(buf, next);
+            if (!nb) {
+                free(buf);
+                return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+            }
+            buf = nb;
+            cap = next;
+        }
+        buf[len++] = (char)ch;
+    }
+
+    if (ferror(nf->fp)) {
+        free(buf);
+        clearerr(nf->fp);
+        return eval_raise_class(ev, site, "IOError", "cannot read file");
+    }
+
+    buf[len] = '\0';
+    if (!utf8_validate(buf, len, NULL)) {
+        free(buf);
+        return eval_raise_encoding_error(ev, site, "File#read");
+    }
+
+    Value out = val_string_n(ev->arena, buf, len);
+    free(buf);
+    return out;
+}
+
+static Value file_write_stream(Eval *ev, Value recv, const char *mode, const char *content, size_t len, Node *site) {
+    if (strcmp(mode, "r") == 0)
+        return eval_raise_class(ev, site, "LoadError", "not opened for writing");
+
+    NativeFile *nf = NULL;
+    if (!ensure_open_native_file(ev, recv, site, &nf))
+        return invalid_file_object(ev, site);
+
+    if (len && fwrite(content, 1, len, nf->fp) != len)
+        return eval_raise_class(ev, site, "IOError", "cannot write file");
+
+    return val_int((int64_t)len);
+}
+
+static Value file_tell_stream(Eval *ev, Value recv, Node *site) {
+    NativeFile *nf = NULL;
+    if (!ensure_open_native_file(ev, recv, site, &nf))
+        return invalid_file_object(ev, site);
+
+    long pos = ftell(nf->fp);
+    if (pos < 0)
+        return eval_raise_class(ev, site, "IOError", "cannot tell file position");
+    return val_int((int64_t)pos);
+}
+
+static Value file_seek_stream(Eval *ev, Value recv, Value *args, int argc, Node *site) {
+    if (argc < 1 || argc > 2)
+        return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+    if (args[0].kind != VAL_INT)
+        return eval_raise_class(ev, site, "TypeError", "File#seek offset must be an Integer");
+
+    int whence = SEEK_SET;
+    if (argc == 2) {
+        if (args[1].kind != VAL_INT)
+            return eval_raise_class(ev, site, "TypeError", "File#seek whence must be an Integer");
+        if (args[1].ival == 0) whence = SEEK_SET;
+        else if (args[1].ival == 1) whence = SEEK_CUR;
+        else if (args[1].ival == 2) whence = SEEK_END;
+        else return eval_raise_class(ev, site, "ArgumentError", "invalid whence -- %lld", (long long)args[1].ival);
+    }
+
+    NativeFile *nf = NULL;
+    if (!ensure_open_native_file(ev, recv, site, &nf))
+        return invalid_file_object(ev, site);
+
+    if (fseek(nf->fp, (long)args[0].ival, whence) != 0)
+        return eval_raise_class(ev, site, "IOError", "cannot seek file");
+    clearerr(nf->fp);
+    return val_int(0);
+}
+
+static Value file_rewind_stream(Eval *ev, Value recv, Node *site) {
+    NativeFile *nf = NULL;
+    if (!ensure_open_native_file(ev, recv, site, &nf))
+        return invalid_file_object(ev, site);
+    rewind(nf->fp);
+    clearerr(nf->fp);
+    return val_int(0);
+}
 
 static Value exception_arg_message(Eval *ev, Value recv, Value *args, int argc, int *ok, Node *site) {
     if (argc > 1) {
@@ -151,7 +326,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = val_bool(val_is_a(args[0], recv));
         return 1;
     }
-    if (strcmp(recv.klass->name, "File") == 0) {
+        if (strcmp(recv.klass->name, "File") == 0) {
         if (strcmp(name, "read") == 0) {
             if (argc < 1) {
                 *out = eval_raise_class(ev, site, "ArgumentError", "File.read requires a path");
@@ -205,18 +380,24 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                     *out = eval_raise_class(ev, site, "TypeError", "File.open mode must be a String");
                     return 1;
                 }
-                Value touched = eval_file_touch_mode(ev, args[0].sval, mode.sval, site);
-                if (val_is_signal(touched)) {
-                    *out = touched;
+                Value opened = file_open_stream(ev, args[0].sval, mode.sval, site);
+                if (val_is_signal(opened)) {
+                    *out = opened;
                     return 1;
                 }
                 Value file_obj = val_object(ev->arena, recv);
                 val_object_set_ivar(ev->arena, file_obj, "path", args[0]);
                 val_object_set_ivar(ev->arena, file_obj, "mode", mode);
                 val_object_set_ivar(ev->arena, file_obj, "closed", val_false());
+                file_obj.obj->native = opened.obj;
                 if (blk) {
                     Value result = call_block(ev, env, *blk, &file_obj, 1, site);
+                    Value closed_result = file_close_stream(ev, file_obj, site);
                     val_object_set_ivar(ev->arena, file_obj, "closed", val_true());
+                    if (val_is_signal(closed_result)) {
+                        *out = closed_result;
+                        return 1;
+                    }
                     *out = result;
                 } else {
                     *out = file_obj;
@@ -852,7 +1033,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (val_object_get_ivar(recv, "closed", &closed) && val_truthy(closed) &&
             strcmp(name, "closed?") != 0 && strcmp(name, "close") != 0) {
-            *out = eval_raise_class(ev, site, "LoadError", "closed file");
+            *out = closed_file_error(ev, site);
             return 1;
         }
         if (strcmp(name, "path") == 0) {
@@ -864,8 +1045,9 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "close") == 0) {
+            Value closed_result = file_close_stream(ev, recv, site);
             val_object_set_ivar(ev->arena, recv, "closed", val_true());
-            *out = val_nil();
+            *out = closed_result;
             return 1;
         }
         if (strcmp(name, "closed?") == 0) {
@@ -880,10 +1062,8 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         if (strcmp(name, "read") == 0) {
             if (argc != 0) {
                 *out = eval_raise_class(ev, site, "ArgumentError", "File#read takes no arguments");
-            } else if (strcmp(mode.sval, "w") == 0 || strcmp(mode.sval, "a") == 0) {
-                *out = eval_raise_class(ev, site, "LoadError", "not opened for reading");
             } else {
-                *out = eval_file_read(ev, path.sval, site);
+                *out = file_read_stream(ev, recv, mode.sval, site);
             }
             return 1;
         }
@@ -892,18 +1072,12 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 *out = eval_raise_class(ev, site, "ArgumentError", "File#write requires content");
             } else if (args[0].kind != VAL_STRING) {
                 *out = eval_raise_class(ev, site, "TypeError", "File#write content must be a String");
-            } else if (strcmp(mode.sval, "r") == 0) {
-                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
             } else {
-                *out = eval_file_append(ev, path.sval, args[0].sval, site);
+                *out = file_write_stream(ev, recv, mode.sval, args[0].sval, strlen(args[0].sval), site);
             }
             return 1;
         }
         if (strcmp(name, "print") == 0) {
-            if (strcmp(mode.sval, "r") == 0) {
-                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
-                return 1;
-            }
             size_t total = 1;
             for (int i = 0; i < argc; i++)
                 total += strlen(val_to_s(ev->arena, args[i]));
@@ -911,16 +1085,12 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             buf[0] = '\0';
             for (int i = 0; i < argc; i++)
                 strcat(buf, val_to_s(ev->arena, args[i]));
-            *out = eval_file_append(ev, path.sval, buf, site);
+            *out = file_write_stream(ev, recv, mode.sval, buf, strlen(buf), site);
             return 1;
         }
         if (strcmp(name, "puts") == 0) {
-            if (strcmp(mode.sval, "r") == 0) {
-                *out = eval_raise_class(ev, site, "LoadError", "not opened for writing");
-                return 1;
-            }
             if (argc == 0) {
-                *out = eval_file_append(ev, path.sval, "\n", site);
+                *out = file_write_stream(ev, recv, mode.sval, "\n", 1, site);
                 return 1;
             }
             FILE *scratch = tmpfile();
@@ -942,7 +1112,23 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             fread(buf, 1, (size_t)len, scratch);
             buf[len] = '\0';
             fclose(scratch);
-            *out = eval_file_append(ev, path.sval, buf, site);
+            *out = file_write_stream(ev, recv, mode.sval, buf, (size_t)len, site);
+            return 1;
+        }
+        if (strcmp(name, "tell") == 0) {
+            *out = file_tell_stream(ev, recv, site);
+            return 1;
+        }
+        if (strcmp(name, "seek") == 0) {
+            *out = file_seek_stream(ev, recv, args, argc, site);
+            return 1;
+        }
+        if (strcmp(name, "rewind") == 0) {
+            if (argc != 0) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+                return 1;
+            }
+            *out = file_rewind_stream(ev, recv, site);
             return 1;
         }
     }
