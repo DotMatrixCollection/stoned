@@ -15,7 +15,8 @@ static void assign_lvar(Eval *ev, Env *env, const char *name, Value val) {
 static int validate_special_global_assignment(Eval *ev, Node *target, Value val) {
     if (!target || target->kind != NODE_GVAR) return 1;
     if ((strcmp(target->sval, "stdout") == 0 || strcmp(target->sval, "stderr") == 0) &&
-        !val_responds_to(ev, val, "write", 1)) {
+        !(value_is_a_named_class(ev, val, "IO") || value_is_a_named_class(ev, val, "File") ||
+          val_responds_to(ev, val, "write", 1))) {
         eval_raise_class(ev, target, "TypeError", "$%s must have write method, %s given",
                          target->sval, value_class_name(ev, val));
         return 0;

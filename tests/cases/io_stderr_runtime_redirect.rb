@@ -1,0 +1,2 @@
+$stderr = $stdout
+nil.foo

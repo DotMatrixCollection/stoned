@@ -36,6 +36,17 @@ static void line_col_for_offset(const char *src, size_t offset, uint32_t *line, 
     *col = c;
 }
 
+static void write_runtime_stderr(Eval *eval, Arena *arena, const char *text) {
+    Value stderr_obj = val_nil();
+    if (global_get(&eval->globals, "stderr", &stderr_obj)) {
+        Value str = val_string(arena, text);
+        Value out = dispatch_method(eval, eval->top_env, stderr_obj, "write", &str, 1, NULL, NULL, 0, 1);
+        if (!val_is_signal(out)) return;
+        eval_clear_exception(eval);
+    }
+    fputs(text, stderr);
+}
+
 int main(int argc, char **argv) {
     const char *src;
     size_t src_len;
@@ -110,18 +121,23 @@ int main(int argc, char **argv) {
     Value result = eval_node(&eval, eval.top_env, tree);
 
     if (eval.errored) {
-        fprintf(stderr, "error: %s\n", eval.errmsg);
+        char buf[2048];
+        snprintf(buf, sizeof(buf), "error: %s\n", eval.errmsg);
+        write_runtime_stderr(&eval, &arena, buf);
         arena_free(&arena);
         free(file_buf);
         return 1;
     }
     if (result.kind == VAL_EXCEPTION) {
-        fprintf(stderr, "error: %u:%u: %s\n",
-                eval.exception_line, eval.exception_col, eval.exception_msg);
+        char buf[2048];
+        snprintf(buf, sizeof(buf), "error: %u:%u: %s\n",
+                 eval.exception_line, eval.exception_col, eval.exception_msg);
+        write_runtime_stderr(&eval, &arena, buf);
         Value backtrace = exception_value_backtrace(eval.current_exception);
         if (backtrace.kind == VAL_ARRAY) {
             for (size_t i = 0; i < backtrace.array->len; i++) {
-                fprintf(stderr, "  from %s\n", val_to_s(&arena, backtrace.array->elems[i]));
+                snprintf(buf, sizeof(buf), "  from %s\n", val_to_s(&arena, backtrace.array->elems[i]));
+                write_runtime_stderr(&eval, &arena, buf);
             }
         }
         arena_free(&arena);
