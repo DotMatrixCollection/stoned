@@ -337,8 +337,8 @@ static const char *canonical_existing_path(Arena *a, const char *path) {
     return copy;
 }
 
-static Value eval_require_path(Eval *ev, const char *resolved, Node *site) {
-    const char *display_path = resolved;
+static Value eval_require_path(Eval *ev, const char *resolved, const char *display_path, Node *site) {
+    if (!display_path) display_path = resolved;
     const char *canonical_path = canonical_existing_path(ev->arena, resolved);
     if (eval_has_loaded_file(ev, canonical_path))
         return val_false();
@@ -1168,7 +1168,7 @@ Value eval_require_relative(Eval *ev, Env *env, const char *path, Node *site) {
     const char *resolved = resolve_relative_path(ev->arena, ev->current_file, path);
     if (!resolved)
         return eval_raise_class(ev, site, "LoadError", "cannot resolve require_relative path '%s'", path);
-    return eval_require_path(ev, resolved, site);
+    return eval_require_path(ev, resolved, path, site);
 }
 
 Value eval_file_read(Eval *ev, const char *path, Node *site) {
@@ -1240,7 +1240,7 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         FILE *f = fopen(resolved, "rb");
         if (f) {
             fclose(f);
-            return eval_require_path(ev, resolved, site);
+            return eval_require_path(ev, resolved, resolved, site);
         }
     }
 
@@ -1254,7 +1254,7 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
             FILE *f = fopen(resolved, "rb");
             if (f) {
                 fclose(f);
-                return eval_require_path(ev, resolved, site);
+                return eval_require_path(ev, resolved, resolved, site);
             }
         }
     }

@@ -1,0 +1,2 @@
+LoadError
+cannot load such file -- ../fixtures/require_relative/missing
