@@ -45,6 +45,19 @@ static int ensure_open_native_file(Eval *ev __attribute__((unused)),
     return 1;
 }
 
+static int stream_sync_enabled(Value recv) {
+    Value sync = val_false();
+    return val_object_get_ivar(recv, "sync", &sync) && val_truthy(sync);
+}
+
+static Value maybe_flush_stream(Eval *ev, Value recv, NativeFile *nf, Node *site) {
+    if (!stream_sync_enabled(recv))
+        return val_nil();
+    if (fflush(nf->fp) != 0)
+        return eval_raise_class(ev, site, "IOError", "cannot flush file");
+    return val_nil();
+}
+
 static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node *site) {
     const char *fmode = file_fopen_mode(mode);
     if (!fmode)
@@ -238,6 +251,10 @@ static Value file_write_stream(Eval *ev, Value recv, const char *mode, const cha
 
     if (len && fwrite(content, 1, len, nf->fp) != len)
         return eval_raise_class(ev, site, "IOError", "cannot write file");
+
+    Value flushed = maybe_flush_stream(ev, recv, nf, site);
+    if (val_is_signal(flushed))
+        return flushed;
 
     return val_int((int64_t)len);
 }
@@ -1113,6 +1130,11 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     }
                 }
             }
+            Value flushed = maybe_flush_stream(ev, recv, nf, site);
+            if (val_is_signal(flushed)) {
+                *out = flushed;
+                return 1;
+            }
             *out = val_nil();
             return 1;
         }
@@ -1123,6 +1145,11 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             }
             for (int i = 0; i < argc; i++)
                 fprintf(stream, "%s", val_to_s(ev->arena, args[i]));
+            Value flushed = maybe_flush_stream(ev, recv, nf, site);
+            if (val_is_signal(flushed)) {
+                *out = flushed;
+                return 1;
+            }
             *out = val_nil();
             return 1;
         }
@@ -1141,6 +1168,11 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             }
             if (argc >= 1)
                 fprintf(stream, "%s", val_to_s(ev->arena, args[0]));
+            Value flushed = maybe_flush_stream(ev, recv, nf, site);
+            if (val_is_signal(flushed)) {
+                *out = flushed;
+                return 1;
+            }
             *out = recv;
             return 1;
         }
