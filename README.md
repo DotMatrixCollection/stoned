@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, the README says `151` tests are passing, and recent work added deeper regexp behavior, but it is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `165` tests are passing, and recent work tightened file IO and multi-file loading, but it is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -52,7 +52,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `151 passed, 0 failed, 151 total`.
+Current coverage in the tree: `165 passed, 0 failed, 165 total`.
 
 What is working today:
 
@@ -66,7 +66,7 @@ What is working today:
 - Visibility: `public`, `private`, `protected`, `private_class_method`/`public_class_method`/`protected_class_method`, `respond_to?` with `include_private`, explicit receiver restrictions, protected same-family receiver calls, `public_send` refusing hidden real methods
 - Modules: `module Foo ... end`, `include`, `prepend`, `extend`, instance method lookup through included and prepended modules, `super` through module ancestors
 - Built-in mixins: `Comparable` (`<`, `<=`, `>`, `>=`, `between?`, `clamp`) and `Enumerable` (`find`, `detect`, `entries`, `to_a`, `first`, `take`, `drop`, `count`, `map`/`collect`, `select`, `reject`, `reduce`/`inject`, `any?`, `all?`, `none?`, `include?`/`member?`, `min`, `max`, `sort`, `sum`, `flat_map`, `each_with_object`, `min_by`, `max_by`, `sort_by`, `zip`, `group_by`, `tally`)
-- File loading: `require_relative`, `require`, `$LOAD_PATH` search, duplicate-load skipping, `LoadError` on load failures
+- File loading: `require_relative`, `require`, `$LOAD_PATH` search, duplicate-load skipping, canonicalized feature identity across normalized relative, absolute, and mixed spellings, and readable `LoadError` reporting on load failures
 - Dispatch hooks: `method_missing` and `respond_to_missing?` for objects, classes, and primitive-backed reopened classes; class/module reflection is now consistent across `class`, `is_a?`, and `instance_of?`, with stricter arity enforcement on core reflection built-ins and user-defined methods
 - Operator method defs like `def <=>` and generic operator dispatch for user-defined operator methods
 - Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`, `Array.new(n, val)`, `Array.new(n) { |i| ... }`, `Hash.new(default)`, and `Hash.new { |h, k| ... }`
@@ -76,22 +76,22 @@ What is working today:
 - Proc/lambda: `Proc.new {}`, `proc {}`, `lambda {}`, `-> (...) {}`, `call`, `[]`, `lambda?`, `arity`, lambda `return`, proc non-local `return`; arrow lambdas and block literals now parse defaulted params, arrow lambdas honor omitted default args, non-lambda procs/blocks now autosplat a single array argument across multi-slot parameter lists, proc/lambda `arity` reports Ruby-like negative values for optional/splat forms, lambda `break` returns from the lambda call, lambda `return` now works in top-level and block-passed lambda literals, top-level proc literals may now carry `return` as a non-local exit instead of being rejected at sema time, proc non-local `return` now propagates correctly through helper methods when a proc is passed as `&proc`, proc-object `break` via direct `call` raises `LocalJumpError`, and escaped proc objects passed back through `&proc` now preserve proc identity so invalid `break`/`return` raise `LocalJumpError` instead of being misbound or silently collapsing; `Symbol#to_proc` now returns lambda-like proc objects and `&:symbol` block-pass works in calls; `&proc` block-pass; `*arr` splat args in calls; `block_given?`; `Object#itself`
 - Integer: `gcd`, `lcm`, `pow` (with optional modulus), `divmod`, `digits`, `chr`, `succ`/`pred`, `ceil`/`floor`/`round`/`truncate`, `positive?`/`negative?`/`nonzero?`/`integer?`, `abs2`, `between?`, `clamp`, `step`, `to_s(base)`
 - Float: `nan?`, `infinite?`, `finite?`, `divmod`, `ceil`/`floor`/`round`/`truncate` with optional ndigits, `positive?`/`negative?`/`nonzero?`/`integer?`, `abs2`, `between?`, `clamp`, `step`; `0.0/0.0` now returns `NaN` (IEEE 754)
-- Regexp: `Regexp.new(string)`, `Regexp#match`, `String#match`, `=~` operator, `MatchData` with `to_s`, `[]` by integer index, `begin`, `end`, `pre_match`, `post_match`; `Regexp#source`, `Regexp#inspect`; `RegexpError` on invalid patterns. Backed by reginold (Onigmo under a stable opaque API). Regexp literals and regex-backed `sub`/`gsub`/`scan` are not yet implemented.
+- Regexp: `Regexp.new(string)`, regexp literals `/.../` with `i`/`m`/`x`, `Regexp#match`, `String#match`, `=~` operator, `MatchData` with `to_s`, `[]` by integer index, `begin`, `end`, `pre_match`, `post_match`; `Regexp#source`, `Regexp#inspect`; regex-backed `sub`, `gsub`, and `scan`; `RegexpError` on invalid patterns. Backed by reginold (Onigmo under a stable opaque API).
 - String: UTF-8-only strings; codepoint-aware `length`/`size`, `chars`, `split("")`, `each_char`, `reverse`, `ord`, `index`, `rindex`, `[]`/`slice`, `chop`, `strip`, `lstrip`, `rstrip`, `ljust`, `rjust`, `center`, `upcase`, `downcase`, `capitalize`, `swapcase`, `succ`, `tr`, `count`, `delete`, `squeeze`; plus `chomp`, `hex`, `oct`, `bytes`, `<<`, `lines`, `each_line`, `scan`, `sub`, `gsub`, and sprintf-style `String#%` with basic `%s`/`%d`/`%i`/`%f`, width, precision, and `%%`; `inspect`. Current Unicode semantics are codepoint-based with simple case mapping rather than full locale- or grapheme-aware behavior.
 - Kernel: `puts`, `print`, `p`, `pp`, `Integer()`, `Float()`, `String()`, `Array()`, `format`, `sprintf`, `raise`, `lambda`, `rand`, `exit`
-- IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`; `$stdin.gets` / `$stdin.read`
-- File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`; file objects with `read`, `write`, `print`, `puts`, `path`, `mode`, `close`, `closed?`; modes `r`, `w`, `a` enforced
+- IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `close`, `closed?`, `tell`, `seek`, `rewind`, `$stdin.gets`, `$stdin.read`, and `IO.new(fd, mode)` wrappers with mode enforcement
+- File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`; file objects with stateful native handles for `read`, `write`, `print`, `puts`, `path`, `mode`, `tell`, `seek`, `rewind`, `close`, `closed?`; modes `r`, `w`, `a` enforced and append mode starts at EOF
 - Globals and constants
 
 Known limitations:
 
 - This is not Ruby-compatible enough for real-world code yet
 - Text is UTF-8-only across source loading and runtime strings; invalid UTF-8 is rejected in source, `require`, `File.read`, and stdin text reads
-- File/IO coverage is path-backed and stream-mode basic; no socket IO, no binary mode, no seek/tell
+- File/IO coverage is now stateful enough for real cursors and descriptor wrappers, but it is still well short of MRI: no socket IO, no binary mode, and limited encoding/mode fidelity
 - Exceptions work, but they still need broader standard exception coverage and fuller Ruby rescue semantics beyond the current typed clauses, lists, variable binding, and `retry`
 - Proc/lambda semantics exist, but there are still edge cases around proc-vs-lambda control flow beyond the current top-level/lambda-return and direct/escaped-proc `break`/`return` cases, and around argument handling, that are not Ruby-complete
 - Compatibility around edge-case parsing and method semantics is still being tightened, especially outside the now-covered command-call spacing, unary-arg, grouped-call, and delayed `do`/`end` attachment cases
-- File loading still needs stronger path canonicalization and more Ruby-complete search behavior
+- File loading is much more canonicalized than before, but platform-specific resolution details and broader MRI search behavior still need work
 
 ## Architecture
 

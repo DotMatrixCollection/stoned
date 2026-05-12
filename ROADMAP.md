@@ -113,14 +113,23 @@ Exit gate:
 ### Stage 5: Loading, IO, and execution environment parity
 This is the bridge from language/runtime correctness to running larger real programs.
 
-- strengthen `require` / `require_relative` path canonicalization and platform handling
-- improve load-time error reporting and feature-resolution behavior
+- keep tightening `require` / `require_relative` path canonicalization and platform handling
+- keep improving load-time error reporting and feature-resolution behavior
 - expand IO behavior:
-  - seek / tell / rewind
+  - ~~seek / tell / rewind~~ done
   - binary mode and encoding flags
-  - `IO.new` from raw file descriptors
+  - ~~`IO.new` from raw file descriptors~~ done
   - closer stdin behavior and line-separator handling
 - keep file/object lifecycle semantics closer to MRI under block and non-block forms
+
+Recent Stage 5 progress already landed:
+
+- normalized `require` / `require_relative` path identity across relative, absolute, and mixed spellings
+- better `$LOAD_PATH` resolution for nested entries
+- friendly user-facing load errors while keeping canonical internal cache keys
+- stateful `File.open` handles instead of path-reopen behavior
+- `File#tell`, `File#seek`, `File#rewind`
+- `IO.new(fd, mode)` wrappers plus mode enforcement on read/write entry points
 
 Exit gate:
 
@@ -152,7 +161,8 @@ If work starts today, the next highest-value sequence is:
 3. ~~tighten module ancestor ordering and `super`~~ — done
 4. ~~expand exception completeness~~ — done (see Already landed)
 5. **gap fill: Stages 1–3 known holes** — surveyed 2026-04-22, see below
-6. then resume Stage 4 (core library parity)
+6. continue Stage 5 (loading / IO parity) now that the earlier Stage 1-3 survey items are mostly closed
+7. then resume Stage 4 and remaining runtime polish from compatibility probes
 
 ## Stage gap survey (2026-04-22)
 
@@ -206,8 +216,9 @@ These remain real compatibility gaps and should be pulled into the staged route 
 
 ### IO and loading
 
-- path canonicalization is still basic
+- path canonicalization is materially stronger now, but not yet MRI-complete across all platform and feature-resolution cases
 - IO surface is still narrower than MRI
+- stateful file handles, cursor methods, and `IO.new(fd, mode)` now exist
 - binary/encoding mode support is not there yet
 
 ## Already landed
@@ -251,6 +262,10 @@ These were previously roadmap items and are now implemented in the current tree:
 - `send`, `__send__`, `public_send`, and method visibility (`public`, `private`, `protected`)
 - class-method visibility helpers (`private_class_method`, `public_class_method`, `protected_class_method`)
 - `require_relative`, `require`, `$LOAD_PATH`, load guards, and `LoadError`
+- stronger load canonicalization across normalized, absolute, nested-load-path, and mixed-identity require cases, while keeping friendly displayed error paths
+- stateful `File.open` handles with cursor-sensitive `read` / `write` / `print` / `puts`
+- `File#tell`, `File#seek`, `File#rewind`
+- `IO.new(fd, mode)` wrappers with mode-enforced read/write behavior
 - `method_missing` / `respond_to_missing?` for objects, classes, and primitive-backed reopened classes
 - built-in `Comparable` / `Enumerable` plus operator method defs like `def <=>`
 - `Comparable` prelude operators (`<`, `<=`, `>`, `>=`) for custom `<=>` implementations
