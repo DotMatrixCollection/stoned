@@ -483,6 +483,8 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
                             Value *args, int argc, Value *blk, Node *site) {
     Value stdout_obj = val_nil();
     int have_stdout = global_get(&ev->globals, "stdout", &stdout_obj);
+    Value stderr_obj = val_nil();
+    int have_stderr = global_get(&ev->globals, "stderr", &stderr_obj);
 
     if (have_stdout && (strcmp(name, "puts") == 0 || strcmp(name, "print") == 0 ||
                         strcmp(name, "p") == 0 || strcmp(name, "pp") == 0)) {
@@ -570,6 +572,53 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         Value arr = val_array_new();
         for (int i = 0; i < argc; i++) val_array_push(&arr, args[i]);
         return arr;
+    }
+    if (strcmp(name, "warn") == 0) {
+        if (have_stderr) {
+            if (argc == 0) {
+                Value nl = val_string(ev->arena, "\n");
+                return dispatch_method(ev, env, stderr_obj, "write", &nl, 1, NULL, site, 0, 1);
+            }
+            for (int i = 0; i < argc; i++) {
+                if (args[i].kind == VAL_ARRAY) {
+                    for (size_t j = 0; j < args[i].array->len; j++) {
+                        const char *s = val_to_s(ev->arena, args[i].array->elems[j]);
+                        size_t len = strlen(s);
+                        char *buf = arena_alloc(ev->arena, len + 2);
+                        memcpy(buf, s, len);
+                        buf[len] = '\n';
+                        buf[len + 1] = '\0';
+                        Value line = val_string(ev->arena, buf);
+                        Value out = dispatch_method(ev, env, stderr_obj, "write", &line, 1, NULL, site, 0, 1);
+                        if (val_is_signal(out)) return out;
+                    }
+                } else {
+                    const char *s = val_to_s(ev->arena, args[i]);
+                    size_t len = strlen(s);
+                    char *buf = arena_alloc(ev->arena, len + 2);
+                    memcpy(buf, s, len);
+                    buf[len] = '\n';
+                    buf[len + 1] = '\0';
+                    Value line = val_string(ev->arena, buf);
+                    Value out = dispatch_method(ev, env, stderr_obj, "write", &line, 1, NULL, site, 0, 1);
+                    if (val_is_signal(out)) return out;
+                }
+            }
+            return val_nil();
+        }
+        if (argc == 0) {
+            fprintf(stderr, "\n");
+            return val_nil();
+        }
+        for (int i = 0; i < argc; i++) {
+            if (args[i].kind == VAL_ARRAY) {
+                for (size_t j = 0; j < args[i].array->len; j++)
+                    fprintf(stderr, "%s\n", val_to_s(ev->arena, args[i].array->elems[j]));
+            } else {
+                fprintf(stderr, "%s\n", val_to_s(ev->arena, args[i]));
+            }
+        }
+        return val_nil();
     }
     if (strcmp(name, "format") == 0 || strcmp(name, "sprintf") == 0) {
         if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
@@ -1365,7 +1414,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "pp", "Integer", "Float", "String", "Array", "format", "sprintf", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
+            "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", "alias_method", NULL
