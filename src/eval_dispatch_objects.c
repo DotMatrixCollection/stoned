@@ -1278,11 +1278,6 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = eval_raise_class(ev, site, "LoadError", "invalid File object");
             return 1;
         }
-        if (val_object_get_ivar(recv, "closed", &closed) && val_truthy(closed) &&
-            strcmp(name, "closed?") != 0 && strcmp(name, "close") != 0) {
-            *out = closed_file_error(ev, site);
-            return 1;
-        }
         if (strcmp(name, "path") == 0) {
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
@@ -1297,6 +1292,11 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 return 1;
             }
             *out = mode;
+            return 1;
+        }
+        if (val_object_get_ivar(recv, "closed", &closed) && val_truthy(closed) &&
+            strcmp(name, "closed?") != 0 && strcmp(name, "close") != 0) {
+            *out = closed_file_error(ev, site);
             return 1;
         }
         if (strcmp(name, "sync") == 0) {
