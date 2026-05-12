@@ -1,0 +1,1 @@
+error: 8:1: NoMethodError: undefined method 'foo' for nil

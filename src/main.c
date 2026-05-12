@@ -39,8 +39,26 @@ static void line_col_for_offset(const char *src, size_t offset, uint32_t *line, 
 static void write_runtime_stderr(Eval *eval, Arena *arena, const char *text) {
     Value stderr_obj = val_nil();
     if (global_get(&eval->globals, "stderr", &stderr_obj)) {
+        Value saved_exception = eval->current_exception;
+        Value saved_rescue = eval->rescue_context;
+        uint32_t saved_line = eval->exception_line;
+        uint32_t saved_col = eval->exception_col;
+        const char *saved_class = eval->exception_class;
+        char saved_msg[sizeof(eval->exception_msg)];
+        memcpy(saved_msg, eval->exception_msg, sizeof(saved_msg));
+        int saved_errored = eval->errored;
+
+        eval->errored = 0;
+        eval_clear_exception(eval);
         Value str = val_string(arena, text);
         Value out = dispatch_method(eval, eval->top_env, stderr_obj, "write", &str, 1, NULL, NULL, 0, 1);
+        eval->errored = saved_errored;
+        eval->current_exception = saved_exception;
+        eval->rescue_context = saved_rescue;
+        eval->exception_line = saved_line;
+        eval->exception_col = saved_col;
+        eval->exception_class = saved_class;
+        memcpy(eval->exception_msg, saved_msg, sizeof(saved_msg));
         if (!val_is_signal(out)) return;
         eval_clear_exception(eval);
     }
