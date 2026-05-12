@@ -338,14 +338,15 @@ static const char *canonical_existing_path(Arena *a, const char *path) {
 }
 
 static Value eval_require_path(Eval *ev, const char *resolved, Node *site) {
-    resolved = canonical_existing_path(ev->arena, resolved);
-    if (eval_has_loaded_file(ev, resolved))
+    const char *display_path = resolved;
+    const char *canonical_path = canonical_existing_path(ev->arena, resolved);
+    if (eval_has_loaded_file(ev, canonical_path))
         return val_false();
 
     size_t src_len = 0;
-    char *src = read_file_bytes(resolved, &src_len);
+    char *src = read_file_bytes(canonical_path, &src_len);
     if (!src)
-        return eval_raise_class(ev, site, "LoadError", "cannot load such file -- %s", resolved);
+        return eval_raise_class(ev, site, "LoadError", "cannot load such file -- %s", display_path);
     {
         size_t bad = 0;
         if (!utf8_validate(src, src_len, &bad)) {
@@ -353,7 +354,7 @@ static Value eval_require_path(Eval *ev, const char *resolved, Node *site) {
             source_line_col_for_offset(src, bad, &line, &col);
             free(src);
             return eval_raise_class(ev, site, "LoadError",
-                                    "invalid UTF-8 in source -- %s:%u:%u", resolved, line, col);
+                                    "invalid UTF-8 in source -- %s:%u:%u", display_path, line, col);
         }
     }
 
@@ -362,7 +363,7 @@ static Value eval_require_path(Eval *ev, const char *resolved, Node *site) {
     Node *tree = parse_program(&parser);
     if (parser.error_count) {
         Value err = eval_raise_class(ev, site, "LoadError", "parse error in %s: %s",
-                                     resolved, parser.errors[0].message);
+                                     display_path, parser.errors[0].message);
         free(src);
         return err;
     }
@@ -372,19 +373,19 @@ static Value eval_require_path(Eval *ev, const char *resolved, Node *site) {
     sema_run(&sema, tree);
     if (sema.error_count) {
         Value err = eval_raise_class(ev, site, "LoadError", "sema error in %s: %s",
-                                     resolved, sema.errors[0].message);
+                                     display_path, sema.errors[0].message);
         free(src);
         return err;
     }
 
     const char *previous_file = ev->current_file;
-    ev->current_file = resolved;
+    ev->current_file = canonical_path;
     Value result = eval_node(ev, ev->top_env, tree);
     ev->current_file = previous_file;
     free(src);
 
     if (val_is_signal(result)) return result;
-    eval_mark_loaded_file(ev, resolved);
+    eval_mark_loaded_file(ev, canonical_path);
     return val_true();
 }
 

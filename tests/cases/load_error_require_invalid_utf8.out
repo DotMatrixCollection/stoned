@@ -1,2 +1,2 @@
 LoadError
-invalid UTF-8 in source -- /home/matrix9180/Projects/newruby/stoned/tests/fixtures/require/invalid_utf8.rb:1:1
+invalid UTF-8 in source -- tests/fixtures/require/invalid_utf8.rb:1:1
