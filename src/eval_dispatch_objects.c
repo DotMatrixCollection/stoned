@@ -1362,7 +1362,12 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "puts") == 0) {
             if (argc == 0) {
-                *out = file_write_stream(ev, recv, mode.sval, "\n", 1, site);
+                Value wrote = file_write_stream(ev, recv, mode.sval, "\n", 1, site);
+                if (val_is_signal(wrote)) {
+                    *out = wrote;
+                    return 1;
+                }
+                *out = val_nil();
                 return 1;
             }
             FILE *scratch = tmpfile();
@@ -1384,7 +1389,12 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             fread(buf, 1, (size_t)len, scratch);
             buf[len] = '\0';
             fclose(scratch);
-            *out = file_write_stream(ev, recv, mode.sval, buf, (size_t)len, site);
+            Value wrote = file_write_stream(ev, recv, mode.sval, buf, (size_t)len, site);
+            if (val_is_signal(wrote)) {
+                *out = wrote;
+                return 1;
+            }
+            *out = val_nil();
             return 1;
         }
         if (strcmp(name, "tell") == 0) {
