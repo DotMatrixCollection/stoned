@@ -1352,7 +1352,12 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             buf[0] = '\0';
             for (int i = 0; i < argc; i++)
                 strcat(buf, val_to_s(ev->arena, args[i]));
-            *out = file_write_stream(ev, recv, mode.sval, buf, strlen(buf), site);
+            Value wrote = file_write_stream(ev, recv, mode.sval, buf, strlen(buf), site);
+            if (val_is_signal(wrote)) {
+                *out = wrote;
+                return 1;
+            }
+            *out = val_nil();
             return 1;
         }
         if (strcmp(name, "puts") == 0) {
