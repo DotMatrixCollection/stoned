@@ -1176,12 +1176,15 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "<<") == 0) {
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
             if (mode_is_read(mode.sval)) {
                 *out = eval_raise_class(ev, site, "IOError", "not opened for writing");
                 return 1;
             }
-            if (argc >= 1)
-                fprintf(stream, "%s", val_to_s(ev->arena, args[0]));
+            fprintf(stream, "%s", val_to_s(ev->arena, args[0]));
             Value flushed = maybe_flush_stream(ev, recv, nf, site);
             if (val_is_signal(flushed)) {
                 *out = flushed;
@@ -1407,7 +1410,11 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "<<") == 0) {
-            const char *content = argc >= 1 ? val_to_s(ev->arena, args[0]) : "";
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            const char *content = val_to_s(ev->arena, args[0]);
             Value wrote = file_write_stream(ev, recv, mode.sval, content, strlen(content), site);
             if (val_is_signal(wrote)) {
                 *out = wrote;
