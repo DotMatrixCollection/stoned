@@ -1,0 +1,2 @@
+LoadError
+sema error in tests/fixtures/require/bad_sema.rb: 'return' outside of method

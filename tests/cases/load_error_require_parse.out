@@ -1,0 +1,2 @@
+LoadError
+parse error in tests/fixtures/require/bad_parse.rb: unexpected token in expression
