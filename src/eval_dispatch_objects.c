@@ -539,6 +539,8 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                         *out = closed_result;
                         return 1;
                     }
+                    if (result.kind == VAL_BREAK)
+                        result = *result.jump.wrapped;
                     *out = result;
                 } else {
                     *out = file_obj;

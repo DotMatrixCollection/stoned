@@ -1,0 +1,17 @@
+abc
+true
+:nexted
+true
+:broke
+true
+RuntimeError
+boom
+true
+ret
+true
+nil
+:manual_close
+true
+nil
+true
+nil

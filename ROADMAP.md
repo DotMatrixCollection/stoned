@@ -128,6 +128,7 @@ Recent Stage 5 progress already landed:
 - better `$LOAD_PATH` resolution for nested entries
 - friendly user-facing load errors while keeping canonical internal cache keys
 - stateful `File.open` handles instead of path-reopen behavior
+- `File.open` block cleanup now stays coherent across normal return, `next`, `break`, exceptions, early method `return`, and manual early `close`
 - `File#tell`, `File#seek`, `File#rewind`
 - `IO.new(fd, mode)` wrappers plus mode enforcement on read/write entry points
 - shared `IO#gets` / `File#gets` separator handling: default newline, custom separator strings, `nil` for “read rest”, paragraph mode (`""`), and long-line reads without the old 4KB cap
