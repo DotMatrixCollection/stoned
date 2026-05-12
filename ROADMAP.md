@@ -221,7 +221,7 @@ These remain real compatibility gaps and should be pulled into the staged route 
 - path canonicalization is materially stronger now, but not yet MRI-complete across all platform and feature-resolution cases
 - IO surface is still narrower than MRI
 - stateful file handles, cursor methods, and `IO.new(fd, mode)` now exist
-- `Errno::ENOENT` is wired for file-not-found; other `Errno::` classes (`EACCES`, `EEXIST`, `EBADF`, `EPERM`) are registered but not yet raised from real `errno` values — all file failures currently raise `ENOENT` regardless of the underlying OS error code
+- ~~`Errno::ENOENT` is wired for file-not-found; other `Errno::` classes registered but not raised from real `errno` values~~ done — `errno_class_name()` helper maps the C `errno` value to the correct `Errno::` class at every file/IO failure site; `EACCES`, `EBADF`, `EPERM`, `EEXIST` now dispatched correctly
 - binary/encoding mode support is not there yet
 
 ## Already landed
