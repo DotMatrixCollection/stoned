@@ -52,7 +52,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `165 passed, 0 failed, 165 total`.
+Current coverage in the tree: `168 passed, 0 failed, 168 total`.
 
 What is working today:
 
@@ -60,7 +60,7 @@ What is working today:
 - Literal sugar: `%w[...]` word arrays and `%i[...]` symbol arrays
 - Operators: arithmetic, comparison, bitwise, string/array `+`, array `<<`, `**`, `<=>`, `&&`, `||`
 - Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return` (including bare comma-separated multi-value returns), `defined?`; `case`/`when` with value equality, range membership, class membership (`===`), multi-pattern clauses, optional `else`, caseless form, `then` keyword; `case` is an expression
-- Exceptions: `raise`, `begin` / `rescue` / `else` / `ensure`, typed rescue clauses, typed rescue lists, rescue variable binding, `retry`, re-raise, uncaught backtraces, typed runtime failures including `NameError`, `NoMethodError`, `TypeError`, `SystemStackError`, `EncodingError`, and existing core error classes; exception instances support `new(message)`, `message`, `to_s`, `inspect`, `exception`, `backtrace`, and `set_backtrace`
+- Exceptions: `raise`, `begin` / `rescue` / `else` / `ensure`, typed rescue clauses, typed rescue lists, rescue variable binding, `retry`, re-raise, uncaught backtraces, typed runtime failures including `NameError`, `NoMethodError`, `TypeError`, `SystemStackError`, `EncodingError`, `IOError`, `SystemCallError`, and existing core error classes; `Errno` module with `ENOENT`, `EACCES`, `EEXIST`, `EBADF`, `EPERM` — file-not-found operations raise `Errno::ENOENT` with MRI-style messages; exception instances support `new(message)`, `message`, `to_s`, `inspect`, `exception`, `backtrace`, and `set_backtrace`
 - Methods: `def`, endless `def foo = expr`, default params, splat params, keyword params (`key:` / `key: default` / `**opts`), nested destructuring params, blocks, `yield`, closures, bare command-style calls, multiline command-style arg lists after commas, nested command-call comma precedence, space-before-`(` grouped command args, unary-leading command args, delayed `do`/`end` attachment through grouped and collection contexts for covered nested command-call cases, command-style and parenthesized keyword-hash args, `**hash` keyword expansion in calls with Ruby-like later-argument-wins merge order, `.()` call shorthand, `send`, `__send__`, `public_send`, `alias`, `tap`, `then`, `yield_self`
 - Classes: instance methods, `def self.foo`, inheritance, `initialize`, instance variables, `super` with checked arg forwarding, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
 - Visibility: `public`, `private`, `protected`, `private_class_method`/`public_class_method`/`protected_class_method`, `respond_to?` with `include_private`, explicit receiver restrictions, protected same-family receiver calls, `public_send` refusing hidden real methods
@@ -79,8 +79,8 @@ What is working today:
 - Regexp: `Regexp.new(string)`, regexp literals `/.../` with `i`/`m`/`x`, `Regexp#match`, `String#match`, `=~` operator, `MatchData` with `to_s`, `[]` by integer index, `begin`, `end`, `pre_match`, `post_match`; `Regexp#source`, `Regexp#inspect`; regex-backed `sub`, `gsub`, and `scan`; `RegexpError` on invalid patterns. Backed by reginold (Onigmo under a stable opaque API).
 - String: UTF-8-only strings; codepoint-aware `length`/`size`, `chars`, `split("")`, `each_char`, `reverse`, `ord`, `index`, `rindex`, `[]`/`slice`, `chop`, `strip`, `lstrip`, `rstrip`, `ljust`, `rjust`, `center`, `upcase`, `downcase`, `capitalize`, `swapcase`, `succ`, `tr`, `count`, `delete`, `squeeze`; plus `chomp`, `hex`, `oct`, `bytes`, `<<`, `lines`, `each_line`, `scan`, `sub`, `gsub`, and sprintf-style `String#%` with basic `%s`/`%d`/`%i`/`%f`, width, precision, and `%%`; `inspect`. Current Unicode semantics are codepoint-based with simple case mapping rather than full locale- or grapheme-aware behavior.
 - Kernel: `puts`, `print`, `p`, `pp`, `Integer()`, `Float()`, `String()`, `Array()`, `format`, `sprintf`, `raise`, `lambda`, `rand`, `exit`
-- IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `close`, `closed?`, `tell`, `seek`, `rewind`, `$stdin.gets`, `$stdin.read`, and `IO.new(fd, mode)` wrappers with mode enforcement
-- File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`; file objects with stateful native handles for `read`, `write`, `print`, `puts`, `path`, `mode`, `tell`, `seek`, `rewind`, `close`, `closed?`; modes `r`, `w`, `a` enforced and append mode starts at EOF
+- IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `close`, `closed?`, `tell`, `seek`, `rewind`, `$stdin.gets`, `$stdin.read`, and `IO.new(fd, mode)` wrappers with mode enforcement; mode violations raise `IOError`, closed-stream access raises `IOError`
+- File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`; file objects with stateful native handles for `read`, `write`, `print`, `puts`, `path`, `mode`, `tell`, `seek`, `rewind`, `close`, `closed?`; modes `r`, `w`, `a` enforced and append mode starts at EOF; file-not-found raises `Errno::ENOENT`
 - Globals and constants
 
 Known limitations:

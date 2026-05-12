@@ -130,6 +130,8 @@ Recent Stage 5 progress already landed:
 - stateful `File.open` handles instead of path-reopen behavior
 - `File#tell`, `File#seek`, `File#rewind`
 - `IO.new(fd, mode)` wrappers plus mode enforcement on read/write entry points
+- IO/File error class cleanup: mode violations raise `IOError` (not `LoadError`), closed-stream access raises `IOError` with MRI-standard `"closed stream"` message
+- `SystemCallError` base class, `Errno` module, and `Errno::ENOENT` / `EACCES` / `EEXIST` / `EBADF` / `EPERM` with correct inheritance chain (`Errno::ENOENT → SystemCallError → StandardError`); file-not-found operations raise `Errno::ENOENT` with MRI-style messages
 
 Exit gate:
 
@@ -219,6 +221,7 @@ These remain real compatibility gaps and should be pulled into the staged route 
 - path canonicalization is materially stronger now, but not yet MRI-complete across all platform and feature-resolution cases
 - IO surface is still narrower than MRI
 - stateful file handles, cursor methods, and `IO.new(fd, mode)` now exist
+- `Errno::ENOENT` is wired for file-not-found; other `Errno::` classes (`EACCES`, `EEXIST`, `EBADF`, `EPERM`) are registered but not yet raised from real `errno` values — all file failures currently raise `ENOENT` regardless of the underlying OS error code
 - binary/encoding mode support is not there yet
 
 ## Already landed
