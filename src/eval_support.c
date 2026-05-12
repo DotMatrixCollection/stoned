@@ -264,10 +264,23 @@ static const char *normalize_path(Arena *a, const char *path) {
     return joined;
 }
 
+static const char *normalize_require_target(Arena *a, const char *path) {
+    if (!path) return NULL;
+    size_t len = strlen(path);
+    int needs_rb = len < 3 || strcmp(path + len - 3, ".rb") != 0;
+    char *joined = malloc(len + (needs_rb ? 3 : 0) + 1);
+    if (!joined) return NULL;
+    memcpy(joined, path, len + 1);
+    if (needs_rb) strcat(joined, ".rb");
+    const char *copy = normalize_path(a, joined);
+    free(joined);
+    return copy;
+}
+
 static const char *resolve_relative_path(Arena *a, const char *base_file, const char *rel) {
     if (!base_file || !rel) return NULL;
     if (rel[0] == '/')
-        return normalize_path(a, rel);
+        return normalize_require_target(a, rel);
 
     const char *slash = strrchr(base_file, '/');
     size_t dir_len = slash ? (size_t)(slash - base_file) : 0;
@@ -295,7 +308,7 @@ static const char *resolve_relative_path(Arena *a, const char *base_file, const 
 static const char *resolve_from_dir(Arena *a, const char *dir, const char *rel) {
     if (!dir || !rel) return NULL;
     if (rel[0] == '/')
-        return normalize_path(a, rel);
+        return normalize_require_target(a, rel);
     size_t dir_len = strlen(dir);
     size_t rel_len = strlen(rel);
     int needs_rb = rel_len < 3 || strcmp(rel + rel_len - 3, ".rb") != 0;
@@ -392,15 +405,7 @@ static Value eval_require_path(Eval *ev, const char *resolved, const char *displ
 static const char *resolve_require_path(Arena *a, const char *base_file, const char *path, int base_is_dir) {
     if (!path) return NULL;
     if (path[0] == '/') {
-        size_t len = strlen(path);
-        int needs_rb = len < 3 || strcmp(path + len - 3, ".rb") != 0;
-        char *joined = malloc(len + (needs_rb ? 3 : 0) + 1);
-        if (!joined) return NULL;
-        memcpy(joined, path, len + 1);
-        if (needs_rb) strcat(joined, ".rb");
-        const char *copy = normalize_path(a, joined);
-        free(joined);
-        return copy;
+        return normalize_require_target(a, path);
     }
 
     if (strchr(path, '/')) {
