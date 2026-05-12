@@ -1,3 +1,5 @@
+#define _XOPEN_SOURCE 700
+
 #include "eval_internal.h"
 #include "parser.h"
 #include "sema.h"
@@ -5,6 +7,7 @@
 #include <stdarg.h>
 #include <sys/stat.h>
 #include <ctype.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -324,7 +327,18 @@ static void eval_mark_loaded_file(Eval *ev, const char *path) {
     ev->loaded_files = entry;
 }
 
+static const char *canonical_existing_path(Arena *a, const char *path) {
+    if (!path) return NULL;
+    char *resolved = realpath(path, NULL);
+    if (!resolved)
+        return path;
+    const char *copy = val_string(a, resolved).sval;
+    free(resolved);
+    return copy;
+}
+
 static Value eval_require_path(Eval *ev, const char *resolved, Node *site) {
+    resolved = canonical_existing_path(ev->arena, resolved);
     if (eval_has_loaded_file(ev, resolved))
         return val_false();
 
@@ -376,8 +390,17 @@ static Value eval_require_path(Eval *ev, const char *resolved, Node *site) {
 
 static const char *resolve_require_path(Arena *a, const char *base_file, const char *path, int base_is_dir) {
     if (!path) return NULL;
-    if (path[0] == '/')
-        return normalize_path(a, path);
+    if (path[0] == '/') {
+        size_t len = strlen(path);
+        int needs_rb = len < 3 || strcmp(path + len - 3, ".rb") != 0;
+        char *joined = malloc(len + (needs_rb ? 3 : 0) + 1);
+        if (!joined) return NULL;
+        memcpy(joined, path, len + 1);
+        if (needs_rb) strcat(joined, ".rb");
+        const char *copy = normalize_path(a, joined);
+        free(joined);
+        return copy;
+    }
 
     if (strchr(path, '/')) {
         if (base_file) {
