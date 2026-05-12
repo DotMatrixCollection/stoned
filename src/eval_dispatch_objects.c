@@ -147,6 +147,87 @@ static Value file_read_stream(Eval *ev, Value recv, const char *mode, const char
     return out;
 }
 
+static Value file_gets_stream(Eval *ev, Value recv, const char *mode, const char *context,
+                              Value *args, int argc, Node *site) {
+    if (argc > 1)
+        return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+    if (mode_is_write(mode) || mode_is_append(mode))
+        return eval_raise_class(ev, site, "IOError", "not opened for reading");
+
+    NativeFile *nf = NULL;
+    if (!ensure_open_native_file(ev, recv, site, &nf))
+        return invalid_file_object(ev, site);
+
+    const char *sep = "\n";
+    size_t sep_len = 1;
+    int read_all = 0;
+    int paragraph = 0;
+    if (argc == 1) {
+        if (args[0].kind == VAL_NIL) {
+            read_all = 1;
+        } else if (args[0].kind == VAL_STRING) {
+            sep = args[0].sval;
+            sep_len = strlen(sep);
+            if (sep_len == 0) paragraph = 1;
+        } else {
+            return eval_raise_class(ev, site, "TypeError", "%s separator must be a String or nil", context);
+        }
+    }
+
+    size_t cap = 128;
+    size_t len = 0;
+    char *buf = malloc(cap);
+    if (!buf)
+        return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+
+    int ch;
+    while ((ch = fgetc(nf->fp)) != EOF) {
+        if (len + 2 >= cap) {
+            size_t next = cap * 2;
+            char *nb = realloc(buf, next);
+            if (!nb) {
+                free(buf);
+                return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+            }
+            buf = nb;
+            cap = next;
+        }
+        buf[len++] = (char)ch;
+
+        if (read_all) continue;
+
+        if (paragraph) {
+            if (len >= 2 && buf[len - 1] == '\n' && buf[len - 2] == '\n')
+                break;
+            continue;
+        }
+
+        if (len >= sep_len && memcmp(buf + len - sep_len, sep, sep_len) == 0)
+            break;
+    }
+
+    if (ferror(nf->fp)) {
+        free(buf);
+        clearerr(nf->fp);
+        return eval_raise_class(ev, site, "IOError", "cannot read file");
+    }
+
+    if (len == 0) {
+        free(buf);
+        return val_nil();
+    }
+
+    buf[len] = '\0';
+    if (!mode_is_binary(mode) && !utf8_validate(buf, len, NULL)) {
+        free(buf);
+        return eval_raise_encoding_error(ev, site, context);
+    }
+
+    Value out = val_string_n(ev->arena, buf, len);
+    free(buf);
+    return out;
+}
+
 static Value file_write_stream(Eval *ev, Value recv, const char *mode, const char *content, size_t len, Node *site) {
     if (mode_is_read(mode))
         return eval_raise_class(ev, site, "IOError", "not opened for writing");
@@ -1082,20 +1163,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "gets") == 0) {
-            if (mode_is_write(mode.sval) || mode_is_append(mode.sval)) {
-                *out = eval_raise_class(ev, site, "IOError", "not opened for reading");
-                return 1;
-            }
-            char buf[4096];
-            if (!fgets(buf, sizeof(buf), stream)) {
-                *out = val_nil();
-                return 1;
-            }
-            if (!mode_is_binary(mode.sval) && !utf8_validate(buf, strlen(buf), NULL)) {
-                *out = eval_raise_encoding_error(ev, site, "IO#gets");
-                return 1;
-            }
-            *out = val_string(ev->arena, buf);
+            *out = file_gets_stream(ev, recv, mode.sval, "IO#gets", args, argc, site);
             return 1;
         }
         if (strcmp(name, "read") == 0) {
@@ -1164,6 +1232,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             } else {
                 *out = file_read_stream(ev, recv, mode.sval, "File#read", site);
             }
+            return 1;
+        }
+        if (strcmp(name, "gets") == 0) {
+            *out = file_gets_stream(ev, recv, mode.sval, "File#gets", args, argc, site);
             return 1;
         }
         if (strcmp(name, "write") == 0) {

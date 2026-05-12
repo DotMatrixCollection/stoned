@@ -119,7 +119,7 @@ This is the bridge from language/runtime correctness to running larger real prog
   - ~~seek / tell / rewind~~ done
   - ~~binary mode (`rb`/`wb`/`ab`)~~ done — UTF-8 validation skipped in binary mode; mode helpers replace all strcmp checks
   - ~~`IO.new` from raw file descriptors~~ done
-  - closer stdin behavior and line-separator handling
+  - ~~closer stdin behavior and line-separator handling~~ done — shared `gets` path now supports custom separators, `nil`, paragraph mode (`""`), and long lines without fixed-buffer truncation across both `IO` and `File`
 - keep file/object lifecycle semantics closer to MRI under block and non-block forms
 
 Recent Stage 5 progress already landed:
@@ -130,6 +130,7 @@ Recent Stage 5 progress already landed:
 - stateful `File.open` handles instead of path-reopen behavior
 - `File#tell`, `File#seek`, `File#rewind`
 - `IO.new(fd, mode)` wrappers plus mode enforcement on read/write entry points
+- shared `IO#gets` / `File#gets` separator handling: default newline, custom separator strings, `nil` for “read rest”, paragraph mode (`""`), and long-line reads without the old 4KB cap
 - IO/File error class cleanup: mode violations raise `IOError` (not `LoadError`), closed-stream access raises `IOError` with MRI-standard `"closed stream"` message
 - `SystemCallError` base class, `Errno` module, and `Errno::ENOENT` / `EACCES` / `EEXIST` / `EBADF` / `EPERM` with correct inheritance chain (`Errno::ENOENT → SystemCallError → StandardError`); file-not-found operations raise `Errno::ENOENT` with MRI-style messages
 
