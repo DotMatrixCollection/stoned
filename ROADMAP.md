@@ -117,7 +117,7 @@ This is the bridge from language/runtime correctness to running larger real prog
 - keep improving load-time error reporting and feature-resolution behavior
 - expand IO behavior:
   - ~~seek / tell / rewind~~ done
-  - binary mode and encoding flags
+  - ~~binary mode (`rb`/`wb`/`ab`)~~ done — UTF-8 validation skipped in binary mode; mode helpers replace all strcmp checks
   - ~~`IO.new` from raw file descriptors~~ done
   - closer stdin behavior and line-separator handling
 - keep file/object lifecycle semantics closer to MRI under block and non-block forms

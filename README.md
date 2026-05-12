@@ -52,7 +52,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `169 passed, 0 failed, 169 total`.
+Current coverage in the tree: `171 passed, 0 failed, 171 total`.
 
 What is working today:
 
@@ -80,7 +80,7 @@ What is working today:
 - String: UTF-8-only strings; codepoint-aware `length`/`size`, `chars`, `split("")`, `each_char`, `reverse`, `ord`, `index`, `rindex`, `[]`/`slice`, `chop`, `strip`, `lstrip`, `rstrip`, `ljust`, `rjust`, `center`, `upcase`, `downcase`, `capitalize`, `swapcase`, `succ`, `tr`, `count`, `delete`, `squeeze`; plus `chomp`, `hex`, `oct`, `bytes`, `<<`, `lines`, `each_line`, `scan`, `sub`, `gsub`, and sprintf-style `String#%` with basic `%s`/`%d`/`%i`/`%f`, width, precision, and `%%`; `inspect`. Current Unicode semantics are codepoint-based with simple case mapping rather than full locale- or grapheme-aware behavior.
 - Kernel: `puts`, `print`, `p`, `pp`, `Integer()`, `Float()`, `String()`, `Array()`, `format`, `sprintf`, `raise`, `lambda`, `rand`, `exit`
 - IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `close`, `closed?`, `tell`, `seek`, `rewind`, `$stdin.gets`, `$stdin.read`, and `IO.new(fd, mode)` wrappers with mode enforcement; mode violations raise `IOError`, closed-stream access raises `IOError`
-- File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`; file objects with stateful native handles for `read`, `write`, `print`, `puts`, `path`, `mode`, `tell`, `seek`, `rewind`, `close`, `closed?`; modes `r`, `w`, `a` enforced and append mode starts at EOF; file-not-found raises `Errno::ENOENT`
+- File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`; file objects with stateful native handles for `read`, `write`, `print`, `puts`, `path`, `mode`, `tell`, `seek`, `rewind`, `close`, `closed?`; text modes `r`, `w`, `a` and binary modes `rb`, `wb`, `ab` — binary mode skips UTF-8 validation so non-UTF-8 byte sequences read without error; file-not-found raises `Errno::ENOENT`
 - Globals and constants
 
 Known limitations:
