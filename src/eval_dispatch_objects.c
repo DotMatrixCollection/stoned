@@ -58,6 +58,12 @@ static Value maybe_flush_stream(Eval *ev, Value recv, NativeFile *nf, Node *site
     return val_nil();
 }
 
+static Value wrong_arg_count(Eval *ev, Node *site, int given, int expected) {
+    return eval_raise_class(ev, site, "ArgumentError",
+                            "wrong number of arguments (given %d, expected %d)",
+                            given, expected);
+}
+
 static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node *site) {
     const char *fmode = file_fopen_mode(mode);
     if (!fmode)
@@ -1082,12 +1088,20 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         Value closed;
         Value fd_num_val = val_int(-1);
         if (strcmp(name, "close") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             Value closed_result = file_close_stream(ev, recv, site);
             val_object_set_ivar(ev->arena, recv, "closed", val_true());
             *out = closed_result;
             return 1;
         }
         if (strcmp(name, "closed?") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             if (val_object_get_ivar(recv, "closed", &closed)) *out = closed;
             else *out = val_false();
             return 1;
@@ -1177,11 +1191,19 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "flush") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             fflush(stream);
             *out = recv;
             return 1;
         }
         if (strcmp(name, "sync") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             Value sync = val_false();
             if (val_object_get_ivar(recv, "sync", &sync))
                 *out = sync;
@@ -1190,18 +1212,29 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "sync=") == 0) {
-            Value sync = argc > 0 ? val_bool(val_truthy(args[0])) : val_nil();
-            if (argc > 0)
-                val_object_set_ivar(ev->arena, recv, "sync", sync);
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            Value sync = val_bool(val_truthy(args[0]));
+            val_object_set_ivar(ev->arena, recv, "sync", sync);
             *out = sync;
             return 1;
         }
         if (strcmp(name, "fileno") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             if (fd_num >= 0) *out = val_int(fd_num);
             else *out = val_int(fileno(stream));
             return 1;
         }
         if (strcmp(name, "isatty") == 0 || strcmp(name, "tty?") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             *out = val_false();
             return 1;
         }
@@ -1214,6 +1247,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "tell") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             *out = file_tell_stream(ev, recv, site);
             return 1;
         }
@@ -1247,14 +1284,26 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "path") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             *out = path;
             return 1;
         }
         if (strcmp(name, "mode") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             *out = mode;
             return 1;
         }
         if (strcmp(name, "sync") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             Value sync = val_false();
             if (val_object_get_ivar(recv, "sync", &sync))
                 *out = sync;
@@ -1263,13 +1312,20 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "sync=") == 0) {
-            Value sync = argc > 0 ? val_bool(val_truthy(args[0])) : val_nil();
-            if (argc > 0)
-                val_object_set_ivar(ev->arena, recv, "sync", sync);
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            Value sync = val_bool(val_truthy(args[0]));
+            val_object_set_ivar(ev->arena, recv, "sync", sync);
             *out = sync;
             return 1;
         }
         if (strcmp(name, "flush") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             NativeFile *nf = NULL;
             if (!ensure_open_native_file(ev, recv, site, &nf)) {
                 *out = invalid_file_object(ev, site);
@@ -1280,6 +1336,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "fileno") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             NativeFile *nf = NULL;
             if (!ensure_open_native_file(ev, recv, site, &nf)) {
                 *out = invalid_file_object(ev, site);
@@ -1289,6 +1349,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "isatty") == 0 || strcmp(name, "tty?") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             NativeFile *nf = NULL;
             if (!ensure_open_native_file(ev, recv, site, &nf)) {
                 *out = invalid_file_object(ev, site);
@@ -1298,12 +1362,20 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "close") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             Value closed_result = file_close_stream(ev, recv, site);
             val_object_set_ivar(ev->arena, recv, "closed", val_true());
             *out = closed_result;
             return 1;
         }
         if (strcmp(name, "closed?") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             Value closed;
             if (val_object_get_ivar(recv, "closed", &closed)) {
                 *out = closed;
@@ -1398,6 +1470,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "tell") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
             *out = file_tell_stream(ev, recv, site);
             return 1;
         }
@@ -1407,7 +1483,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "rewind") == 0) {
             if (argc != 0) {
-                *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+                *out = wrong_arg_count(ev, site, argc, 0);
                 return 1;
             }
             *out = file_rewind_stream(ev, recv, site);
