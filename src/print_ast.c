@@ -144,6 +144,14 @@ void print_ast(FILE *out, Node *node, int indent) {
             print_ast(out, node->def.body, indent+1);
             break;
 
+        case NODE_SCLASS:
+            fprintf(out, "SCLASS\n");
+            indent_print(out, indent+1); fprintf(out, "recv:\n");
+            print_ast(out, node->sclass.recv, indent+2);
+            indent_print(out, indent+1); fprintf(out, "body:\n");
+            print_ast(out, node->sclass.body, indent+2);
+            break;
+
         case NODE_MODULE:
             fprintf(out, "MODULE(%s)\n", node->klass.name);
             print_ast(out, node->klass.body, indent+1);

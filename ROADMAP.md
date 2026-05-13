@@ -173,7 +173,7 @@ If work starts today, the next highest-value sequence is:
 
 Latest compatibility probe:
 
-- 2026-05-13: probing `birb` with `birb/lib` on `$LOAD_PATH` reaches `require "irb"` and then stops at a parser error in `birb/lib/irb.rb` on `class << self`; the next concrete compatibility target is singleton-class / eigenclass syntax support
+- 2026-05-13: probing `birb` with `birb/lib` on `$LOAD_PATH` now gets past `class << self`, safe navigation `&.`, ternary parsing after predicate methods, and block-body `rescue`; the next parser targets in `birb/lib/irb.rb` are remaining implicit-body rescue nesting, interpolation edge cases, and other uncovered expression forms later in the file
 
 ## Stage gap survey (2026-04-22)
 

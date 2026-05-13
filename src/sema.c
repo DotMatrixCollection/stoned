@@ -409,6 +409,17 @@ static void resolve(Sema *s, Node *node) {
             break;
         }
 
+        case NODE_SCLASS: {
+            resolve(s, node->sclass.recv);
+            scope_push(s, 1);
+            if (node->sclass.body) {
+                collect(s, node->sclass.body, NULL);
+                resolve(s, node->sclass.body);
+            }
+            scope_pop(s);
+            break;
+        }
+
         case NODE_MODULE: {
             scope_push(s, 1);
             if (node->klass.body) {

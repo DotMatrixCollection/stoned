@@ -66,6 +66,7 @@ typedef enum {
     /* Definition */
     NODE_DEF,
     NODE_CLASS,         /* class Foo < Bar ... end */
+    NODE_SCLASS,        /* class << expr ... end */
     NODE_MODULE,        /* module Foo ... end */
     NODE_ALIAS,         /* alias new_name old_name */
     NODE_PARAM,         /* single formal parameter */
@@ -146,6 +147,7 @@ struct Node {
             const char *method;
             NodeList *args;
             Node     *block;    /* NULL if no block */
+            int       safe_nav; /* recv&.meth */
         } call;
 
         /* NODE_BLOCK */
@@ -202,6 +204,12 @@ struct Node {
             Node       *superclass;  /* NULL if no < */
             Node       *body;
         } klass;
+
+        /* NODE_SCLASS */
+        struct {
+            Node *recv;
+            Node *body;
+        } sclass;
 
         /* NODE_PARAM */
         struct {

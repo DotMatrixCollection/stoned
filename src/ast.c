@@ -56,6 +56,7 @@ const char *node_kind_name(NodeKind k) {
         case NODE_BREAK:     return "BREAK";
         case NODE_NEXT:      return "NEXT";
         case NODE_DEF:       return "DEF";
+        case NODE_SCLASS:    return "SCLASS";
         case NODE_MODULE:    return "MODULE";
         case NODE_PARAM:     return "PARAM";
         case NODE_SUPER:     return "SUPER";

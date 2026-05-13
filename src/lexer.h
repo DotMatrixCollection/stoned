@@ -71,6 +71,7 @@ typedef enum {
     TOK_SLASH,          /* / */
     TOK_PERCENT,        /* % */
     TOK_AMP,            /* & */
+    TOK_ANDDOT,         /* &. */
     TOK_AMP2,           /* && */
     TOK_PIPE,           /* | */
     TOK_PIPE2,          /* || */

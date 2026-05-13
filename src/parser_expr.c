@@ -101,10 +101,6 @@ static int kernel_const_call_name(const char *name) {
            strcmp(name, "String") == 0 || strcmp(name, "Array") == 0;
 }
 
-static int token_adjacent(Token left, Token right) {
-    return left.line == right.line && right.col == left.col + left.len;
-}
-
 static Token peek_next_token(Parser *p) {
     Parser copy = *p;
     advance(&copy);
@@ -256,7 +252,7 @@ static BP infix_bp(TokenKind k) {
         case TOK_PLUS: case TOK_MINUS: return (BP){26, 27};
         case TOK_STAR: case TOK_SLASH: case TOK_PERCENT: return (BP){28, 29};
         case TOK_STAR2: return (BP){32, 31};
-        case TOK_DOT: case TOK_COLON2: return (BP){40, 41};
+        case TOK_DOT: case TOK_COLON2: case TOK_ANDDOT: return (BP){40, 41};
         case TOK_LBRACKET: return (BP){42, 43};
         default: return (BP){0, 0};
     }
@@ -373,10 +369,11 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
             continue;
         }
 
-        if (op.kind == TOK_DOT || op.kind == TOK_COLON2) {
+        if (op.kind == TOK_DOT || op.kind == TOK_COLON2 || op.kind == TOK_ANDDOT) {
             Token name_tok = advance(p);
             const char *method_name = NULL;
-            if (op.kind == TOK_DOT && name_tok.kind == TOK_LPAREN && token_adjacent(op, name_tok)) {
+            if ((op.kind == TOK_DOT || op.kind == TOK_ANDDOT) &&
+                name_tok.kind == TOK_LPAREN && token_adjacent(op, name_tok)) {
                 method_name = "call";
             } else if (name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) {
                 method_name = name_tok.sval;
@@ -400,7 +397,9 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
                 }
                 if (!method_name) break;
             }
-            if (check(p, TOK_QUESTION) || check(p, TOK_BANG)) {
+            Token suffix_tok = peek(p);
+            if ((suffix_tok.kind == TOK_QUESTION || suffix_tok.kind == TOK_BANG) &&
+                token_adjacent(name_tok, suffix_tok)) {
                 Token suffix = advance(p);
                 size_t nlen = strlen(method_name);
                 char *buf = arena_alloc(p->arena, nlen + 2);
@@ -412,6 +411,7 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
             Node *call = node_new(p->arena, NODE_CALL, left->span);
             call->call.recv = left;
             call->call.method = method_name;
+            call->call.safe_nav = (op.kind == TOK_ANDDOT);
             Token nxt = peek(p);
             if (name_tok.kind == TOK_LPAREN && strcmp(method_name, "call") == 0) {
                 call->call.args = parse_args(p);
@@ -535,6 +535,10 @@ Node *parse_block(Parser *p) {
     }
     skip_terminators(p);
     n->block.body = parse_body(p, brace);
+    if (check(p, TOK_RESCUE) || check(p, TOK_ENSURE)) {
+        n->block.body = wrap_rescue_ensure(p, s, n->block.body);
+        if (!n->block.body) return NULL;
+    }
     if (brace) expect(p, TOK_RBRACE, "expected '}'");
     else expect(p, TOK_END, "expected 'end'");
     return n;
@@ -557,6 +561,10 @@ static Node *parse_lambda_literal(Parser *p, Span s) {
     advance(p);
     skip_terminators(p);
     block->block.body = parse_body(p, brace);
+    if (check(p, TOK_RESCUE) || check(p, TOK_ENSURE)) {
+        block->block.body = wrap_rescue_ensure(p, s, block->block.body);
+        if (!block->block.body) return NULL;
+    }
     if (brace) expect(p, TOK_RBRACE, "expected '}'");
     else expect(p, TOK_END, "expected 'end'");
 

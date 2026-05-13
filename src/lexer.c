@@ -832,6 +832,10 @@ static Token scan(Lexer *l) {
             SIMPLE(TOK_SLASH);
 
         case '&':
+            if (peek_ch(l) == '.') {
+                advance(l);
+                SIMPLE(TOK_ANDDOT);
+            }
             if (peek_ch(l) == '&') {
                 advance(l);
                 if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_AMP2_EQ); }
@@ -1083,6 +1087,7 @@ const char *token_kind_name(TokenKind k) {
         case TOK_SLASH:      return "/";
         case TOK_PERCENT:    return "%";
         case TOK_AMP:        return "&";
+        case TOK_ANDDOT:     return "&.";
         case TOK_AMP2:       return "&&";
         case TOK_PIPE:       return "|";
         case TOK_PIPE2:      return "||";

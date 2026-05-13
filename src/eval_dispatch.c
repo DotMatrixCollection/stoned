@@ -1566,6 +1566,8 @@ call_method:
 
     Value recv = eval_node(ev, env, node->call.recv);
     CHECK(recv);
+    if (node->call.safe_nav && recv.kind == VAL_NIL)
+        return val_nil();
 
     if (recv.kind == VAL_ARRAY) {
         if (strcmp(node->call.method, "[]") == 0) {

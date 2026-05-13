@@ -578,8 +578,28 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 memcpy(key + 5, node->def.name, nlen + 1);
                 env_define(ev->arena, recv.klass->class_env, key, val_method(node, ev->top_env, METHOD_PUBLIC));
             } else {
-                env_define(ev->arena, env, node->def.name,
-                           val_method(node, ev->top_env, current_method_visibility(env)));
+                Value singleton_target = val_nil();
+                if (env_get(env, "__singleton_target__", &singleton_target)) {
+                    if (singleton_target.kind == VAL_CLASS) {
+                        size_t nlen = strlen(node->def.name);
+                        char *key = arena_alloc(ev->arena, nlen + 6);
+                        memcpy(key, "self.", 5);
+                        memcpy(key + 5, node->def.name, nlen + 1);
+                        env_define(ev->arena, singleton_target.klass->class_env, key,
+                                   val_method(node, ev->top_env, current_method_visibility(env)));
+                    } else if (singleton_target.kind == VAL_OBJECT) {
+                        if (!singleton_target.obj->singleton_env)
+                            singleton_target.obj->singleton_env = env_new(ev->arena, NULL, 1);
+                        env_define(ev->arena, singleton_target.obj->singleton_env, node->def.name,
+                                   val_method(node, ev->top_env, current_method_visibility(env)));
+                    } else {
+                        env_define(ev->arena, env, node->def.name,
+                                   val_method(node, ev->top_env, current_method_visibility(env)));
+                    }
+                } else {
+                    env_define(ev->arena, env, node->def.name,
+                               val_method(node, ev->top_env, current_method_visibility(env)));
+                }
             }
             return val_nil();
 
@@ -639,6 +659,31 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             if (!reopen)
                 env_define(ev->arena, ev->top_env, node->klass.name, klass);
             return klass;
+        }
+
+        case NODE_SCLASS: {
+            Value recv = eval_node(ev, env, node->sclass.recv);
+            CHECK(recv);
+
+            Env *target_env = NULL;
+            if (recv.kind == VAL_CLASS) {
+                target_env = recv.klass->class_env;
+            } else if (recv.kind == VAL_OBJECT) {
+                if (!recv.obj->singleton_env)
+                    recv.obj->singleton_env = env_new(ev->arena, NULL, 1);
+                target_env = recv.obj->singleton_env;
+            } else {
+                return eval_raise_class(ev, node, "TypeError", "singleton class must be opened on an object");
+            }
+
+            env_set(ev->arena, target_env, "self", recv);
+            env_set(ev->arena, target_env, "__singleton_target__", recv);
+            set_current_method_visibility(ev->arena, target_env, METHOD_PUBLIC);
+            if (node->sclass.body) {
+                Value body_result = eval_node(ev, target_env, node->sclass.body);
+                if (val_is_signal(body_result)) return body_result;
+            }
+            return recv;
         }
 
         case NODE_MODULE: {

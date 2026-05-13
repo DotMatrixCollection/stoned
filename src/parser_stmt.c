@@ -50,7 +50,7 @@ static const char *method_name_from_token(Parser *p, Token tok) {
 
 /* Attach rescue/ensure clauses to an already-parsed body, producing a NODE_BEGIN.
    Called for both explicit begin...end and implicit method-level rescue. */
-static Node *wrap_rescue_ensure(Parser *p, Span s, Node *body) {
+Node *wrap_rescue_ensure(Parser *p, Span s, Node *body) {
     Node *n = node_new(p->arena, NODE_BEGIN, s);
     n->begin_stmt.body = body;
     while (match(p, TOK_RESCUE)) {
@@ -230,8 +230,10 @@ Node *parse_stmt(Parser *p) {
             error(p, "expected method name after 'def'", name_tok.line, name_tok.col);
             return NULL;
         }
+        Token def_suffix_tok = peek(p);
         if ((name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) &&
-            (check(p, TOK_QUESTION) || check(p, TOK_BANG))) {
+            (def_suffix_tok.kind == TOK_QUESTION || def_suffix_tok.kind == TOK_BANG) &&
+            token_adjacent(name_tok, def_suffix_tok)) {
             Token suffix = advance(p);
             size_t nlen = strlen(def_name);
             char *buf = arena_alloc(p->arena, nlen + 2);
@@ -278,8 +280,10 @@ Node *parse_stmt(Parser *p) {
             error(p, "expected new method name after 'alias'", new_tok.line, new_tok.col);
             return NULL;
         }
+        Token new_suffix_tok = peek(p);
         if ((new_tok.kind == TOK_IDENT || new_tok.kind == TOK_CONST) &&
-            (check(p, TOK_QUESTION) || check(p, TOK_BANG))) {
+            (new_suffix_tok.kind == TOK_QUESTION || new_suffix_tok.kind == TOK_BANG) &&
+            token_adjacent(new_tok, new_suffix_tok)) {
             Token suffix = advance(p);
             size_t nlen = strlen(new_name);
             char *buf = arena_alloc(p->arena, nlen + 2);
@@ -295,8 +299,10 @@ Node *parse_stmt(Parser *p) {
             error(p, "expected existing method name after alias target", old_tok.line, old_tok.col);
             return NULL;
         }
+        Token old_suffix_tok = peek(p);
         if ((old_tok.kind == TOK_IDENT || old_tok.kind == TOK_CONST) &&
-            (check(p, TOK_QUESTION) || check(p, TOK_BANG))) {
+            (old_suffix_tok.kind == TOK_QUESTION || old_suffix_tok.kind == TOK_BANG) &&
+            token_adjacent(old_tok, old_suffix_tok)) {
             Token suffix = advance(p);
             size_t nlen = strlen(old_name);
             char *buf = arena_alloc(p->arena, nlen + 2);
@@ -314,6 +320,16 @@ Node *parse_stmt(Parser *p) {
 
     if (t.kind == TOK_CLASS) {
         advance(p);
+        if (match(p, TOK_LSHIFT)) {
+            Node *recv = parse_expr(p, 0);
+            if (!recv) return NULL;
+            Node *n = node_new(p->arena, NODE_SCLASS, s);
+            n->sclass.recv = recv;
+            skip_terminators(p);
+            n->sclass.body = parse_body(p, 0);
+            expect(p, TOK_END, "expected 'end'");
+            return n;
+        }
         Token name_tok = advance(p);
         if (name_tok.kind != TOK_CONST) {
             error(p, "expected class name after 'class'", name_tok.line, name_tok.col);
