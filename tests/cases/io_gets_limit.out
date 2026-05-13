@@ -1,0 +1,10 @@
+""
+"al"
+"al"
+"al"
+"alpha\nb"
+"alpha\n"
+TypeError
+no implicit conversion of true into String
+TypeError
+no implicit conversion of true into Integer

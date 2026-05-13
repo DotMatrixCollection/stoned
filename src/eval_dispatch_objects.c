@@ -281,8 +281,9 @@ static Value file_read_stream_with_length(Eval *ev, Value recv, const char *mode
 
 static Value file_gets_stream(Eval *ev, Value recv, const char *mode, const char *context,
                               Value *args, int argc, Node *site) {
-    if (argc > 1)
-        return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+    if (argc > 2)
+        return eval_raise_class(ev, site, "ArgumentError",
+                                "wrong number of arguments (given %d, expected 0..2)", argc);
     if (!mode_allows_read(mode))
         return eval_raise_class(ev, site, "IOError", "not opened for reading");
 
@@ -294,17 +295,32 @@ static Value file_gets_stream(Eval *ev, Value recv, const char *mode, const char
     size_t sep_len = 1;
     int read_all = 0;
     int paragraph = 0;
-    if (argc == 1) {
-        if (args[0].kind == VAL_NIL) {
+    int has_limit = 0;
+    int64_t limit = 0;
+    if (argc >= 1) {
+        if (args[0].kind == VAL_INT) {
+            has_limit = 1;
+            limit = args[0].ival;
+        } else if (args[0].kind == VAL_NIL) {
             read_all = 1;
         } else if (args[0].kind == VAL_STRING) {
             sep = args[0].sval;
             sep_len = strlen(sep);
             if (sep_len == 0) paragraph = 1;
         } else {
-            return eval_raise_class(ev, site, "TypeError", "%s separator must be a String or nil", context);
+            return implicit_string_conversion_error(ev, args[0], site);
         }
     }
+    if (argc == 2) {
+        if (args[1].kind != VAL_INT)
+            return implicit_integer_conversion_error(ev, args[1], site);
+        has_limit = 1;
+        limit = args[1].ival;
+    }
+    if (has_limit && limit == 0)
+        return val_string(ev->arena, "");
+    if (has_limit && limit < 0)
+        has_limit = 0;
 
     size_t cap = 128;
     size_t len = 0;
@@ -325,6 +341,8 @@ static Value file_gets_stream(Eval *ev, Value recv, const char *mode, const char
             cap = next;
         }
         buf[len++] = (char)ch;
+        if (has_limit && len >= (size_t)limit)
+            break;
 
         if (read_all) continue;
 
