@@ -801,8 +801,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
             errno_mod.klass->class_env = env_new(arena, ev->top_env, 1);
             env_define(arena, ev->top_env, "Errno", errno_mod);
 
-            static const char *short_names[] = { "ENOENT", "EACCES", "EEXIST", "EBADF", "EPERM", NULL };
-            static const char *full_names[]  = { "Errno::ENOENT", "Errno::EACCES", "Errno::EEXIST", "Errno::EBADF", "Errno::EPERM", NULL };
+            static const char *short_names[] = { "ENOENT", "EACCES", "EEXIST", "EBADF", "EPERM", "EINVAL", "ESPIPE", NULL };
+            static const char *full_names[]  = { "Errno::ENOENT", "Errno::EACCES", "Errno::EEXIST", "Errno::EBADF", "Errno::EPERM", "Errno::EINVAL", "Errno::ESPIPE", NULL };
             for (int i = 0; short_names[i]; i++) {
                 Value ec = val_class(arena, full_names[i], scerr);
                 ec.klass->class_env = env_new(arena, ev->top_env, 1);

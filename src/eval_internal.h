@@ -15,6 +15,8 @@ static inline const char *errno_class_name(int err) {
         case EPERM:  return "Errno::EPERM";
         case EEXIST: return "Errno::EEXIST";
         case EBADF:  return "Errno::EBADF";
+        case EINVAL: return "Errno::EINVAL";
+        case ESPIPE: return "Errno::ESPIPE";
         default:     return "IOError";
     }
 }

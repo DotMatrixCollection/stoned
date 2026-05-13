@@ -282,14 +282,18 @@ static Value file_tell_stream(Eval *ev, Value recv, Node *site) {
         return invalid_file_object(ev, site);
 
     long pos = ftell(nf->fp);
-    if (pos < 0)
-        return eval_raise_class(ev, site, "IOError", "cannot tell file position");
+    if (pos < 0) {
+        int err = errno;
+        clearerr(nf->fp);
+        return eval_raise_class(ev, site, errno_class_name(err), "%s", strerror(err));
+    }
     return val_int((int64_t)pos);
 }
 
 static Value file_seek_stream(Eval *ev, Value recv, Value *args, int argc, Node *site) {
     if (argc < 1 || argc > 2)
-        return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        return eval_raise_class(ev, site, "ArgumentError",
+                                "wrong number of arguments (given %d, expected 1..2)", argc);
     if (args[0].kind != VAL_INT)
         return eval_raise_class(ev, site, "TypeError", "File#seek offset must be an Integer");
 
@@ -300,15 +304,18 @@ static Value file_seek_stream(Eval *ev, Value recv, Value *args, int argc, Node 
         if (args[1].ival == 0) whence = SEEK_SET;
         else if (args[1].ival == 1) whence = SEEK_CUR;
         else if (args[1].ival == 2) whence = SEEK_END;
-        else return eval_raise_class(ev, site, "ArgumentError", "invalid whence -- %lld", (long long)args[1].ival);
+        else return eval_raise_class(ev, site, "Errno::EINVAL", "%s", strerror(EINVAL));
     }
 
     NativeFile *nf = NULL;
     if (!ensure_open_native_file(ev, recv, site, &nf))
         return invalid_file_object(ev, site);
 
-    if (fseek(nf->fp, (long)args[0].ival, whence) != 0)
-        return eval_raise_class(ev, site, "IOError", "cannot seek file");
+    if (fseek(nf->fp, (long)args[0].ival, whence) != 0) {
+        int err = errno;
+        clearerr(nf->fp);
+        return eval_raise_class(ev, site, errno_class_name(err), "%s", strerror(err));
+    }
     clearerr(nf->fp);
     return val_int(0);
 }

@@ -1,0 +1,5 @@
+Errno::EINVAL
+Invalid argument
+0
+ArgumentError
+wrong number of arguments (given 0, expected 1..2)
