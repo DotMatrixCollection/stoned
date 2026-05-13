@@ -665,14 +665,21 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             return 1;
         }
         if (strcmp(name, "open") == 0) {
-            if (argc < 1) {
-                *out = eval_raise_class(ev, site, "ArgumentError", "File.open requires a path");
+            if (argc < 1 || argc > 3) {
+                *out = argc < 1
+                     ? wrong_arg_count(ev, site, argc, 1)
+                     : eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 1..3)", argc);
             } else if (args[0].kind != VAL_STRING) {
                 *out = implicit_string_conversion_error(ev, args[0], site);
             } else {
                 Value mode = (argc >= 2 && args[1].kind != VAL_NIL) ? args[1] : val_string(ev->arena, "r");
                 if (mode.kind != VAL_STRING) {
                     *out = implicit_string_conversion_error(ev, mode, site);
+                    return 1;
+                }
+                if (argc >= 3 && args[2].kind != VAL_NIL && args[2].kind != VAL_INT) {
+                    *out = implicit_integer_conversion_error(ev, args[2], site);
                     return 1;
                 }
                 Value opened = file_open_stream(ev, args[0].sval, mode.sval, site);
