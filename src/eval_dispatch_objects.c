@@ -75,6 +75,16 @@ static const char *join_write_args(Eval *ev, Value *args, int argc) {
     return buf;
 }
 
+static Value implicit_integer_conversion_error(Eval *ev, Value v, Node *site) {
+    if (v.kind == VAL_NIL)
+        return eval_raise_class(ev, site, "TypeError", "no implicit conversion from nil to integer");
+    if (v.kind == VAL_BOOL)
+        return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into Integer",
+                                v.bval ? "true" : "false");
+    return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into Integer",
+                            value_class_name(ev, v));
+}
+
 static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node *site) {
     const char *fmode = file_fopen_mode(mode);
     if (!fmode)
@@ -295,12 +305,12 @@ static Value file_seek_stream(Eval *ev, Value recv, Value *args, int argc, Node 
         return eval_raise_class(ev, site, "ArgumentError",
                                 "wrong number of arguments (given %d, expected 1..2)", argc);
     if (args[0].kind != VAL_INT)
-        return eval_raise_class(ev, site, "TypeError", "File#seek offset must be an Integer");
+        return implicit_integer_conversion_error(ev, args[0], site);
 
     int whence = SEEK_SET;
     if (argc == 2) {
         if (args[1].kind != VAL_INT)
-            return eval_raise_class(ev, site, "TypeError", "File#seek whence must be an Integer");
+            return implicit_integer_conversion_error(ev, args[1], site);
         if (args[1].ival == 0) whence = SEEK_SET;
         else if (args[1].ival == 1) whence = SEEK_CUR;
         else if (args[1].ival == 2) whence = SEEK_END;
