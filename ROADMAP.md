@@ -171,6 +171,10 @@ If work starts today, the next highest-value sequence is:
 6. continue Stage 5 (loading / IO parity) now that the earlier Stage 1-3 survey items are mostly closed
 7. then resume Stage 4 and remaining runtime polish from compatibility probes
 
+Latest compatibility probe:
+
+- 2026-05-13: probing `birb` with `birb/lib` on `$LOAD_PATH` reaches `require "irb"` and then stops at a parser error in `birb/lib/irb.rb` on `class << self`; the next concrete compatibility target is singleton-class / eigenclass syntax support
+
 ## Stage gap survey (2026-04-22)
 
 A systematic test-probe of all three completed stages revealed the following confirmed gaps. Items are grouped by implementation effort.
