@@ -1681,6 +1681,26 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = recv;
             return 1;
         }
+        if (strcmp(name, "each_line") == 0) {
+            if (!blk) {
+                *out = eval_raise_class(ev, site, "LocalJumpError", "IO#each_line requires a block");
+                return 1;
+            }
+            while (1) {
+                Value line = file_gets_stream(ev, recv, mode.sval, "IO#each_line", args, argc, site);
+                if (val_is_signal(line)) {
+                    *out = line;
+                    return 1;
+                }
+                if (line.kind == VAL_NIL)
+                    break;
+                Value r = call_block(ev, env, *blk, &line, 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
+            return 1;
+        }
         if (strcmp(name, "eof?") == 0) {
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
@@ -1942,6 +1962,26 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 if (ch.kind == VAL_NIL)
                     break;
                 Value r = call_block(ev, env, *blk, &ch, 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
+            return 1;
+        }
+        if (strcmp(name, "each_line") == 0) {
+            if (!blk) {
+                *out = eval_raise_class(ev, site, "LocalJumpError", "File#each_line requires a block");
+                return 1;
+            }
+            while (1) {
+                Value line = file_gets_stream(ev, recv, mode.sval, "File#each_line", args, argc, site);
+                if (val_is_signal(line)) {
+                    *out = line;
+                    return 1;
+                }
+                if (line.kind == VAL_NIL)
+                    break;
+                Value r = call_block(ev, env, *blk, &line, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
             }
