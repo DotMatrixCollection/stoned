@@ -1,0 +1,15 @@
+"abc"
+false
+TypeError
+no implicit conversion of false into String
+true
+TypeError
+no implicit conversion of true into String
+:r
+TypeError
+no implicit conversion of Symbol into String
+[]
+TypeError
+no implicit conversion of Array into String
+ArgumentError
+invalid access mode q

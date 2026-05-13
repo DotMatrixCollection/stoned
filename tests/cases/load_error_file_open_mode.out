@@ -1,2 +1,2 @@
 ArgumentError
-unsupported File.open mode -- q
+invalid access mode q

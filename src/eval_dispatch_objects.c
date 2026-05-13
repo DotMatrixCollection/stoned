@@ -125,7 +125,7 @@ static Value implicit_string_conversion_error(Eval *ev, Value v, Node *site) {
 static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node *site) {
     const char *fmode = file_fopen_mode(mode);
     if (!fmode)
-        return eval_raise_class(ev, site, "ArgumentError", "unsupported File.open mode -- %s", mode);
+        return eval_raise_class(ev, site, "ArgumentError", "invalid access mode %s", mode);
 
     FILE *fp = fopen(path, fmode);
     if (!fp) {
@@ -623,9 +623,9 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             } else if (args[0].kind != VAL_STRING) {
                 *out = eval_raise_class(ev, site, "TypeError", "File.open path must be a String");
             } else {
-                Value mode = argc >= 2 ? args[1] : val_string(ev->arena, "r");
+                Value mode = (argc >= 2 && args[1].kind != VAL_NIL) ? args[1] : val_string(ev->arena, "r");
                 if (mode.kind != VAL_STRING) {
-                    *out = eval_raise_class(ev, site, "TypeError", "File.open mode must be a String");
+                    *out = implicit_string_conversion_error(ev, mode, site);
                     return 1;
                 }
                 Value opened = file_open_stream(ev, args[0].sval, mode.sval, site);
