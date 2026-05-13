@@ -1,0 +1,9 @@
+"é"
+2
+"x"
+nil
+"é"
+ArgumentError
+wrong number of arguments (given 1, expected 0)
+IOError
+closed stream

@@ -477,6 +477,52 @@ static Value file_readline_stream(Eval *ev, Value recv, const char *mode, const 
     return line;
 }
 
+static Value file_getc_stream(Eval *ev, Value recv, const char *mode, const char *context, Node *site) {
+    if (!mode_allows_read(mode))
+        return eval_raise_class(ev, site, "IOError", "not opened for reading");
+
+    NativeFile *nf = NULL;
+    if (!ensure_open_native_file(ev, recv, site, &nf))
+        return invalid_file_object(ev, site);
+
+    int ch = fgetc(nf->fp);
+    if (ch == EOF) {
+        if (ferror(nf->fp)) {
+            clearerr(nf->fp);
+            return eval_raise_class(ev, site, "IOError", "cannot read file");
+        }
+        return val_nil();
+    }
+
+    char buf[4];
+    buf[0] = (char)ch;
+    size_t width = 1;
+    if (!mode_is_binary(mode) && ((unsigned char)buf[0]) >= 0x80) {
+        unsigned char c0 = (unsigned char)buf[0];
+        if (c0 >= 0xC2 && c0 <= 0xDF) width = 2;
+        else if (c0 >= 0xE0 && c0 <= 0xEF) width = 3;
+        else if (c0 >= 0xF0 && c0 <= 0xF4) width = 4;
+        else return eval_raise_encoding_error(ev, site, context);
+
+        for (size_t i = 1; i < width; i++) {
+            int next = fgetc(nf->fp);
+            if (next == EOF) {
+                if (ferror(nf->fp)) {
+                    clearerr(nf->fp);
+                    return eval_raise_class(ev, site, "IOError", "cannot read file");
+                }
+                return eval_raise_encoding_error(ev, site, context);
+            }
+            buf[i] = (char)next;
+        }
+
+        if (!utf8_decode_one(buf, width, NULL, NULL))
+            return eval_raise_encoding_error(ev, site, context);
+    }
+
+    return val_string_n(ev->arena, buf, width);
+}
+
 static Value exception_arg_message(Eval *ev, Value recv, Value *args, int argc, int *ok, Node *site) {
     if (argc > 1) {
         *ok = 0;
@@ -1479,6 +1525,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = file_readline_stream(ev, recv, mode.sval, "IO#readline", args, argc, site);
             return 1;
         }
+        if (strcmp(name, "getc") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_getc_stream(ev, recv, mode.sval, "IO#getc", site);
+            return 1;
+        }
         if (strcmp(name, "eof?") == 0) {
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
@@ -1660,6 +1714,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "readline") == 0) {
             *out = file_readline_stream(ev, recv, mode.sval, "File#readline", args, argc, site);
+            return 1;
+        }
+        if (strcmp(name, "getc") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_getc_stream(ev, recv, mode.sval, "File#getc", site);
             return 1;
         }
         if (strcmp(name, "eof?") == 0) {
