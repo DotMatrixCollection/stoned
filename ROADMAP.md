@@ -137,6 +137,11 @@ Recent Stage 5 progress already landed:
 - `File` path utilities: `basename` (with optional ext stripping and `".*"` wildcard), `dirname`, `extname`, `join`, `split`, `expand_path` (with `~` and `..`/`.` normalization), `absolute_path`
 - `Dir.pwd`, `Dir.chdir` (including block restore semantics), `Dir.mkdir`, `File.realpath`, and `__dir__`
 - file predicates and metadata: `File.directory?`, `File.file?`, `File.readable?`, `File.writable?`, `File.executable?`, and `File.mtime` with minimal native `Time` objects for comparisons and `to_i`
+- `for var in array ... end` loop with correct MRI scope semantics (loop variable leaks into the enclosing scope); currently array-only — range and arbitrary-iterable `for` is a known open gap
+- `begin ... end while cond` and `begin ... end until cond` post-test loops (do-while style), including `next` and `break` inside the body
+- modifier `rescue` in assignment position (`lhs = expr rescue fallback`) and bare-expression position (`expr rescue fallback`); inner expression is wrapped in an implicit `begin/rescue` so only that expression is rescued
+- parenthesized statement groups: `(stmt; stmt)` now parsed as a multi-statement body when the opening `(` is immediately followed by a newline or semicolon, evaluating to the last statement; single-statement form continues to work as before
+- lexer operator state hardening: all binary and compound-assignment operators now set `LEX_EXPR_BEG` after the operator token, fixing `/` regex-vs-division disambiguation and multiline expression continuation after operators
 
 Exit gate:
 

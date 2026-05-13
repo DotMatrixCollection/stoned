@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `232` tests are passing, and recent work tightened file IO and multi-file loading, but it is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `238` tests are passing, and recent work extended control-flow syntax and tightened file IO and multi-file loading, but it is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -52,14 +52,14 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `232 passed, 0 failed, 232 total`.
+Current coverage in the tree: `238 passed, 0 failed, 238 total`.
 
 What is working today:
 
 - Core values: `nil`, booleans, integers, floats, UTF-8 strings with interpolation, symbols, arrays, hashes, ranges
 - Literal sugar: `%w[...]` word arrays and `%i[...]` symbol arrays
 - Operators: arithmetic, comparison, bitwise, string/array `+`, array `<<`, `**`, `<=>`, `&&`, `||`
-- Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return` (including bare comma-separated multi-value returns), `defined?`, ternary `?:`; `case`/`when` with value equality, range membership, class membership (`===`), multi-pattern clauses, optional `else`, caseless form, `then` keyword; `case` is an expression
+- Control flow: `if`, `unless`, `while`, `until`, modifier forms, `break`, `next`, `return` (including bare comma-separated multi-value returns), `defined?`, ternary `?:`; `case`/`when` with value equality, range membership, class membership (`===`), multi-pattern clauses, optional `else`, caseless form, `then` keyword; `case` is an expression; `for var in array ... end` loops (loop variable leaks into enclosing scope, matching MRI); `begin ... end while/until` post-test loops; modifier `rescue` (`expr rescue fallback` in assignment and bare-expression position); parenthesized statement groups `(stmt; stmt)` evaluate to their last expression
 - Exceptions: `raise`, `begin` / `rescue` / `else` / `ensure`, typed rescue clauses, typed rescue lists, rescue variable binding, `retry`, re-raise, block-body `rescue` / `ensure`, uncaught backtraces, typed runtime failures including `NameError`, `NoMethodError`, `TypeError`, `SystemStackError`, `EncodingError`, `IOError`, `SystemCallError`, and existing core error classes; `Errno` module with `ENOENT`, `EACCES`, `EEXIST`, `EBADF`, `EPERM` — file-not-found operations raise `Errno::ENOENT` with MRI-style messages; exception instances support `new(message)`, `message`, `to_s`, `inspect`, `exception`, `backtrace`, and `set_backtrace`
 - Methods: `def`, endless `def foo = expr`, default params, splat params, keyword params (`key:` / `key: default` / `**opts`), nested destructuring params, blocks, `yield`, closures, bare command-style calls, multiline command-style arg lists after commas, nested command-call comma precedence, space-before-`(` grouped command args, unary-leading command args, delayed `do`/`end` attachment through grouped and collection contexts for covered nested command-call cases, command-style and parenthesized keyword-hash args, `**hash` keyword expansion in calls with Ruby-like later-argument-wins merge order, `.()` call shorthand, safe navigation `&.`, `send`, `__send__`, `public_send`, `alias`, `tap`, `then`, `yield_self`
 - Classes: instance methods, `def self.foo`, `class << self` / singleton-class bodies, inheritance, `initialize`, instance variables, `super` with checked arg forwarding, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
