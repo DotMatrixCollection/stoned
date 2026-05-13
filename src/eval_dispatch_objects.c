@@ -114,7 +114,7 @@ static Value implicit_integer_conversion_error(Eval *ev, Value v, Node *site) {
 
 static Value implicit_string_conversion_error(Eval *ev, Value v, Node *site) {
     if (v.kind == VAL_NIL)
-        return eval_raise_class(ev, site, "TypeError", "no implicit conversion from nil to string");
+        return eval_raise_class(ev, site, "TypeError", "no implicit conversion of nil into String");
     if (v.kind == VAL_BOOL)
         return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into String",
                                 v.bval ? "true" : "false");
@@ -579,7 +579,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             if (argc < 1) {
                 *out = eval_raise_class(ev, site, "ArgumentError", "File.read requires a path");
             } else if (args[0].kind != VAL_STRING) {
-                *out = eval_raise_class(ev, site, "TypeError", "File.read path must be a String");
+                *out = implicit_string_conversion_error(ev, args[0], site);
             } else {
                 *out = eval_file_read(ev, args[0].sval, site);
             }
@@ -589,11 +589,9 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             if (argc < 2) {
                 *out = eval_raise_class(ev, site, "ArgumentError", "File.write requires a path and content");
             } else if (args[0].kind != VAL_STRING) {
-                *out = eval_raise_class(ev, site, "TypeError", "File.write path must be a String");
-            } else if (args[1].kind != VAL_STRING) {
-                *out = eval_raise_class(ev, site, "TypeError", "File.write content must be a String");
+                *out = implicit_string_conversion_error(ev, args[0], site);
             } else {
-                *out = eval_file_write(ev, args[0].sval, args[1].sval, site);
+                *out = eval_file_write(ev, args[0].sval, val_to_s(ev->arena, args[1]), site);
             }
             return 1;
         }
@@ -601,7 +599,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             if (argc < 1) {
                 *out = eval_raise_class(ev, site, "ArgumentError", "File.delete requires a path");
             } else if (args[0].kind != VAL_STRING) {
-                *out = eval_raise_class(ev, site, "TypeError", "File.delete path must be a String");
+                *out = implicit_string_conversion_error(ev, args[0], site);
             } else {
                 *out = eval_file_delete(ev, args[0].sval, site);
             }
@@ -611,7 +609,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             if (argc < 1) {
                 *out = eval_raise_class(ev, site, "ArgumentError", "File.exist? requires a path");
             } else if (args[0].kind != VAL_STRING) {
-                *out = eval_raise_class(ev, site, "TypeError", "File.exist? path must be a String");
+                *out = implicit_string_conversion_error(ev, args[0], site);
             } else {
                 *out = eval_file_exist(ev, args[0].sval);
             }
@@ -621,7 +619,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             if (argc < 1) {
                 *out = eval_raise_class(ev, site, "ArgumentError", "File.open requires a path");
             } else if (args[0].kind != VAL_STRING) {
-                *out = eval_raise_class(ev, site, "TypeError", "File.open path must be a String");
+                *out = implicit_string_conversion_error(ev, args[0], site);
             } else {
                 Value mode = (argc >= 2 && args[1].kind != VAL_NIL) ? args[1] : val_string(ev->arena, "r");
                 if (mode.kind != VAL_STRING) {
