@@ -229,6 +229,56 @@ static Value file_read_stream(Eval *ev, Value recv, const char *mode, const char
     return out;
 }
 
+static Value file_read_stream_with_length(Eval *ev, Value recv, const char *mode, const char *context,
+                                          Value *args, int argc, Node *site) {
+    if (argc > 1)
+        return eval_raise_class(ev, site, "ArgumentError",
+                                "wrong number of arguments (given %d, expected 0..1)", argc);
+    if (!mode_allows_read(mode))
+        return eval_raise_class(ev, site, "IOError", "not opened for reading");
+
+    if (argc == 0 || args[0].kind == VAL_NIL)
+        return file_read_stream(ev, recv, mode, context, site);
+
+    if (args[0].kind != VAL_INT)
+        return implicit_integer_conversion_error(ev, args[0], site);
+    if (args[0].ival < 0)
+        return eval_raise_class(ev, site, "ArgumentError", "negative length %lld given",
+                                (long long)args[0].ival);
+    if (args[0].ival == 0)
+        return val_string(ev->arena, "");
+
+    NativeFile *nf = NULL;
+    if (!ensure_open_native_file(ev, recv, site, &nf))
+        return invalid_file_object(ev, site);
+
+    size_t want = (size_t)args[0].ival;
+    char *buf = malloc(want + 1);
+    if (!buf)
+        return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+
+    size_t got = fread(buf, 1, want, nf->fp);
+    if (got == 0 && feof(nf->fp)) {
+        free(buf);
+        return val_nil();
+    }
+    if (ferror(nf->fp)) {
+        free(buf);
+        clearerr(nf->fp);
+        return eval_raise_class(ev, site, "IOError", "cannot read file");
+    }
+
+    buf[got] = '\0';
+    if (!mode_is_binary(mode) && !utf8_validate(buf, got, NULL)) {
+        free(buf);
+        return eval_raise_encoding_error(ev, site, context);
+    }
+
+    Value out = val_string_n(ev->arena, buf, got);
+    free(buf);
+    return out;
+}
+
 static Value file_gets_stream(Eval *ev, Value recv, const char *mode, const char *context,
                               Value *args, int argc, Node *site) {
     if (argc > 1)
@@ -1380,7 +1430,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "read") == 0) {
-            *out = file_read_stream(ev, recv, mode.sval, "IO#read", site);
+            *out = file_read_stream_with_length(ev, recv, mode.sval, "IO#read", args, argc, site);
             return 1;
         }
         if (strcmp(name, "tell") == 0) {
@@ -1522,11 +1572,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "read") == 0) {
-            if (argc != 0) {
-                *out = eval_raise_class(ev, site, "ArgumentError", "File#read takes no arguments");
-            } else {
-                *out = file_read_stream(ev, recv, mode.sval, "File#read", site);
-            }
+            *out = file_read_stream_with_length(ev, recv, mode.sval, "File#read", args, argc, site);
             return 1;
         }
         if (strcmp(name, "gets") == 0) {
