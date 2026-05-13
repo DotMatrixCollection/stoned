@@ -26,11 +26,23 @@ typedef struct {
     int   owns_fp;
 } NativeFile;
 
+typedef struct {
+    int64_t sec;
+    long    nsec;
+} NativeTime;
+
 static inline NativeFile *alloc_native_file(Arena *a, FILE *fp, int owns_fp) {
     NativeFile *nf = arena_alloc(a, sizeof(NativeFile));
     nf->fp = fp;
     nf->owns_fp = owns_fp;
     return nf;
+}
+
+static inline NativeTime *alloc_native_time(Arena *a, int64_t sec, long nsec) {
+    NativeTime *nt = arena_alloc(a, sizeof(NativeTime));
+    nt->sec = sec;
+    nt->nsec = nsec;
+    return nt;
 }
 
 Value eval_error(Eval *ev, Node *n, const char *fmt, ...);

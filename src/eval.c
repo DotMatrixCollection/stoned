@@ -737,7 +737,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     static const char *builtins[] = {
         "Object", "BasicObject", "Numeric",
         "Integer", "Float", "String", "Symbol",
-        "Array", "Hash", "Range", "NilClass", "TrueClass", "FalseClass", "IO", "File", "Dir",
+        "Array", "Hash", "Range", "NilClass", "TrueClass", "FalseClass", "IO", "File", "Dir", "Time",
         "Class", "Module", "Method", "UnboundMethod", "Proc", "Regexp", "MatchData", "Comparable", "Enumerable",
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NameError", "NoMethodError", "RegexpError",

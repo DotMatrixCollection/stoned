@@ -1010,6 +1010,9 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             Value m; RubyClass *owner;
             if (ruby_class_find_instance_method(recv.obj->klass.klass, "==", &m, &owner))
                 return call_method_value(ev, env, recv, m, owner, "==", args, argc, blk, site);
+            Value disp_out;
+            if (dispatch_object(ev, env, recv, "==", args, argc, blk, site, &disp_out, public_only, explicit_receiver))
+                return disp_out;
         }
         return val_bool(val_equal(recv, args[0]));
     }
@@ -1019,6 +1022,9 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             Value m; RubyClass *owner;
             if (ruby_class_find_instance_method(recv.obj->klass.klass, "!=", &m, &owner))
                 return call_method_value(ev, env, recv, m, owner, "!=", args, argc, blk, site);
+            Value disp_out;
+            if (dispatch_object(ev, env, recv, "!=", args, argc, blk, site, &disp_out, public_only, explicit_receiver))
+                return disp_out;
         }
         return val_bool(!val_equal(recv, args[0]));
     }
@@ -1223,8 +1229,11 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
         return left;
     }
 
-    if (strcmp(op, "==") == 0) return val_bool(val_equal(left, right));
-    if (strcmp(op, "!=") == 0) return val_bool(!val_equal(left, right));
+    if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0) {
+        Value argv[1];
+        argv[0] = right;
+        return dispatch_method(ev, env, left, op, argv, 1, NULL, node, 0, 1);
+    }
 
     double lf = 0;
     double rf = 0;

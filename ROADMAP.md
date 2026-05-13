@@ -136,6 +136,7 @@ Recent Stage 5 progress already landed:
 - `SystemCallError` base class, `Errno` module, and `Errno::ENOENT` / `EACCES` / `EEXIST` / `EBADF` / `EPERM` with correct inheritance chain (`Errno::ENOENT → SystemCallError → StandardError`); file-not-found operations raise `Errno::ENOENT` with MRI-style messages
 - `File` path utilities: `basename` (with optional ext stripping and `".*"` wildcard), `dirname`, `extname`, `join`, `split`, `expand_path` (with `~` and `..`/`.` normalization), `absolute_path`
 - `Dir.pwd`, `Dir.chdir` (including block restore semantics), `Dir.mkdir`, `File.realpath`, and `__dir__`
+- file predicates and metadata: `File.directory?`, `File.file?`, `File.readable?`, `File.writable?`, `File.executable?`, and `File.mtime` with minimal native `Time` objects for comparisons and `to_i`
 
 Exit gate:
 

@@ -205,6 +205,15 @@ static Value lexical_normalize_path(Eval *ev, const char *abs_path) {
     return val_string(ev->arena, result);
 }
 
+static Value build_time_value(Eval *ev, int64_t sec, long nsec) {
+    Value time_class;
+    if (!env_get(ev->top_env, "Time", &time_class) || time_class.kind != VAL_CLASS)
+        return val_nil();
+    Value obj = val_object(ev->arena, time_class);
+    obj.obj->native = alloc_native_time(ev->arena, sec, nsec);
+    return obj;
+}
+
 static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node *site) {
     const char *fmode = file_fopen_mode(mode);
     if (!fmode)
@@ -1338,6 +1347,56 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             }
             return 1;
         }
+        if (strcmp(name, "directory?") == 0 || strcmp(name, "file?") == 0) {
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            struct stat st;
+            if (stat(args[0].sval, &st) != 0) {
+                *out = val_false();
+                return 1;
+            }
+            *out = val_bool(strcmp(name, "directory?") == 0 ? S_ISDIR(st.st_mode) : S_ISREG(st.st_mode));
+            return 1;
+        }
+        if (strcmp(name, "readable?") == 0 || strcmp(name, "writable?") == 0 || strcmp(name, "executable?") == 0) {
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            int mode = R_OK;
+            if (strcmp(name, "writable?") == 0) mode = W_OK;
+            else if (strcmp(name, "executable?") == 0) mode = X_OK;
+            *out = val_bool(access(args[0].sval, mode) == 0);
+            return 1;
+        }
+        if (strcmp(name, "mtime") == 0) {
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            struct stat st;
+            if (stat(args[0].sval, &st) != 0) {
+                *out = eval_raise_class(ev, site, errno_class_name(errno), "%s - %s",
+                                        strerror(errno), args[0].sval);
+                return 1;
+            }
+            *out = build_time_value(ev, (int64_t)st.st_mtim.tv_sec, st.st_mtim.tv_nsec);
+            return 1;
+        }
         if (strcmp(name, "open") == 0) {
             if (argc < 1 || argc > 3) {
                 *out = argc < 1
@@ -1657,6 +1716,50 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     /* Method and UnboundMethod objects */
     if (recv.obj->klass.kind == VAL_CLASS) {
         const char *kname = recv.obj->klass.klass->name;
+
+        if (strcmp(kname, "Time") == 0) {
+            NativeTime *nt = (NativeTime *)recv.obj->native;
+            if (!nt) {
+                *out = eval_raise_class(ev, site, "RuntimeError", "invalid Time object");
+                return 1;
+            }
+            if (strcmp(name, "to_i") == 0) {
+                *out = val_int(nt->sec);
+                return 1;
+            }
+            if (strcmp(name, "==") == 0 || strcmp(name, "!=") == 0 || strcmp(name, "<=>") == 0) {
+                if (argc != 1) {
+                    *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+                    return 1;
+                }
+                if (!(args[0].kind == VAL_OBJECT && args[0].obj->klass.kind == VAL_CLASS &&
+                      strcmp(args[0].obj->klass.klass->name, "Time") == 0 && args[0].obj->native)) {
+                    *out = strcmp(name, "!=") == 0 ? val_true()
+                         : strcmp(name, "==") == 0 ? val_false()
+                         : val_nil();
+                    return 1;
+                }
+                NativeTime *other = (NativeTime *)args[0].obj->native;
+                int cmp = 0;
+                if (nt->sec < other->sec) cmp = -1;
+                else if (nt->sec > other->sec) cmp = 1;
+                else if (nt->nsec < other->nsec) cmp = -1;
+                else if (nt->nsec > other->nsec) cmp = 1;
+                if (strcmp(name, "<=>") == 0) {
+                    *out = val_int(cmp);
+                    return 1;
+                }
+                *out = strcmp(name, "==") == 0 ? val_bool(cmp == 0) : val_bool(cmp != 0);
+                return 1;
+            }
+            if (strcmp(name, "inspect") == 0 || strcmp(name, "to_s") == 0) {
+                char buf[64];
+                snprintf(buf, sizeof(buf), "Time(%lld.%09ld)",
+                         (long long)nt->sec, nt->nsec);
+                *out = val_string(ev->arena, buf);
+                return 1;
+            }
+        }
 
         if (strcmp(kname, "Regexp") == 0) {
             if (strcmp(name, "source") == 0) {
