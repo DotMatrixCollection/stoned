@@ -1633,6 +1633,54 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = file_readlines_stream(ev, recv, mode.sval, "IO#readlines", args, argc, site);
             return 1;
         }
+        if (strcmp(name, "each_byte") == 0) {
+            if (!blk) {
+                *out = eval_raise_class(ev, site, "LocalJumpError", "IO#each_byte requires a block");
+                return 1;
+            }
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            while (1) {
+                Value byte = file_getbyte_stream(ev, recv, mode.sval, site);
+                if (val_is_signal(byte)) {
+                    *out = byte;
+                    return 1;
+                }
+                if (byte.kind == VAL_NIL)
+                    break;
+                Value r = call_block(ev, env, *blk, &byte, 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
+            return 1;
+        }
+        if (strcmp(name, "each_char") == 0) {
+            if (!blk) {
+                *out = eval_raise_class(ev, site, "LocalJumpError", "IO#each_char requires a block");
+                return 1;
+            }
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            while (1) {
+                Value ch = file_getc_stream(ev, recv, mode.sval, "IO#each_char", site);
+                if (val_is_signal(ch)) {
+                    *out = ch;
+                    return 1;
+                }
+                if (ch.kind == VAL_NIL)
+                    break;
+                Value r = call_block(ev, env, *blk, &ch, 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
+            return 1;
+        }
         if (strcmp(name, "eof?") == 0) {
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
@@ -1850,6 +1898,54 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "readlines") == 0) {
             *out = file_readlines_stream(ev, recv, mode.sval, "File#readlines", args, argc, site);
+            return 1;
+        }
+        if (strcmp(name, "each_byte") == 0) {
+            if (!blk) {
+                *out = eval_raise_class(ev, site, "LocalJumpError", "File#each_byte requires a block");
+                return 1;
+            }
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            while (1) {
+                Value byte = file_getbyte_stream(ev, recv, mode.sval, site);
+                if (val_is_signal(byte)) {
+                    *out = byte;
+                    return 1;
+                }
+                if (byte.kind == VAL_NIL)
+                    break;
+                Value r = call_block(ev, env, *blk, &byte, 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
+            return 1;
+        }
+        if (strcmp(name, "each_char") == 0) {
+            if (!blk) {
+                *out = eval_raise_class(ev, site, "LocalJumpError", "File#each_char requires a block");
+                return 1;
+            }
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            while (1) {
+                Value ch = file_getc_stream(ev, recv, mode.sval, "File#each_char", site);
+                if (val_is_signal(ch)) {
+                    *out = ch;
+                    return 1;
+                }
+                if (ch.kind == VAL_NIL)
+                    break;
+                Value r = call_block(ev, env, *blk, &ch, 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
             return 1;
         }
         if (strcmp(name, "eof?") == 0) {
