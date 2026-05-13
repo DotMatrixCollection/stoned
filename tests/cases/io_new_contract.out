@@ -1,0 +1,23 @@
+IO
+IO
+fd_nil
+TypeError
+no implicit conversion from nil to integer
+fd_str
+TypeError
+no implicit conversion of String into Integer
+fd_true
+TypeError
+no implicit conversion of true into Integer
+mode_false
+TypeError
+no implicit conversion of false into String
+mode_array
+TypeError
+no implicit conversion of Array into String
+mode_bad
+ArgumentError
+invalid access mode q
+fd_neg
+Errno::EBADF
+Bad file descriptor

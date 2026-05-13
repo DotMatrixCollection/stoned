@@ -3,6 +3,7 @@
 #include "eval_internal.h"
 #include "utf8.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,13 +11,17 @@
 
 static const char *file_fopen_mode(const char *mode) {
     if (strcmp(mode, "r") == 0 || strcmp(mode, "rb") == 0) return "rb";
+    if (strcmp(mode, "r+") == 0 || strcmp(mode, "rb+") == 0 || strcmp(mode, "r+b") == 0) return "rb+";
     if (strcmp(mode, "w") == 0 || strcmp(mode, "wb") == 0) return "wb";
+    if (strcmp(mode, "w+") == 0 || strcmp(mode, "wb+") == 0 || strcmp(mode, "w+b") == 0) return "wb+";
     if (strcmp(mode, "a") == 0 || strcmp(mode, "ab") == 0) return "ab";
+    if (strcmp(mode, "a+") == 0 || strcmp(mode, "ab+") == 0 || strcmp(mode, "a+b") == 0) return "ab+";
     return NULL;
 }
 
-static int mode_is_read(const char *mode)   { return mode && mode[0] == 'r'; }
-static int mode_is_write(const char *mode)  { return mode && mode[0] == 'w'; }
+static int mode_has_plus(const char *mode)  { return mode && strchr(mode, '+') != NULL; }
+static int mode_is_read(const char *mode)   { return mode && (mode[0] == 'r' || mode_has_plus(mode)); }
+static int mode_is_write(const char *mode)  { return mode && (mode[0] == 'w' || mode_has_plus(mode)); }
 static int mode_is_append(const char *mode) { return mode && mode[0] == 'a'; }
 static int mode_is_binary(const char *mode) { return mode && strchr(mode, 'b') != NULL; }
 
@@ -75,6 +80,26 @@ static const char *join_write_args(Eval *ev, Value *args, int argc) {
     return buf;
 }
 
+static const char *infer_fd_mode(Eval *ev, int64_t fd_num, Node *site) {
+    int flags = fcntl((int)fd_num, F_GETFL);
+    if (flags < 0) {
+        int err = errno;
+        Value raised = eval_raise_class(ev, site, errno_class_name(err), "%s", strerror(err));
+        (void)raised;
+        return NULL;
+    }
+    switch (flags & O_ACCMODE) {
+        case O_RDONLY: return "r";
+        case O_WRONLY: return "w";
+        case O_RDWR:   return "r+";
+        default: {
+            Value raised = eval_raise_class(ev, site, "Errno::EINVAL", "%s", strerror(EINVAL));
+            (void)raised;
+            return NULL;
+        }
+    }
+}
+
 static Value implicit_integer_conversion_error(Eval *ev, Value v, Node *site) {
     if (v.kind == VAL_NIL)
         return eval_raise_class(ev, site, "TypeError", "no implicit conversion from nil to integer");
@@ -82,6 +107,16 @@ static Value implicit_integer_conversion_error(Eval *ev, Value v, Node *site) {
         return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into Integer",
                                 v.bval ? "true" : "false");
     return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into Integer",
+                            value_class_name(ev, v));
+}
+
+static Value implicit_string_conversion_error(Eval *ev, Value v, Node *site) {
+    if (v.kind == VAL_NIL)
+        return eval_raise_class(ev, site, "TypeError", "no implicit conversion from nil to string");
+    if (v.kind == VAL_BOOL)
+        return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into String",
+                                v.bval ? "true" : "false");
+    return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into String",
                             value_class_name(ev, v));
 }
 
@@ -116,11 +151,16 @@ static Value file_close_stream(Eval *ev, Value recv, Node *site) {
 }
 
 static Value io_open_fd(Eval *ev, int64_t fd_num, const char *mode, Node *site) {
+    if (fd_num < 0)
+        return eval_raise_class(ev, site, errno_class_name(EBADF), "%s", strerror(EBADF));
+    if (!mode) {
+        mode = infer_fd_mode(ev, fd_num, site);
+        if (!mode)
+            return val_exception();
+    }
     const char *fmode = file_fopen_mode(mode);
     if (!fmode)
-        return eval_raise_class(ev, site, "ArgumentError", "unsupported IO.new mode -- %s", mode);
-    if (fd_num < 0)
-        return eval_raise_class(ev, site, "ArgumentError", "invalid file descriptor -- %lld", (long long)fd_num);
+        return eval_raise_class(ev, site, "ArgumentError", "invalid access mode %s", mode);
 
     int dup_fd = dup((int)fd_num);
     if (dup_fd < 0) {
@@ -496,12 +536,25 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (strcmp(name, "new") == 0 && strcmp(recv.klass->name, "IO") == 0) {
         if (argc < 1 || argc > 2) {
             *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
-        } else if (args[0].kind != VAL_INT) {
-            *out = eval_raise_class(ev, site, "TypeError", "IO.new file descriptor must be an Integer");
         } else {
-            Value mode = argc >= 2 ? args[1] : val_string(ev->arena, "r");
+            if (args[0].kind != VAL_INT) {
+                *out = implicit_integer_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            Value mode = val_nil();
+            const char *mode_cstr = NULL;
+            if (argc >= 2 && args[1].kind != VAL_NIL) {
+                mode = args[1];
+            } else {
+                mode_cstr = infer_fd_mode(ev, args[0].ival, site);
+                if (!mode_cstr) {
+                    *out = val_exception();
+                    return 1;
+                }
+                mode = val_string(ev->arena, mode_cstr);
+            }
             if (mode.kind != VAL_STRING) {
-                *out = eval_raise_class(ev, site, "TypeError", "IO.new mode must be a String");
+                *out = implicit_string_conversion_error(ev, mode, site);
                 return 1;
             }
             Value opened = io_open_fd(ev, args[0].ival, mode.sval, site);
