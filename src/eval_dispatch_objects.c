@@ -449,6 +449,24 @@ static Value file_rewind_stream(Eval *ev, Value recv, Node *site) {
     return val_int(0);
 }
 
+static Value file_eof_stream(Eval *ev, Value recv, Node *site) {
+    NativeFile *nf = NULL;
+    if (!ensure_open_native_file(ev, recv, site, &nf))
+        return invalid_file_object(ev, site);
+
+    int ch = fgetc(nf->fp);
+    if (ch == EOF) {
+        if (ferror(nf->fp)) {
+            clearerr(nf->fp);
+            return eval_raise_class(ev, site, "IOError", "cannot read file");
+        }
+        return val_true();
+    }
+
+    ungetc(ch, nf->fp);
+    return val_false();
+}
+
 static Value exception_arg_message(Eval *ev, Value recv, Value *args, int argc, int *ok, Node *site) {
     if (argc > 1) {
         *ok = 0;
@@ -1447,6 +1465,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = file_gets_stream(ev, recv, mode.sval, "IO#gets", args, argc, site);
             return 1;
         }
+        if (strcmp(name, "eof?") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_eof_stream(ev, recv, site);
+            return 1;
+        }
         if (strcmp(name, "read") == 0) {
             *out = file_read_stream_with_length(ev, recv, mode.sval, "IO#read", args, argc, site);
             return 1;
@@ -1595,6 +1621,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "gets") == 0) {
             *out = file_gets_stream(ev, recv, mode.sval, "File#gets", args, argc, site);
+            return 1;
+        }
+        if (strcmp(name, "eof?") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_eof_stream(ev, recv, site);
             return 1;
         }
         if (strcmp(name, "write") == 0) {
