@@ -52,6 +52,7 @@ typedef enum {
     TOK_AND,
     TOK_OR,
     TOK_NOT,
+    TOK_FOR,
     TOK_IN,
     TOK_RESCUE,
     TOK_ENSURE,

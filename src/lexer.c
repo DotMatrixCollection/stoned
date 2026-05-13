@@ -48,6 +48,7 @@ static struct { const char *word; TokenKind kind; } KEYWORDS[] = {
     {"and",     TOK_AND},
     {"or",      TOK_OR},
     {"not",     TOK_NOT},
+    {"for",     TOK_FOR},
     {"in",      TOK_IN},
     {"rescue",  TOK_RESCUE},
     {"ensure",  TOK_ENSURE},
@@ -305,6 +306,17 @@ static Token scan_symbol(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
         while (isalnum(peek_ch(l)) || peek_ch(l) == '_') advance(l);
         /* allow trailing ? or ! */
         if (peek_ch(l) == '?' || peek_ch(l) == '!') advance(l);
+    } else if (peek_ch(l) == '@') {
+        advance(l);
+        if (peek_ch(l) == '@') advance(l);
+        while (isalnum(peek_ch(l)) || peek_ch(l) == '_') advance(l);
+    } else if (peek_ch(l) == '$') {
+        advance(l);
+        if (isalnum(peek_ch(l)) || peek_ch(l) == '_') {
+            while (isalnum(peek_ch(l)) || peek_ch(l) == '_') advance(l);
+        } else if (peek_ch(l) != '\0') {
+            advance(l);
+        }
     } else {
         /* operator symbols: :+ :- :* :/ :% :** :<< :>> :<=> :<= :>= :< :> :== :!= :=== :[] :[]= :& :| :^ :~ :! */
         char c = peek_ch(l);
@@ -800,35 +812,42 @@ static Token scan(Lexer *l) {
         case '?': SIMPLE(TOK_QUESTION);
 
         case '+':
-            if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_PLUS_EQ); }
+            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_PLUS_EQ); }
+            l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_PLUS);
         case '-':
-            if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_MINUS_EQ); }
+            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_MINUS_EQ); }
             if (peek_ch(l) == '>') { advance(l); SIMPLE(TOK_LAMBDA); }
+            l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_MINUS);
         case '%':
-            if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_PERCENT_EQ); }
+            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_PERCENT_EQ); }
             if (peek_ch(l) == 'w') return scan_percent_list(l, start, sline, scol, TOK_WORDS);
             if (peek_ch(l) == 'i') return scan_percent_list(l, start, sline, scol, TOK_SYMBOLS);
+            l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_PERCENT);
         case '^':
-            if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_CARET_EQ); }
+            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_CARET_EQ); }
+            l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_CARET);
 
         case '*':
             if (peek_ch(l) == '*') {
                 advance(l);
-                if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_STAR2_EQ); }
+                if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_STAR2_EQ); }
+                l->state = LEX_EXPR_BEG;
                 SIMPLE(TOK_STAR2);
             }
-            if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_STAR_EQ); }
+            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_STAR_EQ); }
+            l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_STAR);
 
         case '/':
-            if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_SLASH_EQ); }
+            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_SLASH_EQ); }
             if (l->state == LEX_EXPR_BEG || l->state == LEX_EXPR_MID ||
                 (l->state == LEX_EXPR_ARG && l->had_space))
                 return scan_regexp(l, start, sline, scol);
+            l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_SLASH);
 
         case '&':
@@ -838,19 +857,23 @@ static Token scan(Lexer *l) {
             }
             if (peek_ch(l) == '&') {
                 advance(l);
-                if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_AMP2_EQ); }
+                if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_AMP2_EQ); }
+                l->state = LEX_EXPR_BEG;
                 SIMPLE(TOK_AMP2);
             }
-            if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_AMP_EQ); }
+            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_AMP_EQ); }
+            l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_AMP);
 
         case '|':
             if (peek_ch(l) == '|') {
                 advance(l);
-                if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_PIPE2_EQ); }
+                if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_PIPE2_EQ); }
+                l->state = LEX_EXPR_BEG;
                 SIMPLE(TOK_PIPE2);
             }
-            if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_PIPE_EQ); }
+            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_PIPE_EQ); }
+            l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_PIPE);
 
         case '<':
@@ -863,38 +886,45 @@ static Token scan(Lexer *l) {
                         return scan_heredoc(l, start, sline, scol);
                     }
                 }
-                if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_LSHIFT_EQ); }
+                if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_LSHIFT_EQ); }
+                l->state = LEX_EXPR_BEG;
                 SIMPLE(TOK_LSHIFT);
             }
             if (peek_ch(l) == '=') {
                 advance(l);
-                if (peek_ch(l) == '>') { advance(l); SIMPLE(TOK_SPACESHIP); }
+                if (peek_ch(l) == '>') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_SPACESHIP); }
+                l->state = LEX_EXPR_BEG;
                 SIMPLE(TOK_LEQ);
             }
+            l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_LT);
 
         case '>':
             if (peek_ch(l) == '>') {
                 advance(l);
-                if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_RSHIFT_EQ); }
+                if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_RSHIFT_EQ); }
+                l->state = LEX_EXPR_BEG;
                 SIMPLE(TOK_RSHIFT);
             }
-            if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_GEQ); }
+            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_GEQ); }
+            l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_GT);
 
         case '=':
             if (peek_ch(l) == '=') {
                 advance(l);
-                if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_EQ3); }
+                if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_EQ3); }
+                l->state = LEX_EXPR_BEG;
                 SIMPLE(TOK_EQ2);
             }
             if (peek_ch(l) == '>') { advance(l); SIMPLE(TOK_ARROW); }
-            if (peek_ch(l) == '~') { advance(l); SIMPLE(TOK_MATCH); }
+            if (peek_ch(l) == '~') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_MATCH); }
+            l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_EQ);
 
         case '!':
-            if (peek_ch(l) == '=') { advance(l); SIMPLE(TOK_NEQ); }
-            if (peek_ch(l) == '~') { advance(l); SIMPLE(TOK_NMATCH); }
+            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_NEQ); }
+            if (peek_ch(l) == '~') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_NMATCH); }
             SIMPLE(TOK_BANG);
 
         case '.':
@@ -911,6 +941,7 @@ static Token scan(Lexer *l) {
             {
                 char pc = peek_ch(l);
                 if (isalpha(pc) || pc == '_' || pc == '"' || pc == '\'' ||
+                    pc == '@' || pc == '$' ||
                     pc == '+' || pc == '-' || pc == '*' || pc == '/' || pc == '%' ||
                     pc == '<' || pc == '>' || pc == '=' || pc == '!' ||
                     pc == '&' || pc == '|' || pc == '^' || pc == '~' || pc == '[') {
@@ -937,7 +968,11 @@ static Token scan(Lexer *l) {
 
         case '$': {
             size_t ns = l->pos;
-            while (isalnum(peek_ch(l)) || peek_ch(l) == '_') advance(l);
+            if (isalnum(peek_ch(l)) || peek_ch(l) == '_') {
+                while (isalnum(peek_ch(l)) || peek_ch(l) == '_') advance(l);
+            } else if (peek_ch(l) != '\0') {
+                advance(l);
+            }
             Token t = make_tok(l, TOK_GVAR, start, sline, scol);
             t.sval = intern(l, l->src + ns, l->pos - ns);
             return t;

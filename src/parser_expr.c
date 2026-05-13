@@ -23,7 +23,9 @@ typedef struct { int lbp; int rbp; } BP;
 static Node *parse_hash_key(Parser *p, int *used_label);
 
 static int jump_value_terminator(TokenKind kind) {
-    return kind == TOK_NEWLINE || kind == TOK_SEMICOLON || kind == TOK_EOF || kind == TOK_END;
+    return kind == TOK_NEWLINE || kind == TOK_SEMICOLON || kind == TOK_EOF || kind == TOK_END ||
+           kind == TOK_IF || kind == TOK_UNLESS || kind == TOK_WHILE || kind == TOK_UNTIL ||
+           kind == TOK_RESCUE;
 }
 
 static Node *parse_percent_list(Parser *p, Span s, Token t, NodeKind elem_kind) {
@@ -105,6 +107,28 @@ static Token peek_next_token(Parser *p) {
     Parser copy = *p;
     advance(&copy);
     return peek(&copy);
+}
+
+static Node *parse_body_until_rparen(Parser *p) {
+    Span s = tok_span(peek(p));
+    Node *n = node_new(p->arena, NODE_BODY, s);
+    NodeList *stmts = NULL;
+
+    while (1) {
+        skip_terminators(p);
+        Token t = peek(p);
+        if (t.kind == TOK_RPAREN || t.kind == TOK_EOF)
+            break;
+        Node *stmt = parse_stmt(p);
+        if (p->panic) {
+            sync(p);
+            continue;
+        }
+        if (stmt) stmts = nodelist_append(p->arena, stmts, stmt);
+    }
+
+    n->body.stmts = stmts;
+    return n;
 }
 
 static int token_can_start_expr(Token t) {
@@ -335,6 +359,7 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
         }
 
         if (op.kind == TOK_EQ) {
+            skip_terminators(p);
             Node *right = parse_expr(p, bp.rbp);
             if (left->kind == NODE_CALL && strcmp(left->call.method, "[]") == 0 && left->call.recv) {
                 left->call.method = "[]=";
@@ -360,6 +385,7 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
         }
 
         if (op.kind >= TOK_PLUS_EQ && op.kind <= TOK_PIPE2_EQ) {
+            skip_terminators(p);
             Node *right = parse_expr(p, bp.rbp);
             Node *n = node_new(p->arena, NODE_OP_ASSIGN, left->span);
             n->binop.op = token_kind_name(op.kind);
@@ -458,6 +484,7 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
         }
 
         if (op.kind == TOK_DOT2 || op.kind == TOK_DOT3) {
+            skip_terminators(p);
             Node *right = parse_expr(p, bp.rbp);
             Node *n = node_new(p->arena, NODE_RANGE, left->span);
             n->range.begin = left;
@@ -467,6 +494,7 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
             continue;
         }
 
+        skip_terminators(p);
         Node *right = parse_expr(p, bp.rbp);
         Node *n = node_new(p->arena, NODE_BINOP, left->span);
         n->binop.op = token_kind_name(op.kind);
@@ -830,7 +858,15 @@ Node *parse_primary(Parser *p) {
         }
         case TOK_LPAREN: {
             advance(p);
-            Node *inner = parse_expr(p, 0);
+            Node *inner = NULL;
+            if (check(p, TOK_NEWLINE) || check(p, TOK_SEMICOLON)) {
+                skip_terminators(p);
+                inner = parse_body_until_rparen(p);
+                if (inner && inner->kind == NODE_BODY && inner->body.stmts && !inner->body.stmts->next)
+                    inner = inner->body.stmts->node;
+            } else {
+                inner = parse_expr(p, 0);
+            }
             inner = attach_pending_do_block(p, inner, 0);
             expect(p, TOK_RPAREN, "expected ')'");
             return inner;
@@ -894,14 +930,14 @@ Node *parse_primary(Parser *p) {
         case TOK_BREAK: {
             advance(p);
             Node *n = node_new(p->arena, NODE_BREAK, s);
-            if (!check(p, TOK_NEWLINE) && !check(p, TOK_SEMICOLON) && !check(p, TOK_EOF) && !check(p, TOK_END))
+            if (!jump_value_terminator(peek(p).kind))
                 n->jump.value = parse_expr(p, 0);
             return n;
         }
         case TOK_NEXT: {
             advance(p);
             Node *n = node_new(p->arena, NODE_NEXT, s);
-            if (!check(p, TOK_NEWLINE) && !check(p, TOK_SEMICOLON) && !check(p, TOK_EOF) && !check(p, TOK_END))
+            if (!jump_value_terminator(peek(p).kind))
                 n->jump.value = parse_expr(p, 0);
             return n;
         }

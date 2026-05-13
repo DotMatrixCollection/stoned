@@ -56,6 +56,7 @@ typedef enum {
     NODE_UNLESS,
     NODE_WHILE,
     NODE_UNTIL,
+    NODE_FOR,
     NODE_BEGIN,
     NODE_RESCUE,
     NODE_RETURN,
@@ -167,7 +168,15 @@ struct Node {
         struct {
             Node *cond;
             Node *body;
+            int   post_test; /* 1 for begin...end while/until */
         } loop;
+
+        /* NODE_FOR */
+        struct {
+            Node *target;
+            Node *iterable;
+            Node *body;
+        } for_loop;
 
         /* NODE_BEGIN */
         struct {

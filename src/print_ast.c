@@ -178,6 +178,15 @@ void print_ast(FILE *out, Node *node, int indent) {
             fprintf(out, "NEXT\n");
             if (node->jump.value) print_ast(out, node->jump.value, indent+1);
             break;
+        case NODE_FOR:
+            fprintf(out, "FOR\n");
+            indent_print(out, indent+1); fprintf(out, "target:\n");
+            print_ast(out, node->for_loop.target, indent+2);
+            indent_print(out, indent+1); fprintf(out, "iterable:\n");
+            print_ast(out, node->for_loop.iterable, indent+2);
+            indent_print(out, indent+1); fprintf(out, "body:\n");
+            print_ast(out, node->for_loop.body, indent+2);
+            break;
         case NODE_RETRY:
             fprintf(out, "RETRY\n");
             break;

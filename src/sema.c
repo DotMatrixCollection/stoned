@@ -332,6 +332,15 @@ static void resolve(Sema *s, Node *node) {
             s->loop_depth--;
             break;
 
+        case NODE_FOR:
+            resolve(s, node->for_loop.iterable);
+            if (node->for_loop.target && node->for_loop.target->kind == NODE_LVAR)
+                scope_add(s, node->for_loop.target->sval);
+            s->loop_depth++;
+            resolve(s, node->for_loop.body);
+            s->loop_depth--;
+            break;
+
         case NODE_BEGIN:
             resolve(s, node->begin_stmt.body);
             resolve_list(s, node->begin_stmt.rescues);

@@ -387,20 +387,59 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         case NODE_UNTIL: {
             Value result = val_nil();
             while (1) {
-                Value cond = eval_node(ev, env, node->loop.cond);
-                CHECK(cond);
-                int cont = (node->kind == NODE_WHILE) ? val_truthy(cond) : !val_truthy(cond);
-                if (!cont) break;
+                if (!node->loop.post_test) {
+                    Value cond = eval_node(ev, env, node->loop.cond);
+                    CHECK(cond);
+                    int cont = (node->kind == NODE_WHILE) ? val_truthy(cond) : !val_truthy(cond);
+                    if (!cont) break;
+                }
                 result = eval_node(ev, env, node->loop.body);
                 if (result.kind == VAL_BREAK) return *result.jump.wrapped;
                 if (result.kind == VAL_RETURN) return result;
                 if (result.kind == VAL_NEXT) {
                     result = val_nil();
-                    continue;
+                } else if (result.kind == VAL_EXCEPTION) {
+                    return result;
                 }
-                if (result.kind == VAL_EXCEPTION) return result;
+                if (node->loop.post_test) {
+                    Value cond = eval_node(ev, env, node->loop.cond);
+                    CHECK(cond);
+                    int cont = (node->kind == NODE_WHILE) ? val_truthy(cond) : !val_truthy(cond);
+                    if (!cont) break;
+                }
             }
             return result;
+        }
+
+        case NODE_FOR: {
+            Value iterable = eval_node(ev, env, node->for_loop.iterable);
+            CHECK(iterable);
+            Value result = val_nil();
+
+            if (iterable.kind == VAL_ARRAY) {
+                for (size_t i = 0; i < iterable.array->len; i++) {
+                    Value item = iterable.array->elems[i];
+                    Node *target = node->for_loop.target;
+                    if (target && target->kind == NODE_LVAR) {
+                        env_set(ev->arena, env, target->sval, item);
+                    } else if (target && target->kind == NODE_IVAR) {
+                        Value self = val_nil();
+                        if (env_get(env, "self", &self) && self.kind == VAL_OBJECT)
+                            val_object_set_ivar(ev->arena, self, target->sval, item);
+                    }
+                    result = eval_node(ev, env, node->for_loop.body);
+                    if (result.kind == VAL_BREAK) return *result.jump.wrapped;
+                    if (result.kind == VAL_RETURN) return result;
+                    if (result.kind == VAL_NEXT) {
+                        result = val_nil();
+                        continue;
+                    }
+                    if (result.kind == VAL_EXCEPTION) return result;
+                }
+                return result;
+            }
+
+            return eval_raise_class(ev, node, "TypeError", "for loop expects an Array");
         }
 
         case NODE_CASE: {

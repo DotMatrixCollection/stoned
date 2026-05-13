@@ -200,6 +200,17 @@ Node *parse_stmt(Parser *p) {
         Node *n = wrap_rescue_ensure(p, s, body);
         if (!n) return NULL;
         expect(p, TOK_END, "expected 'end'");
+        t = peek(p);
+        if (t.kind == TOK_WHILE || t.kind == TOK_UNTIL) {
+            advance(p);
+            NodeKind kind = (t.kind == TOK_WHILE) ? NODE_WHILE : NODE_UNTIL;
+            Node *cond = parse_expr(p, 0);
+            Node *loop = node_new(p->arena, kind, s);
+            loop->loop.cond = cond;
+            loop->loop.body = n;
+            loop->loop.post_test = 1;
+            return loop;
+        }
         return n;
     }
 
@@ -406,6 +417,30 @@ Node *parse_stmt(Parser *p) {
         return n;
     }
 
+    if (t.kind == TOK_FOR) {
+        advance(p);
+        Node *target = parse_assignment_target_elem(p);
+        if (!target) {
+            Token t2 = peek(p);
+            error(p, "expected loop variable after 'for'", t2.line, t2.col);
+            return NULL;
+        }
+        if (!match(p, TOK_IN)) {
+            Token t2 = peek(p);
+            error(p, "expected 'in' after for target", t2.line, t2.col);
+            return NULL;
+        }
+        Node *iterable = parse_expr(p, 0);
+        Node *n = node_new(p->arena, NODE_FOR, s);
+        n->for_loop.target = target;
+        n->for_loop.iterable = iterable;
+        mark_assign_targets_stmt(p, target);
+        skip_terminators(p);
+        n->for_loop.body = parse_body(p, 0);
+        expect(p, TOK_END, "expected 'end'");
+        return n;
+    }
+
     if (t.kind == TOK_STAR) {
         Node *lhs = parse_assignment_target_elem(p);
         if (check(p, TOK_COMMA))
@@ -444,6 +479,31 @@ Node *parse_stmt(Parser *p) {
     }
 
     t = peek(p);
+    if (t.kind == TOK_RESCUE) {
+        advance(p);
+        Node *rescue_body = parse_expr(p, 0);
+        Node *rc = node_new(p->arena, NODE_RESCUE, s);
+        rc->rescue_clause.body = rescue_body;
+        Node *begin_node = node_new(p->arena, NODE_BEGIN, s);
+        Node *body = node_new(p->arena, NODE_BODY, s);
+        if (expr && (expr->kind == NODE_ASSIGN || expr->kind == NODE_OP_ASSIGN)) {
+            Node *rhs = expr->kind == NODE_ASSIGN ? expr->assign.value : expr->binop.right;
+            body->body.stmts = rhs ? nodelist_append(p->arena, NULL, rhs) : NULL;
+            begin_node->begin_stmt.body = body;
+            begin_node->begin_stmt.rescues = nodelist_append(p->arena, NULL, rc);
+            if (expr->kind == NODE_ASSIGN)
+                expr->assign.value = begin_node;
+            else
+                expr->binop.right = begin_node;
+        } else {
+            body->body.stmts = expr ? nodelist_append(p->arena, NULL, expr) : NULL;
+            begin_node->begin_stmt.body = body;
+            begin_node->begin_stmt.rescues = nodelist_append(p->arena, NULL, rc);
+            expr = begin_node;
+        }
+        t = peek(p);
+    }
+
     if (t.kind == TOK_IF || t.kind == TOK_UNLESS) {
         advance(p);
         NodeKind kind = (t.kind == TOK_IF) ? NODE_IF : NODE_UNLESS;
