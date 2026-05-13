@@ -532,6 +532,35 @@ static Value file_readchar_stream(Eval *ev, Value recv, const char *mode, const 
     return ch;
 }
 
+static Value file_getbyte_stream(Eval *ev, Value recv, const char *mode, Node *site) {
+    if (!mode_allows_read(mode))
+        return eval_raise_class(ev, site, "IOError", "not opened for reading");
+
+    NativeFile *nf = NULL;
+    if (!ensure_open_native_file(ev, recv, site, &nf))
+        return invalid_file_object(ev, site);
+
+    int ch = fgetc(nf->fp);
+    if (ch == EOF) {
+        if (ferror(nf->fp)) {
+            clearerr(nf->fp);
+            return eval_raise_class(ev, site, "IOError", "cannot read file");
+        }
+        return val_nil();
+    }
+
+    return val_int((unsigned char)ch);
+}
+
+static Value file_readbyte_stream(Eval *ev, Value recv, const char *mode, Node *site) {
+    Value byte = file_getbyte_stream(ev, recv, mode, site);
+    if (val_is_signal(byte))
+        return byte;
+    if (byte.kind == VAL_NIL)
+        return eval_raise_class(ev, site, "EOFError", "end of file reached");
+    return byte;
+}
+
 static Value exception_arg_message(Eval *ev, Value recv, Value *args, int argc, int *ok, Node *site) {
     if (argc > 1) {
         *ok = 0;
@@ -1550,6 +1579,22 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = file_readchar_stream(ev, recv, mode.sval, "IO#readchar", site);
             return 1;
         }
+        if (strcmp(name, "getbyte") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_getbyte_stream(ev, recv, mode.sval, site);
+            return 1;
+        }
+        if (strcmp(name, "readbyte") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_readbyte_stream(ev, recv, mode.sval, site);
+            return 1;
+        }
         if (strcmp(name, "eof?") == 0) {
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
@@ -1747,6 +1792,22 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 return 1;
             }
             *out = file_readchar_stream(ev, recv, mode.sval, "File#readchar", site);
+            return 1;
+        }
+        if (strcmp(name, "getbyte") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_getbyte_stream(ev, recv, mode.sval, site);
+            return 1;
+        }
+        if (strcmp(name, "readbyte") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_readbyte_stream(ev, recv, mode.sval, site);
             return 1;
         }
         if (strcmp(name, "eof?") == 0) {

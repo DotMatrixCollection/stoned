@@ -1,0 +1,15 @@
+195
+169
+nil
+195
+169
+EOFError
+end of file reached
+ArgumentError
+wrong number of arguments (given 1, expected 0)
+ArgumentError
+wrong number of arguments (given 1, expected 0)
+IOError
+closed stream
+IOError
+closed stream
