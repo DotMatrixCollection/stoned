@@ -129,9 +129,9 @@ Recent Stage 5 progress already landed:
 - friendly user-facing load errors while keeping canonical internal cache keys
 - stateful `File.open` handles instead of path-reopen behavior
 - `File.open` block cleanup now stays coherent across normal return, `next`, `break`, exceptions, early method `return`, and manual early `close`
-- `File#tell`, `File#seek`, `File#rewind`
+- `File#tell`, `File#pos`, `File#seek`, `File#rewind`, `File#eof?`
 - `IO.new(fd, mode)` wrappers plus mode enforcement on read/write entry points
-- shared `IO#gets` / `File#gets` separator handling: default newline, custom separator strings, `nil` for “read rest”, paragraph mode (`""`), and long-line reads without the old 4KB cap
+- shared stream-read surface across `IO` and `File`: `gets`, `readline`, `readlines`, `getc`, `readchar`, `getbyte`, `readbyte`, default newline, custom separator strings, `nil` for “read rest”, paragraph mode (`""`), long-line reads without the old 4KB cap, and byte-vs-character read distinctions
 - IO/File error class cleanup: mode violations raise `IOError` (not `LoadError`), closed-stream access raises `IOError` with MRI-standard `"closed stream"` message
 - `SystemCallError` base class, `Errno` module, and `Errno::ENOENT` / `EACCES` / `EEXIST` / `EBADF` / `EPERM` with correct inheritance chain (`Errno::ENOENT → SystemCallError → StandardError`); file-not-found operations raise `Errno::ENOENT` with MRI-style messages
 
