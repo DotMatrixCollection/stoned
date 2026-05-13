@@ -134,6 +134,7 @@ Recent Stage 5 progress already landed:
 - shared stream-read surface across `IO` and `File`: `gets`, `readline`, `readlines`, `getc`, `readchar`, `getbyte`, `readbyte`, `each_byte`, `each_char`, `each_line`, default newline, custom separator strings, `nil` for “read rest”, paragraph mode (`””`), long-line reads without the old 4KB cap, and byte-vs-character/line read distinctions
 - IO/File error class cleanup: mode violations raise `IOError` (not `LoadError`), closed-stream access raises `IOError` with MRI-standard `"closed stream"` message
 - `SystemCallError` base class, `Errno` module, and `Errno::ENOENT` / `EACCES` / `EEXIST` / `EBADF` / `EPERM` with correct inheritance chain (`Errno::ENOENT → SystemCallError → StandardError`); file-not-found operations raise `Errno::ENOENT` with MRI-style messages
+- `File` path utilities: `basename` (with optional ext stripping and `".*"` wildcard), `dirname`, `extname`, `join`, `split`, `expand_path` (with `~` and `..`/`.` normalization), `absolute_path`
 
 Exit gate:
 

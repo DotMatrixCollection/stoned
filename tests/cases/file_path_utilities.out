@@ -1,0 +1,28 @@
+baz.rb
+baz
+baz
+bar
+baz
+/
+
+/foo/bar
+/foo
+.
+/
+.rb
+.gz
+
+
+foo/bar/baz
+/foo/bar
+foo/bar
+/
+
+["/foo/bar", "baz.rb"]
+[".", "baz"]
+["/", ""]
+/bar
+/foo/bar
+/already/abs
+/bar
+/foo
