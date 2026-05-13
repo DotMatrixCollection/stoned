@@ -523,6 +523,15 @@ static Value file_getc_stream(Eval *ev, Value recv, const char *mode, const char
     return val_string_n(ev->arena, buf, width);
 }
 
+static Value file_readchar_stream(Eval *ev, Value recv, const char *mode, const char *context, Node *site) {
+    Value ch = file_getc_stream(ev, recv, mode, context, site);
+    if (val_is_signal(ch))
+        return ch;
+    if (ch.kind == VAL_NIL)
+        return eval_raise_class(ev, site, "EOFError", "end of file reached");
+    return ch;
+}
+
 static Value exception_arg_message(Eval *ev, Value recv, Value *args, int argc, int *ok, Node *site) {
     if (argc > 1) {
         *ok = 0;
@@ -1533,6 +1542,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = file_getc_stream(ev, recv, mode.sval, "IO#getc", site);
             return 1;
         }
+        if (strcmp(name, "readchar") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_readchar_stream(ev, recv, mode.sval, "IO#readchar", site);
+            return 1;
+        }
         if (strcmp(name, "eof?") == 0) {
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
@@ -1722,6 +1739,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 return 1;
             }
             *out = file_getc_stream(ev, recv, mode.sval, "File#getc", site);
+            return 1;
+        }
+        if (strcmp(name, "readchar") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_readchar_stream(ev, recv, mode.sval, "File#readchar", site);
             return 1;
         }
         if (strcmp(name, "eof?") == 0) {
