@@ -1,0 +1,4 @@
+ArgumentError
+wrong number of arguments (given 3, expected 0..2)
+ArgumentError
+negative offset -1 given

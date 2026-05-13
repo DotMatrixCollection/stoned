@@ -580,7 +580,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 *out = argc < 1
                      ? wrong_arg_count(ev, site, argc, 1)
                      : eval_raise_class(ev, site, "ArgumentError",
-                                        "wrong number of arguments (given %d, expected 1..3)", argc);
+                                        "wrong number of arguments (given %d, expected 0..2)", argc - 1);
             } else if (args[0].kind != VAL_STRING) {
                 *out = implicit_string_conversion_error(ev, args[0], site);
             } else {

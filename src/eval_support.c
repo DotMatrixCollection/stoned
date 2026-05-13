@@ -1213,7 +1213,7 @@ Value eval_file_read_slice(Eval *ev, const char *path, int has_length, int64_t l
     if (has_offset) {
         if (offset < 0) {
             free(src);
-            return eval_raise_class(ev, site, "Errno::EINVAL", "%s", strerror(EINVAL));
+            return eval_raise_class(ev, site, "ArgumentError", "negative offset %lld given", (long long)offset);
         }
         start = (size_t)offset;
         if (start > len) start = len;
