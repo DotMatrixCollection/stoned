@@ -415,31 +415,52 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             Value iterable = eval_node(ev, env, node->for_loop.iterable);
             CHECK(iterable);
             Value result = val_nil();
+            Node *for_target = node->for_loop.target;
+
+/* Bind the loop variable into the enclosing env (for leaks scope like MRI). */
+#define FOR_BIND(item_val) do { \
+    Value _fv = (item_val); \
+    if (for_target && for_target->kind == NODE_LVAR) { \
+        env_set(ev->arena, env, for_target->sval, _fv); \
+    } else if (for_target && for_target->kind == NODE_IVAR) { \
+        Value _self = val_nil(); \
+        if (env_get(env, "self", &_self) && _self.kind == VAL_OBJECT) \
+            val_object_set_ivar(ev->arena, _self, for_target->sval, _fv); \
+    } \
+} while (0)
+
+/* Run the body once; handle control-flow signals. */
+#define FOR_BODY() do { \
+    result = eval_node(ev, env, node->for_loop.body); \
+    if (result.kind == VAL_BREAK)     { result = *result.jump.wrapped; goto for_done; } \
+    if (result.kind == VAL_RETURN)    goto for_done; \
+    if (result.kind == VAL_EXCEPTION) goto for_done; \
+    if (result.kind == VAL_NEXT)      result = val_nil(); \
+} while (0)
 
             if (iterable.kind == VAL_ARRAY) {
                 for (size_t i = 0; i < iterable.array->len; i++) {
-                    Value item = iterable.array->elems[i];
-                    Node *target = node->for_loop.target;
-                    if (target && target->kind == NODE_LVAR) {
-                        env_set(ev->arena, env, target->sval, item);
-                    } else if (target && target->kind == NODE_IVAR) {
-                        Value self = val_nil();
-                        if (env_get(env, "self", &self) && self.kind == VAL_OBJECT)
-                            val_object_set_ivar(ev->arena, self, target->sval, item);
-                    }
-                    result = eval_node(ev, env, node->for_loop.body);
-                    if (result.kind == VAL_BREAK) return *result.jump.wrapped;
-                    if (result.kind == VAL_RETURN) return result;
-                    if (result.kind == VAL_NEXT) {
-                        result = val_nil();
-                        continue;
-                    }
-                    if (result.kind == VAL_EXCEPTION) return result;
+                    FOR_BIND(iterable.array->elems[i]);
+                    FOR_BODY();
                 }
-                return result;
+            } else if (iterable.kind == VAL_RANGE) {
+                RubyRange *r = iterable.range;
+                if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+                    return eval_raise_class(ev, node, "TypeError", "for loop requires an Integer range");
+                int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+                for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
+                    FOR_BIND(val_int(i));
+                    FOR_BODY();
+                }
+            } else {
+                return eval_raise_class(ev, node, "TypeError",
+                    "for loop requires Array or Range (got %s)", val_kind_name(iterable.kind));
             }
 
-            return eval_raise_class(ev, node, "TypeError", "for loop expects an Array");
+            for_done:
+#undef FOR_BIND
+#undef FOR_BODY
+            return result;
         }
 
         case NODE_CASE: {
