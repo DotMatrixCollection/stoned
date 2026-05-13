@@ -69,7 +69,11 @@ Value call_block(Eval *ev, Env *caller_env, Value blk, Value *args, int argc, No
 Value eval_require(Eval *ev, Env *env, const char *path, Node *site);
 Value eval_require_relative(Eval *ev, Env *env, const char *path, Node *site);
 Value eval_file_read(Eval *ev, const char *path, Node *site);
+Value eval_file_read_slice(Eval *ev, const char *path, int has_length, int64_t length,
+                           int has_offset, int64_t offset, Node *site);
 Value eval_file_write(Eval *ev, const char *path, const char *content, Node *site);
+Value eval_file_write_at(Eval *ev, const char *path, const char *content,
+                         int has_offset, int64_t offset, Node *site);
 Value eval_file_append(Eval *ev, const char *path, const char *content, Node *site);
 Value eval_file_exist(Eval *ev, const char *path);
 Value eval_file_delete(Eval *ev, const char *path, Node *site);

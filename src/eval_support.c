@@ -54,6 +54,21 @@ static int write_file_bytes(const char *path, const char *content, size_t len) {
     return written == len;
 }
 
+static int write_file_bytes_at(const char *path, const char *content, size_t len, int has_offset, int64_t offset) {
+    FILE *f = fopen(path, "r+b");
+    if (!f) {
+        f = fopen(path, "w+b");
+        if (!f) return 0;
+    }
+    if (has_offset && fseek(f, (long)offset, SEEK_SET) != 0) {
+        fclose(f);
+        return 0;
+    }
+    size_t written = fwrite(content, 1, len, f);
+    fclose(f);
+    return written == len;
+}
+
 static int append_file_bytes(const char *path, const char *content, size_t len) {
     FILE *f = fopen(path, "ab");
     if (!f) return 0;
@@ -1177,6 +1192,11 @@ Value eval_require_relative(Eval *ev, Env *env, const char *path, Node *site) {
 }
 
 Value eval_file_read(Eval *ev, const char *path, Node *site) {
+    return eval_file_read_slice(ev, path, 0, 0, 0, 0, site);
+}
+
+Value eval_file_read_slice(Eval *ev, const char *path, int has_length, int64_t length,
+                           int has_offset, int64_t offset, Node *site) {
     size_t len = 0;
     char *src = read_file_bytes(path, &len);
     if (!src) {
@@ -1188,14 +1208,43 @@ Value eval_file_read(Eval *ev, const char *path, Node *site) {
         return eval_raise_encoding_error(ev, site, "File.read");
     }
 
-    Value out = val_string_n(ev->arena, src, len);
+    size_t start = 0;
+    size_t out_len = len;
+    if (has_offset) {
+        if (offset < 0) {
+            free(src);
+            return eval_raise_class(ev, site, "Errno::EINVAL", "%s", strerror(EINVAL));
+        }
+        start = (size_t)offset;
+        if (start > len) start = len;
+        out_len = len - start;
+    }
+    if (has_length) {
+        if (length < 0) {
+            free(src);
+            return eval_raise_class(ev, site, "ArgumentError", "negative length %lld given", (long long)length);
+        }
+        if ((size_t)length < out_len)
+            out_len = (size_t)length;
+    }
+
+    Value out = val_string_n(ev->arena, src + start, out_len);
     free(src);
     return out;
 }
 
 Value eval_file_write(Eval *ev, const char *path, const char *content, Node *site) {
+    return eval_file_write_at(ev, path, content, 0, 0, site);
+}
+
+Value eval_file_write_at(Eval *ev, const char *path, const char *content,
+                         int has_offset, int64_t offset, Node *site) {
     size_t len = strlen(content);
-    if (!write_file_bytes(path, content, len)) {
+    if (has_offset && offset < 0)
+        return eval_raise_class(ev, site, "Errno::EINVAL", "%s", strerror(EINVAL));
+    int ok = has_offset ? write_file_bytes_at(path, content, len, has_offset, offset)
+                        : write_file_bytes(path, content, len);
+    if (!ok) {
         int err = errno;
         return eval_raise_class(ev, site, errno_class_name(err), "%s - %s", strerror(err), path);
     }

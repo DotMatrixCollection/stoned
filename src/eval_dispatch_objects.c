@@ -576,22 +576,60 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(recv.klass->name, "File") == 0) {
         if (strcmp(name, "read") == 0) {
-            if (argc < 1) {
-                *out = eval_raise_class(ev, site, "ArgumentError", "File.read requires a path");
+            if (argc < 1 || argc > 3) {
+                *out = argc < 1
+                     ? wrong_arg_count(ev, site, argc, 1)
+                     : eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 1..3)", argc);
             } else if (args[0].kind != VAL_STRING) {
                 *out = implicit_string_conversion_error(ev, args[0], site);
             } else {
-                *out = eval_file_read(ev, args[0].sval, site);
+                int has_length = 0;
+                int64_t length = 0;
+                int has_offset = 0;
+                int64_t offset = 0;
+                if (argc >= 2 && args[1].kind != VAL_NIL) {
+                    if (args[1].kind != VAL_INT) {
+                        *out = implicit_integer_conversion_error(ev, args[1], site);
+                        return 1;
+                    }
+                    has_length = 1;
+                    length = args[1].ival;
+                }
+                if (argc >= 3) {
+                    if (args[2].kind != VAL_INT) {
+                        *out = implicit_integer_conversion_error(ev, args[2], site);
+                        return 1;
+                    }
+                    has_offset = 1;
+                    offset = args[2].ival;
+                }
+                *out = eval_file_read_slice(ev, args[0].sval, has_length, length, has_offset, offset, site);
             }
             return 1;
         }
         if (strcmp(name, "write") == 0) {
-            if (argc < 2) {
-                *out = eval_raise_class(ev, site, "ArgumentError", "File.write requires a path and content");
+            if (argc < 2 || argc > 3) {
+                *out = argc < 2
+                     ? eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 2..3)", argc)
+                     : eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 2..3)", argc);
             } else if (args[0].kind != VAL_STRING) {
                 *out = implicit_string_conversion_error(ev, args[0], site);
             } else {
-                *out = eval_file_write(ev, args[0].sval, val_to_s(ev->arena, args[1]), site);
+                int has_offset = 0;
+                int64_t offset = 0;
+                if (argc >= 3 && args[2].kind != VAL_NIL) {
+                    if (args[2].kind != VAL_INT) {
+                        *out = implicit_integer_conversion_error(ev, args[2], site);
+                        return 1;
+                    }
+                    has_offset = 1;
+                    offset = args[2].ival;
+                }
+                *out = eval_file_write_at(ev, args[0].sval, val_to_s(ev->arena, args[1]),
+                                          has_offset, offset, site);
             }
             return 1;
         }
