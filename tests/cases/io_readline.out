@@ -1,0 +1,10 @@
+"abc\n"
+"\n"
+"ab"
+"abc\n\n"
+TypeError
+no implicit conversion of true into String
+TypeError
+no implicit conversion of true into Integer
+EOFError
+end of file reached

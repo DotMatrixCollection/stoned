@@ -467,6 +467,16 @@ static Value file_eof_stream(Eval *ev, Value recv, Node *site) {
     return val_false();
 }
 
+static Value file_readline_stream(Eval *ev, Value recv, const char *mode, const char *context,
+                                  Value *args, int argc, Node *site) {
+    Value line = file_gets_stream(ev, recv, mode, context, args, argc, site);
+    if (val_is_signal(line))
+        return line;
+    if (line.kind == VAL_NIL)
+        return eval_raise_class(ev, site, "EOFError", "end of file reached");
+    return line;
+}
+
 static Value exception_arg_message(Eval *ev, Value recv, Value *args, int argc, int *ok, Node *site) {
     if (argc > 1) {
         *ok = 0;
@@ -1465,6 +1475,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = file_gets_stream(ev, recv, mode.sval, "IO#gets", args, argc, site);
             return 1;
         }
+        if (strcmp(name, "readline") == 0) {
+            *out = file_readline_stream(ev, recv, mode.sval, "IO#readline", args, argc, site);
+            return 1;
+        }
         if (strcmp(name, "eof?") == 0) {
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
@@ -1642,6 +1656,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "gets") == 0) {
             *out = file_gets_stream(ev, recv, mode.sval, "File#gets", args, argc, site);
+            return 1;
+        }
+        if (strcmp(name, "readline") == 0) {
+            *out = file_readline_stream(ev, recv, mode.sval, "File#readline", args, argc, site);
             return 1;
         }
         if (strcmp(name, "eof?") == 0) {
