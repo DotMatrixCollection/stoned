@@ -1,0 +1,20 @@
+"a\n"
+"b\n"
+"\n"
+--
+"a\n"
+"b\n"
+"\n"
+--
+"a\n"
+"b\n"
+"\n"
+--
+"a\nb"
+--
+TypeError
+no implicit conversion of true into String
+TypeError
+no implicit conversion of true into Integer
+ArgumentError
+wrong number of arguments (given 3, expected 0..2)

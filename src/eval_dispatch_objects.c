@@ -362,6 +362,20 @@ static Value file_gets_stream(Eval *ev, Value recv, const char *mode, const char
         return eval_raise_class(ev, site, "IOError", "cannot read file");
     }
 
+    if (paragraph) {
+        size_t only_newlines = 1;
+        for (size_t i = 0; i < len; i++) {
+            if (buf[i] != '\n') {
+                only_newlines = 0;
+                break;
+            }
+        }
+        if (only_newlines) {
+            free(buf);
+            return val_nil();
+        }
+    }
+
     if (len == 0) {
         free(buf);
         return val_nil();
@@ -559,6 +573,26 @@ static Value file_readbyte_stream(Eval *ev, Value recv, const char *mode, Node *
     if (byte.kind == VAL_NIL)
         return eval_raise_class(ev, site, "EOFError", "end of file reached");
     return byte;
+}
+
+static Value file_readlines_stream(Eval *ev, Value recv, const char *mode, const char *context,
+                                   Value *args, int argc, Node *site) {
+    if (argc > 2)
+        return eval_raise_class(ev, site, "ArgumentError",
+                                "wrong number of arguments (given %d, expected 0..2)", argc);
+    if (!mode_allows_read(mode))
+        return eval_raise_class(ev, site, "IOError", "not opened for reading");
+
+    Value lines = val_array_new();
+    while (1) {
+        Value line = file_gets_stream(ev, recv, mode, context, args, argc, site);
+        if (val_is_signal(line))
+            return line;
+        if (line.kind == VAL_NIL)
+            break;
+        val_array_push(&lines, line);
+    }
+    return lines;
 }
 
 static Value exception_arg_message(Eval *ev, Value recv, Value *args, int argc, int *ok, Node *site) {
@@ -1595,6 +1629,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = file_readbyte_stream(ev, recv, mode.sval, site);
             return 1;
         }
+        if (strcmp(name, "readlines") == 0) {
+            *out = file_readlines_stream(ev, recv, mode.sval, "IO#readlines", args, argc, site);
+            return 1;
+        }
         if (strcmp(name, "eof?") == 0) {
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
@@ -1808,6 +1846,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 return 1;
             }
             *out = file_readbyte_stream(ev, recv, mode.sval, site);
+            return 1;
+        }
+        if (strcmp(name, "readlines") == 0) {
+            *out = file_readlines_stream(ev, recv, mode.sval, "File#readlines", args, argc, site);
             return 1;
         }
         if (strcmp(name, "eof?") == 0) {
