@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `224` tests are passing, and recent work tightened file IO and multi-file loading, but it is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `226` tests are passing, and recent work tightened file IO and multi-file loading, but it is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -52,7 +52,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `224 passed, 0 failed, 224 total`.
+Current coverage in the tree: `226 passed, 0 failed, 226 total`.
 
 What is working today:
 
@@ -79,8 +79,8 @@ What is working today:
 - Regexp: `Regexp.new(string)`, regexp literals `/.../` with `i`/`m`/`x`, `Regexp#match`, `String#match`, `=~` operator, `MatchData` with `to_s`, `[]` by integer index, `begin`, `end`, `pre_match`, `post_match`; `Regexp#source`, `Regexp#inspect`; regex-backed `sub`, `gsub`, and `scan`; `RegexpError` on invalid patterns. Backed by reginold (Onigmo under a stable opaque API).
 - String: UTF-8-only strings; codepoint-aware `length`/`size`, `chars`, `split("")`, `each_char`, `reverse`, `ord`, `index`, `rindex`, `[]`/`slice`, `chop`, `strip`, `lstrip`, `rstrip`, `ljust`, `rjust`, `center`, `upcase`, `downcase`, `capitalize`, `swapcase`, `succ`, `tr`, `count`, `delete`, `squeeze`; plus `chomp`, `hex`, `oct`, `bytes`, `<<`, `lines`, `each_line`, `scan`, `sub`, `gsub`, and sprintf-style `String#%` with basic `%s`/`%d`/`%i`/`%f`, width, precision, and `%%`; `inspect`. Current Unicode semantics are codepoint-based with simple case mapping rather than full locale- or grapheme-aware behavior.
 - Kernel: `puts`, `print`, `p`, `pp`, `warn`, `Integer()`, `Float()`, `String()`, `Array()`, `format`, `sprintf`, `raise`, `lambda`, `rand`, `exit`
-- IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `close`, `closed?`, `tell`, `pos`, `seek`, `rewind`, `eof?`, `gets`, `readline`, `readlines`, `read`, `getc`, `readchar`, `getbyte`, `readbyte`, `each_byte`, `each_char`, and `IO.new(fd, mode)` wrappers with mode enforcement; `IO.new(fd)` / `IO.new(fd, nil)` now infer the descriptor access mode, and explicit `+` modes like `r+` are treated as read-write; `sync` / `sync=` state now persists on `IO`/`File`, and sync-enabled writes now flush immediately; kernel `puts` / `print` / `p` / `pp` now honor `$stdout`/`STDOUT` close state and write-capable `$stdout` redirection; invalid `$stdout`/`$stderr` assignment raises `TypeError`; uncaught runtime errors honor redirected `$stderr`, including custom write-capable objects; mode violations raise `IOError`, closed-stream access raises `IOError`
-- File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`; file objects with stateful native handles for `read`, `gets`, `readline`, `readlines`, `getc`, `readchar`, `getbyte`, `readbyte`, `each_byte`, `each_char`, `write`, `<<`, `print`, `puts`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `path`, `mode`, `tell`, `pos`, `seek`, `rewind`, `eof?`, `close`, `closed?`; text modes `r`, `w`, `a` and binary modes `rb`, `wb`, `ab` — binary mode skips UTF-8 validation so non-UTF-8 byte sequences read without error; file-not-found raises `Errno::ENOENT`
+- IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `close`, `closed?`, `tell`, `pos`, `seek`, `rewind`, `eof?`, `gets`, `readline`, `readlines`, `read`, `getc`, `readchar`, `getbyte`, `readbyte`, `each_byte`, `each_char`, `each_line`, and `IO.new(fd, mode)` wrappers with mode enforcement; `IO.new(fd)` / `IO.new(fd, nil)` now infer the descriptor access mode, and explicit `+` modes like `r+` are treated as read-write; `sync` / `sync=` state now persists on `IO`/`File`, and sync-enabled writes now flush immediately; kernel `puts` / `print` / `p` / `pp` now honor `$stdout`/`STDOUT` close state and write-capable `$stdout` redirection; invalid `$stdout`/`$stderr` assignment raises `TypeError`; uncaught runtime errors honor redirected `$stderr`, including custom write-capable objects; mode violations raise `IOError`, closed-stream access raises `IOError`
+- File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`; file objects with stateful native handles for `read`, `gets`, `readline`, `readlines`, `getc`, `readchar`, `getbyte`, `readbyte`, `each_byte`, `each_char`, `each_line`, `write`, `<<`, `print`, `puts`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `path`, `mode`, `tell`, `pos`, `seek`, `rewind`, `eof?`, `close`, `closed?`; text modes `r`, `w`, `a` and binary modes `rb`, `wb`, `ab` — binary mode skips UTF-8 validation so non-UTF-8 byte sequences read without error; file-not-found raises `Errno::ENOENT`
 - Globals and constants
 
 Known limitations:
