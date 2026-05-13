@@ -1485,6 +1485,27 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = file_tell_stream(ev, recv, site);
             return 1;
         }
+        if (strcmp(name, "pos") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_tell_stream(ev, recv, site);
+            return 1;
+        }
+        if (strcmp(name, "pos=") == 0) {
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            Value positioned = file_seek_stream(ev, recv, args, 1, site);
+            if (val_is_signal(positioned)) {
+                *out = positioned;
+                return 1;
+            }
+            *out = args[0];
+            return 1;
+        }
         if (strcmp(name, "seek") == 0) {
             *out = file_seek_stream(ev, recv, args, argc, site);
             return 1;
@@ -1709,6 +1730,27 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 return 1;
             }
             *out = file_tell_stream(ev, recv, site);
+            return 1;
+        }
+        if (strcmp(name, "pos") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = file_tell_stream(ev, recv, site);
+            return 1;
+        }
+        if (strcmp(name, "pos=") == 0) {
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            Value positioned = file_seek_stream(ev, recv, args, 1, site);
+            if (val_is_signal(positioned)) {
+                *out = positioned;
+                return 1;
+            }
+            *out = args[0];
             return 1;
         }
         if (strcmp(name, "seek") == 0) {

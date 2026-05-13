@@ -1,0 +1,14 @@
+0
+2
+2
+"c"
+TypeError
+no implicit conversion of true into Integer
+ArgumentError
+wrong number of arguments (given 1, expected 0)
+Errno::EINVAL
+Invalid argument
+IOError
+closed stream
+IOError
+closed stream
