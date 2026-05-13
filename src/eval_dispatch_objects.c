@@ -597,17 +597,28 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         if (strcmp(name, "delete") == 0) {
             if (argc < 1) {
-                *out = eval_raise_class(ev, site, "ArgumentError", "File.delete requires a path");
-            } else if (args[0].kind != VAL_STRING) {
-                *out = implicit_string_conversion_error(ev, args[0], site);
+                *out = wrong_arg_count(ev, site, argc, 1);
             } else {
-                *out = eval_file_delete(ev, args[0].sval, site);
+                Value count = val_int(0);
+                for (int i = 0; i < argc; i++) {
+                    if (args[i].kind != VAL_STRING) {
+                        *out = implicit_string_conversion_error(ev, args[i], site);
+                        return 1;
+                    }
+                    Value deleted = eval_file_delete(ev, args[i].sval, site);
+                    if (val_is_signal(deleted)) {
+                        *out = deleted;
+                        return 1;
+                    }
+                    count = val_int(count.ival + deleted.ival);
+                }
+                *out = count;
             }
             return 1;
         }
         if (strcmp(name, "exist?") == 0) {
-            if (argc < 1) {
-                *out = eval_raise_class(ev, site, "ArgumentError", "File.exist? requires a path");
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
             } else if (args[0].kind != VAL_STRING) {
                 *out = implicit_string_conversion_error(ev, args[0], site);
             } else {
