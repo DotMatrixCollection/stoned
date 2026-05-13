@@ -1,0 +1,10 @@
+195
+169
+120
+"é"
+"x"
+IO
+ArgumentError
+wrong number of arguments (given 1, expected 0)
+LocalJumpError
+IO#each_char requires a block
