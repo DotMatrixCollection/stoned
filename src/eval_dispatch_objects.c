@@ -4,6 +4,7 @@
 #include "utf8.h"
 
 #include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -789,6 +790,361 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(recv.klass->name, "File") == 0) {
+        if (strcmp(name, "basename") == 0) {
+            if (argc < 1 || argc > 2) {
+                *out = eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 1..2)", argc);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            const char *ext = NULL;
+            if (argc >= 2 && args[1].kind != VAL_NIL) {
+                if (args[1].kind != VAL_STRING) {
+                    *out = implicit_string_conversion_error(ev, args[1], site);
+                    return 1;
+                }
+                ext = args[1].sval;
+            }
+            const char *path = args[0].sval ? args[0].sval : "";
+            if (path[0] == '\0') { *out = val_string(ev->arena, ""); return 1; }
+            /* strip trailing slashes, but keep root */
+            size_t plen = strlen(path);
+            size_t end = plen;
+            while (end > 1 && path[end - 1] == '/') end--;
+            /* find last slash */
+            size_t start = 0;
+            for (size_t i = 0; i < end; i++)
+                if (path[i] == '/') start = i + 1;
+            size_t blen = end - start;
+            /* root path ("/" or pure slashes) is its own basename */
+            if (blen == 0) { *out = val_string(ev->arena, "/"); return 1; }
+            /* apply ext suffix stripping */
+            if (ext && ext[0] != '\0') {
+                if (strcmp(ext, ".*") == 0) {
+                    for (size_t i = 1; i < blen; i++)
+                        if (path[start + i] == '.') blen = i;
+                } else {
+                    size_t elen = strlen(ext);
+                    if (blen > elen &&
+                        memcmp(path + start + blen - elen, ext, elen) == 0)
+                        blen -= elen;
+                }
+            }
+            char *buf = arena_alloc(ev->arena, blen + 1);
+            memcpy(buf, path + start, blen);
+            buf[blen] = '\0';
+            *out = val_string(ev->arena, buf);
+            return 1;
+        }
+        if (strcmp(name, "dirname") == 0) {
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            const char *path = args[0].sval ? args[0].sval : "";
+            if (path[0] == '\0') { *out = val_string(ev->arena, "."); return 1; }
+            size_t plen = strlen(path);
+            size_t end = plen;
+            while (end > 1 && path[end - 1] == '/') end--;
+            int last_slash = -1;
+            for (size_t i = 0; i < end; i++)
+                if (path[i] == '/') last_slash = (int)i;
+            if (last_slash < 0) { *out = val_string(ev->arena, "."); return 1; }
+            if (last_slash == 0) { *out = val_string(ev->arena, "/"); return 1; }
+            size_t dlen = (size_t)last_slash;
+            while (dlen > 1 && path[dlen - 1] == '/') dlen--;
+            char *buf = arena_alloc(ev->arena, dlen + 1);
+            memcpy(buf, path, dlen);
+            buf[dlen] = '\0';
+            *out = val_string(ev->arena, buf);
+            return 1;
+        }
+        if (strcmp(name, "extname") == 0) {
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            const char *path = args[0].sval ? args[0].sval : "";
+            /* get basename bounds */
+            size_t plen = strlen(path);
+            size_t end = plen;
+            while (end > 1 && path[end - 1] == '/') end--;
+            size_t start = 0;
+            for (size_t i = 0; i < end; i++)
+                if (path[i] == '/') start = i + 1;
+            size_t blen = end - start;
+            /* last dot in basename, skipping a leading dot */
+            int dot = -1;
+            for (size_t i = 1; i < blen; i++)
+                if (path[start + i] == '.') dot = (int)i;
+            if (dot < 0) { *out = val_string(ev->arena, ""); return 1; }
+            size_t elen = blen - (size_t)dot;
+            char *buf = arena_alloc(ev->arena, elen + 1);
+            memcpy(buf, path + start + dot, elen);
+            buf[elen] = '\0';
+            *out = val_string(ev->arena, buf);
+            return 1;
+        }
+        if (strcmp(name, "join") == 0) {
+            if (argc == 0) { *out = val_string(ev->arena, ""); return 1; }
+            /* compute upper bound */
+            size_t total = 2;
+            for (int i = 0; i < argc; i++) {
+                const char *s = val_to_s(ev->arena, args[i]);
+                total += strlen(s) + 1;
+            }
+            char *buf = arena_alloc(ev->arena, total);
+            size_t pos = 0;
+            for (int i = 0; i < argc; i++) {
+                const char *s = val_to_s(ev->arena, args[i]);
+                size_t slen = strlen(s);
+                if (i == 0) {
+                    memcpy(buf, s, slen);
+                    pos = slen;
+                } else {
+                    /* strip trailing slashes from accumulated result */
+                    while (pos > 0 && buf[pos - 1] == '/') pos--;
+                    /* strip leading slashes from this segment */
+                    size_t skip = 0;
+                    while (skip < slen && s[skip] == '/') skip++;
+                    buf[pos++] = '/';
+                    memcpy(buf + pos, s + skip, slen - skip);
+                    pos += slen - skip;
+                }
+            }
+            buf[pos] = '\0';
+            *out = val_string(ev->arena, buf);
+            return 1;
+        }
+        if (strcmp(name, "split") == 0) {
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            const char *sp = args[0].sval ? args[0].sval : "";
+            /* dirname */
+            Value dir_val;
+            if (sp[0] == '\0') {
+                dir_val = val_string(ev->arena, ".");
+            } else {
+                size_t splen = strlen(sp);
+                size_t send = splen;
+                while (send > 1 && sp[send - 1] == '/') send--;
+                int slast = -1;
+                for (size_t i = 0; i < send; i++)
+                    if (sp[i] == '/') slast = (int)i;
+                if (slast < 0) {
+                    dir_val = val_string(ev->arena, ".");
+                } else if (slast == 0) {
+                    dir_val = val_string(ev->arena, "/");
+                } else {
+                    size_t dlen = (size_t)slast;
+                    while (dlen > 1 && sp[dlen - 1] == '/') dlen--;
+                    char *db = arena_alloc(ev->arena, dlen + 1);
+                    memcpy(db, sp, dlen);
+                    db[dlen] = '\0';
+                    dir_val = val_string(ev->arena, db);
+                }
+            }
+            /* basename (no ext stripping) */
+            Value base_val;
+            if (sp[0] == '\0') {
+                base_val = val_string(ev->arena, "");
+            } else {
+                size_t splen = strlen(sp);
+                size_t send = splen;
+                while (send > 1 && sp[send - 1] == '/') send--;
+                size_t sstart = 0;
+                for (size_t i = 0; i < send; i++)
+                    if (sp[i] == '/') sstart = i + 1;
+                size_t blen = send - sstart;
+                char *bb = arena_alloc(ev->arena, blen + 1);
+                memcpy(bb, sp + sstart, blen);
+                bb[blen] = '\0';
+                base_val = val_string(ev->arena, bb);
+            }
+            Value pair = val_array_new();
+            val_array_push(&pair, dir_val);
+            val_array_push(&pair, base_val);
+            *out = pair;
+            return 1;
+        }
+        if (strcmp(name, "expand_path") == 0) {
+            if (argc < 1 || argc > 2) {
+                *out = eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 1..2)", argc);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            const char *path = args[0].sval ? args[0].sval : "";
+            /* expand ~ */
+            char tilde_buf[PATH_MAX];
+            if (path[0] == '~' && (path[1] == '/' || path[1] == '\0')) {
+                const char *home = getenv("HOME");
+                if (!home || home[0] == '\0') home = "/";
+                snprintf(tilde_buf, sizeof(tilde_buf), "%s%s", home, path + 1);
+                path = tilde_buf;
+            }
+            /* determine base */
+            char base_buf[PATH_MAX];
+            const char *base = NULL;
+            if (argc >= 2 && args[1].kind != VAL_NIL) {
+                if (args[1].kind != VAL_STRING) {
+                    *out = implicit_string_conversion_error(ev, args[1], site);
+                    return 1;
+                }
+                base = args[1].sval;
+                /* expand ~ in base too */
+                if (base && base[0] == '~' && (base[1] == '/' || base[1] == '\0')) {
+                    const char *home = getenv("HOME");
+                    if (!home || home[0] == '\0') home = "/";
+                    snprintf(base_buf, sizeof(base_buf), "%s%s", home, base + 1);
+                    base = base_buf;
+                }
+            }
+            /* make absolute */
+            char abs_buf[PATH_MAX * 2];
+            if (path[0] == '/') {
+                snprintf(abs_buf, sizeof(abs_buf), "%s", path);
+            } else {
+                char cwd[PATH_MAX];
+                const char *b = base;
+                if (!b || b[0] == '\0') {
+                    b = getcwd(cwd, sizeof(cwd));
+                    if (!b) b = "/";
+                } else if (b[0] != '/') {
+                    char cwd2[PATH_MAX];
+                    const char *c = getcwd(cwd2, sizeof(cwd2));
+                    if (!c) c = "/";
+                    snprintf(abs_buf, sizeof(abs_buf), "%s/%s", c, b);
+                    b = abs_buf;
+                }
+                char combined[PATH_MAX * 2];
+                snprintf(combined, sizeof(combined), "%s/%s", b, path);
+                snprintf(abs_buf, sizeof(abs_buf), "%s", combined);
+            }
+            /* lexical normalization */
+            int is_abs = (abs_buf[0] == '/');
+            size_t wlen = strlen(abs_buf);
+            char *work = arena_alloc(ev->arena, wlen + 1);
+            memcpy(work, abs_buf, wlen + 1);
+            const char **comps = arena_alloc(ev->arena, sizeof(const char *) * (wlen / 2 + 4));
+            int ncomps = 0;
+            char *save_ptr = NULL;
+            char *tok = strtok_r(work, "/", &save_ptr);
+            while (tok) {
+                if (strcmp(tok, ".") == 0) {
+                    /* skip */
+                } else if (strcmp(tok, "..") == 0) {
+                    if (ncomps > 0) ncomps--;
+                } else {
+                    comps[ncomps++] = tok;
+                }
+                tok = strtok_r(NULL, "/", &save_ptr);
+            }
+            char *result = arena_alloc(ev->arena, wlen + 4);
+            size_t pos = 0;
+            if (is_abs) result[pos++] = '/';
+            for (int i = 0; i < ncomps; i++) {
+                if (i > 0) result[pos++] = '/';
+                size_t clen = strlen(comps[i]);
+                memcpy(result + pos, comps[i], clen);
+                pos += clen;
+            }
+            if (pos == 0) result[pos++] = '/';
+            result[pos] = '\0';
+            *out = val_string(ev->arena, result);
+            return 1;
+        }
+        if (strcmp(name, "absolute_path") == 0) {
+            if (argc < 1 || argc > 2) {
+                *out = eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 1..2)", argc);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            const char *path = args[0].sval ? args[0].sval : "";
+            const char *base = NULL;
+            if (argc >= 2 && args[1].kind != VAL_NIL) {
+                if (args[1].kind != VAL_STRING) {
+                    *out = implicit_string_conversion_error(ev, args[1], site);
+                    return 1;
+                }
+                base = args[1].sval;
+            }
+            char abs_buf[PATH_MAX * 2];
+            if (path[0] == '/') {
+                snprintf(abs_buf, sizeof(abs_buf), "%s", path);
+            } else {
+                char cwd[PATH_MAX];
+                const char *b = base;
+                if (!b || b[0] == '\0') {
+                    b = getcwd(cwd, sizeof(cwd));
+                    if (!b) b = "/";
+                } else if (b[0] != '/') {
+                    char cwd2[PATH_MAX];
+                    const char *c = getcwd(cwd2, sizeof(cwd2));
+                    if (!c) c = "/";
+                    snprintf(abs_buf, sizeof(abs_buf), "%s/%s", c, b);
+                    b = abs_buf;
+                }
+                char combined[PATH_MAX * 2];
+                snprintf(combined, sizeof(combined), "%s/%s", b, path);
+                snprintf(abs_buf, sizeof(abs_buf), "%s", combined);
+            }
+            int is_abs = (abs_buf[0] == '/');
+            size_t wlen = strlen(abs_buf);
+            char *work = arena_alloc(ev->arena, wlen + 1);
+            memcpy(work, abs_buf, wlen + 1);
+            const char **comps = arena_alloc(ev->arena, sizeof(const char *) * (wlen / 2 + 4));
+            int ncomps = 0;
+            char *save_ptr = NULL;
+            char *tok = strtok_r(work, "/", &save_ptr);
+            while (tok) {
+                if (strcmp(tok, ".") == 0) {
+                    /* skip */
+                } else if (strcmp(tok, "..") == 0) {
+                    if (ncomps > 0) ncomps--;
+                } else {
+                    comps[ncomps++] = tok;
+                }
+                tok = strtok_r(NULL, "/", &save_ptr);
+            }
+            char *result = arena_alloc(ev->arena, wlen + 4);
+            size_t pos = 0;
+            if (is_abs) result[pos++] = '/';
+            for (int i = 0; i < ncomps; i++) {
+                if (i > 0) result[pos++] = '/';
+                size_t clen = strlen(comps[i]);
+                memcpy(result + pos, comps[i], clen);
+                pos += clen;
+            }
+            if (pos == 0) result[pos++] = '/';
+            result[pos] = '\0';
+            *out = val_string(ev->arena, result);
+            return 1;
+        }
         if (strcmp(name, "read") == 0) {
             if (argc < 1 || argc > 3) {
                 *out = argc < 1
