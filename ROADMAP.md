@@ -142,6 +142,9 @@ Recent Stage 5 progress already landed:
 - modifier `rescue` in assignment position (`lhs = expr rescue fallback`) and bare-expression position (`expr rescue fallback`); inner expression is wrapped in an implicit `begin/rescue` so only that expression is rescued
 - parenthesized statement groups: `(stmt; stmt)` now parsed as a multi-statement body when the opening `(` is immediately followed by a newline or semicolon, evaluating to the last statement; single-statement form continues to work as before
 - lexer operator state hardening: all binary and compound-assignment operators now set `LEX_EXPR_BEG` after the operator token, fixing `/` regex-vs-division disambiguation and multiline expression continuation after operators
+- `Array#flatten` fixed to recurse fully by default; optional depth argument (`flatten(n)`) limits recursion depth
+- `__method__` kernel method returning current method name as a symbol, or `nil` at top level; also fixed the `call_method:` dispatch path which was not setting `__method__` in the frame env
+- Enumerable: `filter_map`, `each_slice(n)`, `each_cons(n)`, `take_while`, `drop_while`; `each_slice` and `each_cons` return an array when called without a block
 
 Exit gate:
 

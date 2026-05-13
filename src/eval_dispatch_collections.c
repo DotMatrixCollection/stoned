@@ -3,6 +3,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void array_flatten_into(Value arr, Value *result, int depth) {
+    for (size_t i = 0; i < arr.array->len; i++) {
+        Value elem = arr.array->elems[i];
+        if (elem.kind == VAL_ARRAY && depth != 0)
+            array_flatten_into(elem, result, depth > 0 ? depth - 1 : depth);
+        else
+            val_array_push(result, elem);
+    }
+}
+
 int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out) {
     (void)env;
@@ -259,15 +269,9 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "flatten") == 0) {
+        int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : -1;
         Value result = val_array_new();
-        for (size_t i = 0; i < recv.array->len; i++) {
-            Value elem = recv.array->elems[i];
-            if (elem.kind == VAL_ARRAY) {
-                for (size_t j = 0; j < elem.array->len; j++) val_array_push(&result, elem.array->elems[j]);
-            } else {
-                val_array_push(&result, elem);
-            }
-        }
+        array_flatten_into(recv, &result, depth);
         *out = result;
         return 1;
     }

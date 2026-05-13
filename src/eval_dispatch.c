@@ -486,6 +486,14 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     Value stderr_obj = val_nil();
     int have_stderr = global_get(&ev->globals, "stderr", &stderr_obj);
 
+    if (strcmp(name, "__method__") == 0) {
+        if (argc != 0)
+            return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        Value m = val_nil();
+        env_get(env, "__method__", &m);
+        return m;
+    }
+
     if (strcmp(name, "__dir__") == 0) {
         if (argc != 0)
             return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
@@ -1439,7 +1447,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
-            "attr_reader", "attr_writer", "attr_accessor", "alias_method", "__dir__", NULL
+            "attr_reader", "attr_writer", "attr_accessor", "alias_method", "__dir__", "__method__", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
             if (strcmp(name, kernel_names[i]) == 0)
@@ -1547,6 +1555,7 @@ call_method:
         Node *def = fn.method.def_node;
         Env *closure = fn.method.closure;
         Env *frame = env_new(ev->arena, closure, 1);
+        env_set(ev->arena, frame, "__method__", val_symbol(name));
         if (blk) frame->block_arg = blk;
 
         bind_params(ev, frame, def->def.params, args, argc);
