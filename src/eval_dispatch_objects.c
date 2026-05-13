@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700
 
 #include "eval_internal.h"
 #include "utf8.h"
@@ -8,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static const char *file_fopen_mode(const char *mode) {
@@ -121,6 +123,86 @@ static Value implicit_string_conversion_error(Eval *ev, Value v, Node *site) {
                                 v.bval ? "true" : "false");
     return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into String",
                             value_class_name(ev, v));
+}
+
+static const char *path_expand_tilde(const char *path, char *buf, size_t buf_size) {
+    if (!path)
+        return "";
+    if (path[0] == '~' && (path[1] == '/' || path[1] == '\0')) {
+        const char *home = getenv("HOME");
+        if (!home || home[0] == '\0') home = "/";
+        snprintf(buf, buf_size, "%s%s", home, path + 1);
+        return buf;
+    }
+    return path;
+}
+
+static int build_absolute_path(Eval *ev, const char *path, const char *base,
+                               int expand_tilde, char *out, size_t out_size, Node *site) {
+    char path_buf[PATH_MAX * 2];
+    char base_buf[PATH_MAX * 2];
+    const char *use_path = path ? path : "";
+    const char *use_base = base;
+    if (expand_tilde)
+        use_path = path_expand_tilde(use_path, path_buf, sizeof(path_buf));
+    if (use_base && expand_tilde)
+        use_base = path_expand_tilde(use_base, base_buf, sizeof(base_buf));
+
+    if (use_path[0] == '/') {
+        snprintf(out, out_size, "%s", use_path);
+        return 1;
+    }
+
+    char cwd[PATH_MAX];
+    const char *resolved_base = use_base;
+    if (!resolved_base || resolved_base[0] == '\0') {
+        resolved_base = getcwd(cwd, sizeof(cwd));
+        if (!resolved_base)
+            return eval_raise_class(ev, site, errno_class_name(errno), "%s", strerror(errno)), 0;
+    } else if (resolved_base[0] != '/') {
+        char cwd2[PATH_MAX];
+        const char *c = getcwd(cwd2, sizeof(cwd2));
+        if (!c)
+            return eval_raise_class(ev, site, errno_class_name(errno), "%s", strerror(errno)), 0;
+        snprintf(out, out_size, "%s/%s", c, resolved_base);
+        resolved_base = out;
+    }
+
+    snprintf(out, out_size, "%s/%s", resolved_base, use_path);
+    return 1;
+}
+
+static Value lexical_normalize_path(Eval *ev, const char *abs_path) {
+    int is_abs = (abs_path[0] == '/');
+    size_t wlen = strlen(abs_path);
+    char *work = arena_alloc(ev->arena, wlen + 1);
+    memcpy(work, abs_path, wlen + 1);
+    const char **comps = arena_alloc(ev->arena, sizeof(const char *) * (wlen / 2 + 4));
+    int ncomps = 0;
+    char *save_ptr = NULL;
+    char *tok = strtok_r(work, "/", &save_ptr);
+    while (tok) {
+        if (strcmp(tok, ".") == 0) {
+            /* skip */
+        } else if (strcmp(tok, "..") == 0) {
+            if (ncomps > 0) ncomps--;
+        } else {
+            comps[ncomps++] = tok;
+        }
+        tok = strtok_r(NULL, "/", &save_ptr);
+    }
+    char *result = arena_alloc(ev->arena, wlen + 4);
+    size_t pos = 0;
+    if (is_abs) result[pos++] = '/';
+    for (int i = 0; i < ncomps; i++) {
+        if (i > 0) result[pos++] = '/';
+        size_t clen = strlen(comps[i]);
+        memcpy(result + pos, comps[i], clen);
+        pos += clen;
+    }
+    if (pos == 0) result[pos++] = '/';
+    result[pos] = '\0';
+    return val_string(ev->arena, result);
 }
 
 static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node *site) {
@@ -789,6 +871,105 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         return 1;
     }
+    if (strcmp(recv.klass->name, "Dir") == 0) {
+        if (strcmp(name, "pwd") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            char cwd[PATH_MAX];
+            if (!getcwd(cwd, sizeof(cwd))) {
+                *out = eval_raise_class(ev, site, errno_class_name(errno), "%s", strerror(errno));
+                return 1;
+            }
+            *out = val_string(ev->arena, cwd);
+            return 1;
+        }
+        if (strcmp(name, "mkdir") == 0) {
+            if (argc < 1 || argc > 2) {
+                *out = argc < 1
+                     ? wrong_arg_count(ev, site, argc, 1)
+                     : eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 1..2)", argc);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            int64_t mode = 0777;
+            if (argc == 2 && args[1].kind != VAL_NIL) {
+                if (args[1].kind != VAL_INT) {
+                    *out = implicit_integer_conversion_error(ev, args[1], site);
+                    return 1;
+                }
+                mode = args[1].ival;
+            }
+            if (mkdir(args[0].sval, (mode_t)mode) != 0) {
+                *out = eval_raise_class(ev, site, errno_class_name(errno), "%s - %s",
+                                        strerror(errno), args[0].sval);
+                return 1;
+            }
+            *out = val_int(0);
+            return 1;
+        }
+        if (strcmp(name, "chdir") == 0) {
+            if (argc > 1) {
+                *out = eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 0..1)", argc);
+                return 1;
+            }
+            const char *path = NULL;
+            char home_buf[PATH_MAX];
+            if (argc == 0 || args[0].kind == VAL_NIL) {
+                const char *home = getenv("HOME");
+                if (!home || home[0] == '\0') {
+                    *out = eval_raise_class(ev, site, "ArgumentError", "HOME not set");
+                    return 1;
+                }
+                snprintf(home_buf, sizeof(home_buf), "%s", home);
+                path = home_buf;
+            } else if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            } else {
+                path = args[0].sval;
+            }
+
+            char old_cwd[PATH_MAX];
+            if (!getcwd(old_cwd, sizeof(old_cwd))) {
+                *out = eval_raise_class(ev, site, errno_class_name(errno), "%s", strerror(errno));
+                return 1;
+            }
+            if (chdir(path) != 0) {
+                *out = eval_raise_class(ev, site, errno_class_name(errno), "%s - %s",
+                                        strerror(errno), path);
+                return 1;
+            }
+
+            if (blk) {
+                Value result = call_block(ev, env, *blk, NULL, 0, site);
+                int restore_err = 0;
+                int restore_errno = 0;
+                if (chdir(old_cwd) != 0) {
+                    restore_err = 1;
+                    restore_errno = errno;
+                }
+                if (restore_err) {
+                    *out = eval_raise_class(ev, site, errno_class_name(restore_errno), "%s - %s",
+                                            strerror(restore_errno), old_cwd);
+                    return 1;
+                }
+                if (result.kind == VAL_BREAK)
+                    result = *result.jump.wrapped;
+                *out = result;
+                return 1;
+            }
+
+            *out = val_int(0);
+            return 1;
+        }
+    }
     if (strcmp(recv.klass->name, "File") == 0) {
         if (strcmp(name, "basename") == 0) {
             if (argc < 1 || argc > 2) {
@@ -994,17 +1175,6 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 *out = implicit_string_conversion_error(ev, args[0], site);
                 return 1;
             }
-            const char *path = args[0].sval ? args[0].sval : "";
-            /* expand ~ */
-            char tilde_buf[PATH_MAX];
-            if (path[0] == '~' && (path[1] == '/' || path[1] == '\0')) {
-                const char *home = getenv("HOME");
-                if (!home || home[0] == '\0') home = "/";
-                snprintf(tilde_buf, sizeof(tilde_buf), "%s%s", home, path + 1);
-                path = tilde_buf;
-            }
-            /* determine base */
-            char base_buf[PATH_MAX];
             const char *base = NULL;
             if (argc >= 2 && args[1].kind != VAL_NIL) {
                 if (args[1].kind != VAL_STRING) {
@@ -1012,66 +1182,13 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                     return 1;
                 }
                 base = args[1].sval;
-                /* expand ~ in base too */
-                if (base && base[0] == '~' && (base[1] == '/' || base[1] == '\0')) {
-                    const char *home = getenv("HOME");
-                    if (!home || home[0] == '\0') home = "/";
-                    snprintf(base_buf, sizeof(base_buf), "%s%s", home, base + 1);
-                    base = base_buf;
-                }
             }
-            /* make absolute */
             char abs_buf[PATH_MAX * 2];
-            if (path[0] == '/') {
-                snprintf(abs_buf, sizeof(abs_buf), "%s", path);
-            } else {
-                char cwd[PATH_MAX];
-                const char *b = base;
-                if (!b || b[0] == '\0') {
-                    b = getcwd(cwd, sizeof(cwd));
-                    if (!b) b = "/";
-                } else if (b[0] != '/') {
-                    char cwd2[PATH_MAX];
-                    const char *c = getcwd(cwd2, sizeof(cwd2));
-                    if (!c) c = "/";
-                    snprintf(abs_buf, sizeof(abs_buf), "%s/%s", c, b);
-                    b = abs_buf;
-                }
-                char combined[PATH_MAX * 2];
-                snprintf(combined, sizeof(combined), "%s/%s", b, path);
-                snprintf(abs_buf, sizeof(abs_buf), "%s", combined);
+            if (!build_absolute_path(ev, args[0].sval ? args[0].sval : "", base, 1, abs_buf, sizeof(abs_buf), site)) {
+                *out = val_exception();
+                return 1;
             }
-            /* lexical normalization */
-            int is_abs = (abs_buf[0] == '/');
-            size_t wlen = strlen(abs_buf);
-            char *work = arena_alloc(ev->arena, wlen + 1);
-            memcpy(work, abs_buf, wlen + 1);
-            const char **comps = arena_alloc(ev->arena, sizeof(const char *) * (wlen / 2 + 4));
-            int ncomps = 0;
-            char *save_ptr = NULL;
-            char *tok = strtok_r(work, "/", &save_ptr);
-            while (tok) {
-                if (strcmp(tok, ".") == 0) {
-                    /* skip */
-                } else if (strcmp(tok, "..") == 0) {
-                    if (ncomps > 0) ncomps--;
-                } else {
-                    comps[ncomps++] = tok;
-                }
-                tok = strtok_r(NULL, "/", &save_ptr);
-            }
-            char *result = arena_alloc(ev->arena, wlen + 4);
-            size_t pos = 0;
-            if (is_abs) result[pos++] = '/';
-            for (int i = 0; i < ncomps; i++) {
-                if (i > 0) result[pos++] = '/';
-                size_t clen = strlen(comps[i]);
-                memcpy(result + pos, comps[i], clen);
-                pos += clen;
-            }
-            if (pos == 0) result[pos++] = '/';
-            result[pos] = '\0';
-            *out = val_string(ev->arena, result);
+            *out = lexical_normalize_path(ev, abs_buf);
             return 1;
         }
         if (strcmp(name, "absolute_path") == 0) {
@@ -1084,7 +1201,6 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 *out = implicit_string_conversion_error(ev, args[0], site);
                 return 1;
             }
-            const char *path = args[0].sval ? args[0].sval : "";
             const char *base = NULL;
             if (argc >= 2 && args[1].kind != VAL_NIL) {
                 if (args[1].kind != VAL_STRING) {
@@ -1094,55 +1210,43 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 base = args[1].sval;
             }
             char abs_buf[PATH_MAX * 2];
-            if (path[0] == '/') {
-                snprintf(abs_buf, sizeof(abs_buf), "%s", path);
-            } else {
-                char cwd[PATH_MAX];
-                const char *b = base;
-                if (!b || b[0] == '\0') {
-                    b = getcwd(cwd, sizeof(cwd));
-                    if (!b) b = "/";
-                } else if (b[0] != '/') {
-                    char cwd2[PATH_MAX];
-                    const char *c = getcwd(cwd2, sizeof(cwd2));
-                    if (!c) c = "/";
-                    snprintf(abs_buf, sizeof(abs_buf), "%s/%s", c, b);
-                    b = abs_buf;
+            if (!build_absolute_path(ev, args[0].sval ? args[0].sval : "", base, 0, abs_buf, sizeof(abs_buf), site)) {
+                *out = val_exception();
+                return 1;
+            }
+            *out = lexical_normalize_path(ev, abs_buf);
+            return 1;
+        }
+        if (strcmp(name, "realpath") == 0) {
+            if (argc < 1 || argc > 2) {
+                *out = eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 1..2)", argc);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            const char *base = NULL;
+            if (argc >= 2 && args[1].kind != VAL_NIL) {
+                if (args[1].kind != VAL_STRING) {
+                    *out = implicit_string_conversion_error(ev, args[1], site);
+                    return 1;
                 }
-                char combined[PATH_MAX * 2];
-                snprintf(combined, sizeof(combined), "%s/%s", b, path);
-                snprintf(abs_buf, sizeof(abs_buf), "%s", combined);
+                base = args[1].sval;
             }
-            int is_abs = (abs_buf[0] == '/');
-            size_t wlen = strlen(abs_buf);
-            char *work = arena_alloc(ev->arena, wlen + 1);
-            memcpy(work, abs_buf, wlen + 1);
-            const char **comps = arena_alloc(ev->arena, sizeof(const char *) * (wlen / 2 + 4));
-            int ncomps = 0;
-            char *save_ptr = NULL;
-            char *tok = strtok_r(work, "/", &save_ptr);
-            while (tok) {
-                if (strcmp(tok, ".") == 0) {
-                    /* skip */
-                } else if (strcmp(tok, "..") == 0) {
-                    if (ncomps > 0) ncomps--;
-                } else {
-                    comps[ncomps++] = tok;
-                }
-                tok = strtok_r(NULL, "/", &save_ptr);
+            char abs_buf[PATH_MAX * 2];
+            if (!build_absolute_path(ev, args[0].sval ? args[0].sval : "", base, 0, abs_buf, sizeof(abs_buf), site)) {
+                *out = val_exception();
+                return 1;
             }
-            char *result = arena_alloc(ev->arena, wlen + 4);
-            size_t pos = 0;
-            if (is_abs) result[pos++] = '/';
-            for (int i = 0; i < ncomps; i++) {
-                if (i > 0) result[pos++] = '/';
-                size_t clen = strlen(comps[i]);
-                memcpy(result + pos, comps[i], clen);
-                pos += clen;
+            char resolved[PATH_MAX];
+            if (!realpath(abs_buf, resolved)) {
+                *out = eval_raise_class(ev, site, errno_class_name(errno), "%s - %s",
+                                        strerror(errno), abs_buf);
+                return 1;
             }
-            if (pos == 0) result[pos++] = '/';
-            result[pos] = '\0';
-            *out = val_string(ev->arena, result);
+            *out = val_string(ev->arena, resolved);
             return 1;
         }
         if (strcmp(name, "read") == 0) {

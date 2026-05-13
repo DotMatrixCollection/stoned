@@ -486,6 +486,19 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     Value stderr_obj = val_nil();
     int have_stderr = global_get(&ev->globals, "stderr", &stderr_obj);
 
+    if (strcmp(name, "__dir__") == 0) {
+        if (argc != 0)
+            return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        if (!ev->current_file)
+            return val_nil();
+        const char *slash = strrchr(ev->current_file, '/');
+        if (!slash)
+            return val_string(ev->arena, ".");
+        if (slash == ev->current_file)
+            return val_string(ev->arena, "/");
+        return val_string_n(ev->arena, ev->current_file, (size_t)(slash - ev->current_file));
+    }
+
     if (have_stdout && (strcmp(name, "puts") == 0 || strcmp(name, "print") == 0 ||
                         strcmp(name, "p") == 0 || strcmp(name, "pp") == 0)) {
         if (strcmp(name, "puts") == 0) {
@@ -1417,7 +1430,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
-            "attr_reader", "attr_writer", "attr_accessor", "alias_method", NULL
+            "attr_reader", "attr_writer", "attr_accessor", "alias_method", "__dir__", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
             if (strcmp(name, kernel_names[i]) == 0)
