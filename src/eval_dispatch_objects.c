@@ -24,6 +24,8 @@ static int mode_is_read(const char *mode)   { return mode && (mode[0] == 'r' || 
 static int mode_is_write(const char *mode)  { return mode && (mode[0] == 'w' || mode_has_plus(mode)); }
 static int mode_is_append(const char *mode) { return mode && mode[0] == 'a'; }
 static int mode_is_binary(const char *mode) { return mode && strchr(mode, 'b') != NULL; }
+static int mode_allows_read(const char *mode){ return mode_is_read(mode); }
+static int mode_allows_write(const char *mode){ return mode_is_write(mode) || mode_is_append(mode); }
 
 static NativeFile *native_file(Value recv) {
     return recv.kind == VAL_OBJECT ? (NativeFile *)recv.obj->native : NULL;
@@ -182,7 +184,7 @@ static Value io_open_fd(Eval *ev, int64_t fd_num, const char *mode, Node *site) 
 }
 
 static Value file_read_stream(Eval *ev, Value recv, const char *mode, const char *context, Node *site) {
-    if (mode_is_write(mode) || mode_is_append(mode))
+    if (!mode_allows_read(mode))
         return eval_raise_class(ev, site, "IOError", "not opened for reading");
 
     NativeFile *nf = NULL;
@@ -231,7 +233,7 @@ static Value file_gets_stream(Eval *ev, Value recv, const char *mode, const char
                               Value *args, int argc, Node *site) {
     if (argc > 1)
         return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
-    if (mode_is_write(mode) || mode_is_append(mode))
+    if (!mode_allows_read(mode))
         return eval_raise_class(ev, site, "IOError", "not opened for reading");
 
     NativeFile *nf = NULL;
@@ -309,7 +311,7 @@ static Value file_gets_stream(Eval *ev, Value recv, const char *mode, const char
 }
 
 static Value file_write_stream(Eval *ev, Value recv, const char *mode, const char *content, size_t len, Node *site) {
-    if (mode_is_read(mode))
+    if (!mode_allows_write(mode))
         return eval_raise_class(ev, site, "IOError", "not opened for writing");
 
     NativeFile *nf = NULL;
@@ -1209,7 +1211,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         int64_t fd_num = fd_num_val.kind == VAL_INT ? fd_num_val.ival : -1;
 
         if (strcmp(name, "puts") == 0) {
-            if (mode_is_read(mode.sval)) {
+            if (!mode_allows_write(mode.sval)) {
                 *out = eval_raise_class(ev, site, "IOError", "not opened for writing");
                 return 1;
             }
@@ -1234,7 +1236,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "print") == 0) {
-            if (mode_is_read(mode.sval)) {
+            if (!mode_allows_write(mode.sval)) {
                 *out = eval_raise_class(ev, site, "IOError", "not opened for writing");
                 return 1;
             }
@@ -1258,7 +1260,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 *out = wrong_arg_count(ev, site, argc, 1);
                 return 1;
             }
-            if (mode_is_read(mode.sval)) {
+            if (!mode_allows_write(mode.sval)) {
                 *out = eval_raise_class(ev, site, "IOError", "not opened for writing");
                 return 1;
             }
