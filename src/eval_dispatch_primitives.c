@@ -1425,8 +1425,17 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
 
 int dispatch_nil(Eval *ev, Value recv, const char *name, Node *site, Value *out) {
     (void)recv;
-    if (strcmp(name, "nil?") == 0 || strcmp(name, "to_s") == 0) { *out = val_nil(); return 1; }
+    if (strcmp(name, "nil?") == 0) { *out = val_true(); return 1; }
+    if (strcmp(name, "to_s") == 0) { *out = val_string(ev->arena, ""); return 1; }
     if (strcmp(name, "inspect") == 0) { *out = val_string(ev->arena, "nil"); return 1; }
+    if (strcmp(name, "to_i") == 0 || strcmp(name, "to_int") == 0) { *out = val_int(0); return 1; }
+    if (strcmp(name, "to_f") == 0) { *out = val_float(0.0); return 1; }
+    if (strcmp(name, "to_a") == 0) { *out = val_array_new(); return 1; }
+    if (strcmp(name, "to_h") == 0) { *out = val_hash_new(ev->arena); return 1; }
+    if (strcmp(name, "to_r") == 0) { *out = val_int(0); return 1; } /* stub */
+    if (strcmp(name, "freeze") == 0 || strcmp(name, "frozen?") == 0 || strcmp(name, "dup") == 0)
+        { *out = recv; return 1; }
+    if (strcmp(name, "!") == 0) { *out = val_true(); return 1; }
     *out = eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for nil", name);
     return 1;
 }

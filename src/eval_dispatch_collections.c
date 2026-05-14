@@ -95,7 +95,41 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         for (int i = 0; i < argc; i++) val_array_push(&recv, args[i]);
         *out = recv; return 1;
     }
-    if (strcmp(name, "pop") == 0) { *out = recv.array->len == 0 ? val_nil() : recv.array->elems[--recv.array->len]; return 1; }
+    if (strcmp(name, "pop") == 0) {
+        if (argc > 0 && args[0].kind == VAL_INT) {
+            int64_t n = args[0].ival;
+            if (n < 0) { *out = eval_raise_class(ev, site, "ArgumentError", "negative array size"); return 1; }
+            if ((size_t)n > recv.array->len) n = (int64_t)recv.array->len;
+            Value result = val_array_new();
+            for (int64_t i = (int64_t)recv.array->len - n; i < (int64_t)recv.array->len; i++)
+                val_array_push(&result, recv.array->elems[i]);
+            recv.array->len -= (size_t)n;
+            *out = result;
+        } else {
+            *out = recv.array->len == 0 ? val_nil() : recv.array->elems[--recv.array->len];
+        }
+        return 1;
+    }
+    if (strcmp(name, "delete") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        Value deleted = val_nil();
+        size_t w = 0;
+        for (size_t i = 0; i < recv.array->len; i++) {
+            if (val_equal(recv.array->elems[i], args[0])) {
+                deleted = recv.array->elems[i];
+            } else {
+                recv.array->elems[w++] = recv.array->elems[i];
+            }
+        }
+        recv.array->len = w;
+        if (deleted.kind == VAL_NIL && blk) {
+            *out = call_block(ev, env, *blk, NULL, 0, site);
+        } else {
+            *out = deleted;
+        }
+        return 1;
+    }
+    if (strcmp(name, "clear") == 0) { recv.array->len = 0; *out = recv; return 1; }
     if (strcmp(name, "shift") == 0) {
         if (recv.array->len == 0) *out = val_nil();
         else {
