@@ -281,8 +281,11 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         return 1;
     }
     if (strcmp(name, "times") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Integer#times requires a block");
-        else {
+        if (!blk) {
+            Value arr = val_array_new();
+            for (int64_t i = 0; i < n; i++) val_array_push(&arr, val_int(i));
+            *out = arr;
+        } else {
             for (int64_t i = 0; i < n; i++) {
                 Value arg = val_int(i);
                 Value r = call_block(ev, env, *blk, &arg, 1, site);
@@ -294,10 +297,14 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         return 1;
     }
     if (strcmp(name, "upto") == 0) {
-        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Integer#upto requires an argument");
-        else if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Integer#upto requires a block");
-        else {
-            for (int64_t i = n; i <= args[0].ival; i++) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Integer#upto requires an argument"); return 1; }
+        int64_t limit = args[0].kind == VAL_INT ? args[0].ival : (int64_t)args[0].fval;
+        if (!blk) {
+            Value arr = val_array_new();
+            for (int64_t i = n; i <= limit; i++) val_array_push(&arr, val_int(i));
+            *out = arr;
+        } else {
+            for (int64_t i = n; i <= limit; i++) {
                 Value arg = val_int(i);
                 Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
@@ -308,10 +315,14 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         return 1;
     }
     if (strcmp(name, "downto") == 0) {
-        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Integer#downto requires an argument");
-        else if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Integer#downto requires a block");
-        else {
-            for (int64_t i = n; i >= args[0].ival; i--) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Integer#downto requires an argument"); return 1; }
+        int64_t limit = args[0].kind == VAL_INT ? args[0].ival : (int64_t)args[0].fval;
+        if (!blk) {
+            Value arr = val_array_new();
+            for (int64_t i = n; i >= limit; i--) val_array_push(&arr, val_int(i));
+            *out = arr;
+        } else {
+            for (int64_t i = n; i >= limit; i--) {
                 Value arg = val_int(i);
                 Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
@@ -323,17 +334,23 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     }
     if (strcmp(name, "step") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Integer#step requires a limit"); return 1; }
-        if (!blk)     { *out = eval_raise_class(ev, site, "LocalJumpError", "Integer#step requires a block"); return 1; }
         double limit = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
         double step  = argc >= 2 ? (args[1].kind == VAL_INT ? (double)args[1].ival : args[1].fval) : 1.0;
         if (step == 0.0) { *out = eval_raise_class(ev, site, "ArgumentError", "step cannot be 0"); return 1; }
-        for (double i = (double)n; step > 0 ? i <= limit : i >= limit; i += step) {
-            Value arg = val_int((int64_t)i);
-            Value r = call_block(ev, env, *blk, &arg, 1, site);
-            if (ev->errored) { *out = val_nil(); return 1; }
-            if (flow_signal_out(r, out)) return 1;
+        if (!blk) {
+            Value arr = val_array_new();
+            for (double i = (double)n; step > 0 ? i <= limit : i >= limit; i += step)
+                val_array_push(&arr, val_int((int64_t)i));
+            *out = arr;
+        } else {
+            for (double i = (double)n; step > 0 ? i <= limit : i >= limit; i += step) {
+                Value arg = val_int((int64_t)i);
+                Value r = call_block(ev, env, *blk, &arg, 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
         }
-        *out = recv;
         return 1;
     }
     return 0;

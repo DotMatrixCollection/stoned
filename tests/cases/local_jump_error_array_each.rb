@@ -1,6 +1,2 @@
-begin
-  [1, 2].each
-rescue LocalJumpError => e
-  puts e.class
-  puts e.message
-end
+p [1, 2].each.class
+p [1, 2].each.length

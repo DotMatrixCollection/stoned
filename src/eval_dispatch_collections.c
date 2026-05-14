@@ -104,29 +104,35 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         /* Keep iteration-heavy behavior centralized in this file. */
     }
     if (strcmp(name, "each") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#each requires a block");
-        else {
-            for (size_t i = 0; i < recv.array->len; i++) {
-                Value arg = recv.array->elems[i];
-                Value r = call_block(ev, env, *blk, &arg, 1, site);
-                if (ev->errored) { *out = val_nil(); return 1; }
-                if (flow_signal_out(r, out)) return 1;
-            }
-            *out = recv;
+        if (!blk) { *out = recv; return 1; }
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value arg = recv.array->elems[i];
+            Value r = call_block(ev, env, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
         }
+        *out = recv;
         return 1;
     }
     if (strcmp(name, "each_with_index") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#each_with_index requires a block");
-        else {
+        if (!blk) {
+            Value arr = val_array_new();
             for (size_t i = 0; i < recv.array->len; i++) {
-                Value bargs[2] = { recv.array->elems[i], val_int((int64_t)i) };
-                Value r = call_block(ev, env, *blk, bargs, 2, site);
-                if (ev->errored) { *out = val_nil(); return 1; }
-                if (flow_signal_out(r, out)) return 1;
+                Value pair = val_array_new();
+                val_array_push(&pair, recv.array->elems[i]);
+                val_array_push(&pair, val_int((int64_t)i));
+                val_array_push(&arr, pair);
             }
-            *out = recv;
+            *out = arr;
+            return 1;
         }
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value bargs[2] = { recv.array->elems[i], val_int((int64_t)i) };
+            Value r = call_block(ev, env, *blk, bargs, 2, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+        }
+        *out = recv;
         return 1;
     }
     if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
@@ -467,30 +473,30 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "each") == 0 || strcmp(name, "each_pair") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#each requires a block");
-        else {
-            for (size_t i = 0; i < h->len; i++) {
-                Value bargs[2] = { h->keys[i], h->vals[i] };
-                Value r = call_block(ev, env, *blk, bargs, 2, site);
-                if (ev->errored) { *out = val_nil(); return 1; }
-                if (flow_signal_out(r, out)) return 1;
-            }
-            *out = recv;
+        if (!blk) { *out = recv; return 1; }
+        for (size_t i = 0; i < h->len; i++) {
+            Value bargs[2] = { h->keys[i], h->vals[i] };
+            Value r = call_block(ev, env, *blk, bargs, 2, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
         }
+        *out = recv;
         return 1;
     }
     if (strcmp(name, "each_key") == 0 || strcmp(name, "each_value") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError",
-                                          strcmp(name, "each_key") == 0 ? "Hash#each_key requires a block" : "Hash#each_value requires a block");
-        else {
-            for (size_t i = 0; i < h->len; i++) {
-                Value arg = strcmp(name, "each_key") == 0 ? h->keys[i] : h->vals[i];
-                Value r = call_block(ev, env, *blk, &arg, 1, site);
-                if (ev->errored) { *out = val_nil(); return 1; }
-                if (flow_signal_out(r, out)) return 1;
-            }
-            *out = recv;
+        if (!blk) {
+            Value arr = val_array_new();
+            for (size_t i = 0; i < h->len; i++)
+                val_array_push(&arr, strcmp(name, "each_key") == 0 ? h->keys[i] : h->vals[i]);
+            *out = arr; return 1;
         }
+        for (size_t i = 0; i < h->len; i++) {
+            Value arg = strcmp(name, "each_key") == 0 ? h->keys[i] : h->vals[i];
+            Value r = call_block(ev, env, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+        }
+        *out = recv;
         return 1;
     }
     if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
@@ -789,10 +795,15 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
 
     if (strcmp(name, "each") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#each requires a block"); return 1; }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range#each requires Integer range"); return 1; }
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        if (!blk) {
+            Value arr = val_array_new();
+            for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++)
+                val_array_push(&arr, val_int(i));
+            *out = arr; return 1;
+        }
         for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
             Value arg = val_int(i);
             Value res = call_block(ev, env, *blk, &arg, 1, site);
@@ -803,10 +814,20 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
 
     if (strcmp(name, "each_with_index") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#each_with_index requires a block"); return 1; }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range#each_with_index requires Integer range"); return 1; }
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        if (!blk) {
+            Value arr = val_array_new();
+            int64_t idx = 0;
+            for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++, idx++) {
+                Value pair = val_array_new();
+                val_array_push(&pair, val_int(i));
+                val_array_push(&pair, val_int(idx));
+                val_array_push(&arr, pair);
+            }
+            *out = arr; return 1;
+        }
         int64_t idx = 0;
         for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++, idx++) {
             Value bargs[2] = { val_int(i), val_int(idx) };
