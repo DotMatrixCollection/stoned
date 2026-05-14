@@ -474,6 +474,18 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         int c = strcmp(s, args[0].sval ? args[0].sval : "");
         *out = val_int(c < 0 ? -1 : c > 0 ? 1 : 0); return 1;
     }
+    if (strcmp(name, "encoding") == 0) { *out = val_string(ev->arena, "UTF-8"); return 1; }
+    if (strcmp(name, "valid_encoding?") == 0) { *out = val_true(); return 1; }
+    if (strcmp(name, "ascii_only?") == 0) {
+        const char *p = s;
+        while (*p) { if ((unsigned char)*p > 127) { *out = val_false(); return 1; } p++; }
+        *out = val_true(); return 1;
+    }
+    if (strcmp(name, "bytesize") == 0) { *out = val_int((int64_t)strlen(s)); return 1; }
+    if (strcmp(name, "b") == 0 || strcmp(name, "force_encoding") == 0)
+        { *out = recv; return 1; } /* no-op: we're already UTF-8-only */
+    if (strcmp(name, "encode") == 0)
+        { *out = recv; return 1; } /* stub: no transcoding, identity for UTF-8 */
     if (strcmp(name, "to_i") == 0) {
         int base = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : 10;
         if (base < 2 || base > 36) base = 10;
