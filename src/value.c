@@ -50,7 +50,7 @@ int val_object_get_ivar(Value obj, const char *name, Value *out) {
 }
 
 Value val_string(Arena *a, const char *s) {
-    Value v; v.kind = VAL_STRING;
+    Value v; v.kind = VAL_STRING; v.frozen = 0;
     if (!s) { v.sval = ""; return v; }
     size_t len = strlen(s);
     char *buf = arena_alloc(a, len + 1);
@@ -60,7 +60,7 @@ Value val_string(Arena *a, const char *s) {
 }
 
 Value val_string_n(Arena *a, const char *s, size_t len) {
-    Value v; v.kind = VAL_STRING;
+    Value v; v.kind = VAL_STRING; v.frozen = 0;
     char *buf = arena_alloc(a, len + 1);
     if (s) memcpy(buf, s, len);
     buf[len] = '\0';

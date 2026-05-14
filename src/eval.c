@@ -783,9 +783,26 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         case NODE_ARRAY: {
             Value arr = val_array_new();
             for (NodeList *l = node->array.elements; l; l = l->next) {
-                Value elem = eval_node(ev, env, l->node);
-                CHECK(elem);
-                val_array_push(&arr, elem);
+                Node *el = l->node;
+                if (el && el->kind == NODE_UNOP && strcmp(el->unop.op, "*") == 0) {
+                    Value splat = eval_node(ev, env, el->unop.operand);
+                    CHECK(splat);
+                    if (splat.kind != VAL_ARRAY && splat.kind != VAL_NIL) {
+                        Value as_arr = dispatch_method(ev, env, splat, "to_a", NULL, 0, NULL, el, 0, 1);
+                        if (!ev->errored && as_arr.kind == VAL_ARRAY) splat = as_arr;
+                        else { ev->errored = 0; ev->exception_class = NULL; }
+                    }
+                    if (splat.kind == VAL_ARRAY) {
+                        for (size_t i = 0; i < splat.array->len; i++)
+                            val_array_push(&arr, splat.array->elems[i]);
+                    } else if (splat.kind != VAL_NIL) {
+                        val_array_push(&arr, splat);
+                    }
+                } else {
+                    Value elem = eval_node(ev, env, el);
+                    CHECK(elem);
+                    val_array_push(&arr, elem);
+                }
             }
             return arr;
         }

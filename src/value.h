@@ -137,13 +137,13 @@ struct RubyRange {
 /* ------------------------------------------------------------------ */
 /* Constructors                                                         */
 /* ------------------------------------------------------------------ */
-static inline Value val_nil(void)           { Value v; v.kind = VAL_NIL;  return v; }
-static inline Value val_true(void)          { Value v; v.kind = VAL_BOOL; v.bval = 1; return v; }
-static inline Value val_false(void)         { Value v; v.kind = VAL_BOOL; v.bval = 0; return v; }
+static inline Value val_nil(void)           { Value v; v.kind = VAL_NIL;    v.frozen = 0; v.ival = 0; return v; }
+static inline Value val_true(void)          { Value v; v.kind = VAL_BOOL;   v.frozen = 0; v.bval = 1; return v; }
+static inline Value val_false(void)         { Value v; v.kind = VAL_BOOL;   v.frozen = 0; v.bval = 0; return v; }
 static inline Value val_bool(int b)         { return b ? val_true() : val_false(); }
-static inline Value val_int(int64_t i)      { Value v; v.kind = VAL_INT;  v.ival = i; return v; }
-static inline Value val_float(double f)     { Value v; v.kind = VAL_FLOAT; v.fval = f; return v; }
-static inline Value val_symbol(const char *s) { Value v; v.kind = VAL_SYMBOL; v.sval = s; return v; }
+static inline Value val_int(int64_t i)      { Value v; v.kind = VAL_INT;    v.frozen = 0; v.ival = i; return v; }
+static inline Value val_float(double f)     { Value v; v.kind = VAL_FLOAT;  v.frozen = 0; v.fval = f; return v; }
+static inline Value val_symbol(const char *s) { Value v; v.kind = VAL_SYMBOL; v.frozen = 0; v.sval = s; return v; }
 
 Value val_string(Arena *a, const char *s);
 Value val_string_n(Arena *a, const char *s, size_t len);

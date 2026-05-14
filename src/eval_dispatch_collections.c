@@ -1221,14 +1221,18 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (strcmp(name, "step") == 0) {
         if (argc < 1)
             { *out = eval_raise_class(ev, site, "ArgumentError", "Range#step requires a step value"); return 1; }
-        if (!blk)
-            { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#step requires a block"); return 1; }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT || args[0].kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range#step requires Integer range and step"); return 1; }
         int64_t step = args[0].ival;
         if (step <= 0)
             { *out = eval_raise_class(ev, site, "ArgumentError", "step must be positive"); return 1; }
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        if (!blk) {
+            Value arr = val_array_new();
+            for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i += step)
+                val_array_push(&arr, val_int(i));
+            *out = arr; return 1;
+        }
         for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i += step) {
             Value arg = val_int(i);
             Value res = call_block(ev, env, *blk, &arg, 1, site);

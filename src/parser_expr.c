@@ -290,6 +290,7 @@ static int prefix_bp(TokenKind k) {
         case TOK_TILDE:
         case TOK_PLUS:
             return 30;
+        case TOK_STAR: return 2; /* splat — low bp so it captures full expression (ranges etc.) */
         default:
             return 0;
     }
