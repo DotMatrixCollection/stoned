@@ -293,11 +293,18 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "any?") == 0 || strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError",
-                                          strcmp(name, "any?") == 0 ? "Array#any? requires a block" :
-                                          strcmp(name, "all?") == 0 ? "Array#all? requires a block" :
-                                                                       "Array#none? requires a block");
-        else {
+        if (!blk) {
+            /* no-block: test element truthiness */
+            for (size_t i = 0; i < recv.array->len; i++) {
+                int t = val_truthy(recv.array->elems[i]);
+                if (strcmp(name, "any?") == 0 && t)  { *out = val_true();  return 1; }
+                if (strcmp(name, "all?") == 0 && !t) { *out = val_false(); return 1; }
+                if (strcmp(name, "none?") == 0 && t) { *out = val_false(); return 1; }
+            }
+            *out = strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0 ? val_true() : val_false();
+            return 1;
+        }
+        {
             *out = strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0 ? val_true() : val_false();
             for (size_t i = 0; i < recv.array->len; i++) {
                 Value arg = recv.array->elems[i];
