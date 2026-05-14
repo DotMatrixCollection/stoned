@@ -603,6 +603,29 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             if (val_equal(recv.array->elems[i], args[0])) { *out = val_int((int64_t)i); return 1; }
         *out = val_nil(); return 1;
     }
+    if (strcmp(name, "cycle") == 0) {
+        int64_t n = (argc > 0 && args[0].kind == VAL_INT) ? args[0].ival : -1;
+        if (n == 0 || recv.array->len == 0) { *out = val_nil(); return 1; }
+        if (blk) {
+            int64_t count = 0;
+            while (n < 0 || count < n) {
+                for (size_t i = 0; i < recv.array->len; i++) {
+                    Value r = call_block(ev, env, *blk, &recv.array->elems[i], 1, site);
+                    if (ev->errored) { *out = val_nil(); return 1; }
+                    if (flow_signal_out(r, out)) return 1;
+                }
+                count++;
+                if (n > 0 && count >= n) break;
+            }
+            *out = val_nil(); return 1;
+        }
+        if (n < 0) { *out = eval_raise_class(ev, site, "TypeError", "Array#cycle requires a count when no block"); return 1; }
+        Value result = val_array_new();
+        for (int64_t c = 0; c < n; c++)
+            for (size_t i = 0; i < recv.array->len; i++)
+                val_array_push(&result, recv.array->elems[i]);
+        *out = result; return 1;
+    }
     if (strcmp(name, "sample") == 0) {
         if (recv.array->len == 0) { *out = val_nil(); return 1; }
         size_t idx = (size_t)rand() % recv.array->len;
