@@ -897,6 +897,22 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     if (strcmp(name, "[]") == 0 || strcmp(name, "slice") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#[] requires an argument"); return 1; }
         size_t slen = utf8_char_count(s);
+        if (args[0].kind == VAL_RANGE) {
+            RubyRange *r = args[0].range;
+            if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT) { *out = val_nil(); return 1; }
+            int64_t rbeg = r->begin_val.ival;
+            int64_t rend = r->end_val.ival;
+            if (rbeg < 0) rbeg += (int64_t)slen;
+            if (rend < 0) rend += (int64_t)slen;
+            if (rbeg < 0 || (size_t)rbeg > slen) { *out = val_nil(); return 1; }
+            if (!r->exclusive) rend++;
+            if (rend < rbeg) { *out = val_string(ev->arena, ""); return 1; }
+            if ((size_t)rend > slen) rend = (int64_t)slen;
+            size_t bstart = utf8_byte_offset_for_char(s, (size_t)rbeg);
+            size_t bend   = utf8_byte_offset_for_char(s, (size_t)rend);
+            *out = val_string_n(ev->arena, s + bstart, bend - bstart);
+            return 1;
+        }
         int64_t idx = args[0].kind == VAL_INT ? args[0].ival : 0;
         if (idx < 0) idx += (int64_t)slen;
         if (idx < 0 || (size_t)idx >= slen) { *out = val_nil(); return 1; }

@@ -325,6 +325,21 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = result;
         return 1;
     }
+    if (strcmp(name, "rotate") == 0 || strcmp(name, "rotate!") == 0) {
+        size_t n = recv.array->len;
+        if (n == 0) { *out = recv; return 1; }
+        int64_t by = (argc > 0 && args[0].kind == VAL_INT) ? args[0].ival : 1;
+        by = ((by % (int64_t)n) + (int64_t)n) % (int64_t)n;
+        Value result = val_array_new();
+        for (size_t i = 0; i < n; i++) val_array_push(&result, recv.array->elems[(i + (size_t)by) % n]);
+        if (strcmp(name, "rotate!") == 0) {
+            for (size_t i = 0; i < n; i++) recv.array->elems[i] = result.array->elems[i];
+            *out = recv;
+        } else {
+            *out = result;
+        }
+        return 1;
+    }
     if (strcmp(name, "zip") == 0) {
         Value result = val_array_new();
         for (size_t i = 0; i < recv.array->len; i++) {
@@ -415,7 +430,8 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         for (size_t i = 0; i < h->len; i++) val_array_push(&arr, h->vals[i]);
         *out = arr; return 1;
     }
-    if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0 || strcmp(name, "count") == 0) { *out = val_int((int64_t)h->len); return 1; }
+    if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0) { *out = val_int((int64_t)h->len); return 1; }
+    if (strcmp(name, "count") == 0 && !blk) { *out = val_int((int64_t)h->len); return 1; }
     if (strcmp(name, "empty?") == 0) { *out = val_bool(h->len == 0); return 1; }
     if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0) { *out = val_string(ev->arena, val_to_s(ev->arena, recv)); return 1; }
     if (strcmp(name, "to_a") == 0) {
@@ -591,6 +607,95 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         for (size_t i = 0; i < h->len; i++) val_hash_set(result.hash, h->keys[i], h->vals[i]);
         *out = result;
         return 1;
+    }
+    if (strcmp(name, "transform_values") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#transform_values requires a block"); return 1; }
+        Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
+        for (size_t i = 0; i < h->len; i++) {
+            Value r = call_block(ev, env, *blk, &h->vals[i], 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            val_hash_set(result.hash, h->keys[i], r);
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "transform_values!") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#transform_values! requires a block"); return 1; }
+        for (size_t i = 0; i < h->len; i++) {
+            Value r = call_block(ev, env, *blk, &h->vals[i], 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            h->vals[i] = r;
+        }
+        *out = recv; return 1;
+    }
+    if (strcmp(name, "transform_keys") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#transform_keys requires a block"); return 1; }
+        Value result = val_hash_new(ev->arena);
+        for (size_t i = 0; i < h->len; i++) {
+            Value r = call_block(ev, env, *blk, &h->keys[i], 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            val_hash_set(result.hash, r, h->vals[i]);
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "transform_keys!") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#transform_keys! requires a block"); return 1; }
+        /* collect new keys first to avoid aliasing the underlying array */
+        Value new_keys[256];
+        size_t n = h->len < 256 ? h->len : 256;
+        for (size_t i = 0; i < n; i++) {
+            Value r = call_block(ev, env, *blk, &h->keys[i], 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            new_keys[i] = r;
+        }
+        for (size_t i = 0; i < n; i++) h->keys[i] = new_keys[i];
+        *out = recv; return 1;
+    }
+    if (strcmp(name, "filter_map") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#filter_map requires a block"); return 1; }
+        Value result = val_array_new();
+        for (size_t i = 0; i < h->len; i++) {
+            Value pair[2] = { h->keys[i], h->vals[i] };
+            Value r = call_block(ev, env, *blk, pair, 2, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            if (val_truthy(r)) val_array_push(&result, r);
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "count") == 0) {
+        if (!blk) { *out = val_int((int64_t)h->len); return 1; }
+        int64_t n = 0;
+        for (size_t i = 0; i < h->len; i++) {
+            Value pair[2] = { h->keys[i], h->vals[i] };
+            Value r = call_block(ev, env, *blk, pair, 2, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            if (val_truthy(r)) n++;
+        }
+        *out = val_int(n); return 1;
+    }
+    if (strcmp(name, "sum") == 0) {
+        Value acc = (argc > 0) ? args[0] : val_int(0);
+        for (size_t i = 0; i < h->len; i++) {
+            Value pair[2] = { h->keys[i], h->vals[i] };
+            Value r;
+            if (blk) {
+                r = call_block(ev, env, *blk, pair, 2, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            } else {
+                r = val_array_new();
+                val_array_push(&r, h->keys[i]);
+                val_array_push(&r, h->vals[i]);
+            }
+            acc = dispatch_method(ev, env, acc, "+", &r, 1, NULL, site, 0, 1);
+            if (ev->errored) { *out = val_nil(); return 1; }
+        }
+        *out = acc; return 1;
     }
     if (strcmp(name, "nil?") == 0) { *out = val_false(); return 1; }
     *out = eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for Hash", name);

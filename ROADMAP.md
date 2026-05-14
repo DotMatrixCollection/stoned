@@ -145,6 +145,9 @@ Recent Stage 5 progress already landed:
 - `Array#flatten` fixed to recurse fully by default; optional depth argument (`flatten(n)`) limits recursion depth
 - `__method__` kernel method returning current method name as a symbol, or `nil` at top level; also fixed the `call_method:` dispatch path which was not setting `__method__` in the frame env
 - Enumerable: `filter_map`, `each_slice(n)`, `each_cons(n)`, `take_while`, `drop_while`; `each_slice` and `each_cons` return an array when called without a block
+- `String#[]` range form fixed: `"abcde"[1..3]` now returns `"bcd"` (was always returning the first character due to range not being handled in the integer-index branch); negative indices and exclusive ranges also work
+- `Array#rotate` and `rotate!` added
+- `Hash#transform_values`/`transform_values!`, `Hash#transform_keys`/`transform_keys!`, `Hash#filter_map`, `Hash#count` with block; `Hash#count` no-block fast path split from `length`/`size` so the block form falls through correctly
 
 Exit gate:
 
