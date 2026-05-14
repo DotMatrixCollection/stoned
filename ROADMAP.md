@@ -149,6 +149,16 @@ Recent Stage 5 progress already landed:
 - `Array#rotate` and `rotate!` added
 - `Hash#transform_values`/`transform_values!`, `Hash#transform_keys`/`transform_keys!`, `Hash#filter_map`, `Hash#count` with block; `Hash#count` no-block fast path split from `length`/`size` so the block form falls through correctly
 - Array set operators `Array#-` (difference), `Array#&` (intersection), `Array#|` (union), `Array#*` (repeat integer or join-with-string); `Array#combination(k)`, `Array#permutation(k)`, `Array#product(*arrays)` with optional block form
+- `Array#index`/`find_index` (value or block), `Array#rindex`, `Array#sample`, `Array#shuffle`/`shuffle!`, `Array#delete` (with block fallback), `Array#pop(n)`, `Array#clear`, `Array#cycle(n)`, `Array#min(n)`, `Array#max(n)`, `Array#with_index`, `Array#to_h`, blockless `Array#map`/`select`/`reject` returns self for chaining
+- `Array#any?`/`all?`/`none?` without block: test element truthiness (was raising LocalJumpError)
+- `Hash#merge` multi-hash with optional conflict block, `Hash#merge!` multi-hash; `Hash#values_at`, `Hash#to_h` with block
+- `nil` conversions: `to_i`=0, `to_f`=0.0, `to_a`=[], `to_h`={}; `nil.to_s`="" (was returning nil); `nil.nil?`=true (was returning nil — critical bug)
+- `instance_variable_get`, `instance_variable_set`, `instance_variable_defined?`, `instance_variables`; strips/adds `@` prefix since ivars stored without it internally
+- `String#to_i(base)`, `String#insert`, `String#slice!`, encoding stubs (`encoding`, `valid_encoding?`, `ascii_only?`, `bytesize`, `b`, `force_encoding`, `encode`)
+- `Enumerable#partition`, `Enumerable#each_with_index` (Enumerable prelude fallback for non-array/hash types)
+- `is_a?`/`kind_of?` now checks included modules; `Comparable` true for Integer/Float/String/Symbol, `Enumerable` true for Array/Hash/Range; `Class#include?(mod)` added
+- Custom `inspect`/`to_s` dispatch: `p`, `puts`, `print` now call Ruby methods on VAL_OBJECT, with recursive array/hash dispatch in inspect
+- `p` inspect bug: `val_inspect` in value.c had raw memcpy without escape handling
 - Array bang mutators: `map!`/`collect!`, `select!`/`filter!`/`keep_if`, `reject!`/`delete_if`, `sort!`, `uniq!`, `compact!`, `flatten!` (all return `nil` when no change was made, per MRI)
 - Hash: `slice(*keys)`, `except(*keys)`, `invert`, `to_a`, `key(v)`/`index(v)`, `assoc(k)`, `rassoc(v)`; `any?`/`none?` without block check emptiness
 - String: `delete_prefix`, `delete_suffix`; `start_with?` and `end_with?` upgraded to accept multiple arguments (any-match)
