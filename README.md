@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `246` tests are passing, and recent work extended control-flow syntax, added missing Enumerable/collection methods, and fixed string range slicing, but it is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `247` tests are passing, and recent work extended control-flow syntax, added missing Enumerable/collection methods, and fixed string range slicing, but it is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -52,7 +52,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `246 passed, 0 failed, 246 total`.
+Current coverage in the tree: `247 passed, 0 failed, 247 total`.
 
 What is working today:
 
@@ -69,7 +69,7 @@ What is working today:
 - File loading: `require_relative`, `require`, `$LOAD_PATH` search, duplicate-load skipping, canonicalized feature identity across normalized relative, absolute, and mixed spellings, readable `LoadError` reporting on load failures, and `__dir__`
 - Dispatch hooks: `method_missing` and `respond_to_missing?` for objects, classes, and primitive-backed reopened classes; class/module reflection is now consistent across `class`, `is_a?`, and `instance_of?`, with stricter arity enforcement on core reflection built-ins and user-defined methods
 - Operator method defs like `def <=>` and generic operator dispatch for user-defined operator methods
-- Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`, `Array.new(n, val)`, `Array.new(n) { |i| ... }`, `Hash.new(default)`, and `Hash.new { |h, k| ... }`; `Array#flatten` with optional depth argument; `Array#rotate`/`rotate!`; `Hash#transform_values`/`transform_values!`, `Hash#transform_keys`/`transform_keys!`, `Hash#filter_map`, `Hash#count` with and without block
+- Collections: array and hash literals, array/hash mutation, common built-ins on `Array` and `Hash`, `Array.new(n, val)`, `Array.new(n) { |i| ... }`, `Hash.new(default)`, and `Hash.new { |h, k| ... }`; `Array#flatten` with optional depth argument; `Array#rotate`/`rotate!`; set operators `Array#-`, `Array#&`, `Array#|`; repeat `Array#*` (integer or join-with-string); `Array#combination`, `Array#permutation`, `Array#product` with optional block; `Hash#transform_values`/`transform_values!`, `Hash#transform_keys`/`transform_keys!`, `Hash#filter_map`, `Hash#count` with and without block
 - Range: `..` and `...` literals; `begin`/`end`/`first`/`last` (with n-arg forms), `exclude_end?`, `include?`/`member?`/`cover?`/`===`, `each`, `each_with_index`, `to_a`, `size`/`count`/`length`, `min`, `max`, `sum`, `step`, `map`, `select`, `reject`, `reduce`, `any?`/`all?`/`none?`; `Range` includes `Enumerable`; integer and string ranges supported
 - Hash syntax: both `{:a => 1}` and modern label syntax like `{a: 1}`
 - Assignment: parallel assignment, swap, leading and trailing splat capture, nested destructuring, destructured method and block params

@@ -3,6 +3,54 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void combination_helper(Value *elems, size_t n, size_t k, size_t start,
+                               Value *current, size_t depth, Value *result) {
+    if (depth == k) {
+        Value combo = val_array_new();
+        for (size_t i = 0; i < k; i++) val_array_push(&combo, current[i]);
+        val_array_push(result, combo);
+        return;
+    }
+    for (size_t i = start; i <= n - (k - depth); i++) {
+        current[depth] = elems[i];
+        combination_helper(elems, n, k, i + 1, current, depth + 1, result);
+    }
+}
+
+static void permutation_helper(Value *elems, size_t n, size_t k,
+                                int *used, Value *current, size_t depth, Value *result) {
+    if (depth == k) {
+        Value perm = val_array_new();
+        for (size_t i = 0; i < k; i++) val_array_push(&perm, current[i]);
+        val_array_push(result, perm);
+        return;
+    }
+    for (size_t i = 0; i < n; i++) {
+        if (!used[i]) {
+            used[i] = 1;
+            current[depth] = elems[i];
+            permutation_helper(elems, n, k, used, current, depth + 1, result);
+            used[i] = 0;
+        }
+    }
+}
+
+static void product_helper(Value *arrays, int narrays, int idx,
+                           Value *current, Value *result) {
+    if (idx == narrays) {
+        Value row = val_array_new();
+        for (int i = 0; i < narrays; i++) val_array_push(&row, current[i]);
+        val_array_push(result, row);
+        return;
+    }
+    Value arr = arrays[idx];
+    if (arr.kind != VAL_ARRAY) return;
+    for (size_t i = 0; i < arr.array->len; i++) {
+        current[idx] = arr.array->elems[i];
+        product_helper(arrays, narrays, idx + 1, current, result);
+    }
+}
+
 static void array_flatten_into(Value arr, Value *result, int depth) {
     for (size_t i = 0; i < arr.array->len; i++) {
         Value elem = arr.array->elems[i];
@@ -329,6 +377,132 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         Value result = val_array_new();
         for (size_t i = 0; i < recv.array->len; i++) if (recv.array->elems[i].kind != VAL_NIL) val_array_push(&result, recv.array->elems[i]);
         *out = result;
+        return 1;
+    }
+    if (strcmp(name, "-") == 0) {
+        if (argc < 1 || args[0].kind != VAL_ARRAY) { *out = eval_raise_class(ev, site, "TypeError", "Array#- requires an Array"); return 1; }
+        Value result = val_array_new();
+        for (size_t i = 0; i < recv.array->len; i++) {
+            int found = 0;
+            for (size_t j = 0; j < args[0].array->len; j++)
+                if (val_equal(recv.array->elems[i], args[0].array->elems[j])) { found = 1; break; }
+            if (!found) val_array_push(&result, recv.array->elems[i]);
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "&") == 0) {
+        if (argc < 1 || args[0].kind != VAL_ARRAY) { *out = eval_raise_class(ev, site, "TypeError", "Array#& requires an Array"); return 1; }
+        Value result = val_array_new();
+        for (size_t i = 0; i < recv.array->len; i++) {
+            int in_other = 0, already = 0;
+            for (size_t j = 0; j < args[0].array->len; j++)
+                if (val_equal(recv.array->elems[i], args[0].array->elems[j])) { in_other = 1; break; }
+            if (!in_other) continue;
+            for (size_t j = 0; j < result.array->len; j++)
+                if (val_equal(recv.array->elems[i], result.array->elems[j])) { already = 1; break; }
+            if (!already) val_array_push(&result, recv.array->elems[i]);
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "|") == 0) {
+        if (argc < 1 || args[0].kind != VAL_ARRAY) { *out = eval_raise_class(ev, site, "TypeError", "Array#| requires an Array"); return 1; }
+        Value result = val_array_new();
+        for (size_t i = 0; i < recv.array->len; i++) {
+            int found = 0;
+            for (size_t j = 0; j < result.array->len; j++)
+                if (val_equal(recv.array->elems[i], result.array->elems[j])) { found = 1; break; }
+            if (!found) val_array_push(&result, recv.array->elems[i]);
+        }
+        for (size_t i = 0; i < args[0].array->len; i++) {
+            int found = 0;
+            for (size_t j = 0; j < result.array->len; j++)
+                if (val_equal(args[0].array->elems[i], result.array->elems[j])) { found = 1; break; }
+            if (!found) val_array_push(&result, args[0].array->elems[i]);
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "*") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Array#* requires an argument"); return 1; }
+        if (args[0].kind == VAL_INT) {
+            int64_t times = args[0].ival;
+            if (times < 0) { *out = eval_raise_class(ev, site, "ArgumentError", "Array#* count cannot be negative"); return 1; }
+            Value result = val_array_new();
+            for (int64_t t = 0; t < times; t++)
+                for (size_t i = 0; i < recv.array->len; i++)
+                    val_array_push(&result, recv.array->elems[i]);
+            *out = result; return 1;
+        }
+        if (args[0].kind == VAL_STRING) {
+            /* join with separator */
+            return dispatch_array(ev, env, recv, "join", args, 1, blk, site, out);
+        }
+        *out = eval_raise_class(ev, site, "TypeError", "Array#* argument must be Integer or String"); return 1;
+    }
+    if (strcmp(name, "combination") == 0) {
+        if (argc < 1 || args[0].kind != VAL_INT) { *out = eval_raise_class(ev, site, "ArgumentError", "Array#combination requires an Integer"); return 1; }
+        size_t n = recv.array->len;
+        size_t k = (size_t)args[0].ival;
+        Value result = val_array_new();
+        if (k == 0) { val_array_push(&result, val_array_new()); }
+        else if (k <= n) {
+            Value current[64];
+            combination_helper(recv.array->elems, n, k, 0, current, 0, &result);
+        }
+        if (blk) {
+            for (size_t i = 0; i < result.array->len; i++) {
+                Value r = call_block(ev, env, *blk, &result.array->elems[i], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
+        } else {
+            *out = result;
+        }
+        return 1;
+    }
+    if (strcmp(name, "permutation") == 0) {
+        size_t n = recv.array->len;
+        size_t k = (argc > 0 && args[0].kind == VAL_INT) ? (size_t)args[0].ival : n;
+        Value result = val_array_new();
+        if (k == 0) { val_array_push(&result, val_array_new()); }
+        else if (k <= n) {
+            int used[64] = {0};
+            Value current[64];
+            permutation_helper(recv.array->elems, n, k, used, current, 0, &result);
+        }
+        if (blk) {
+            for (size_t i = 0; i < result.array->len; i++) {
+                Value r = call_block(ev, env, *blk, &result.array->elems[i], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
+        } else {
+            *out = result;
+        }
+        return 1;
+    }
+    if (strcmp(name, "product") == 0) {
+        Value all_arrays[65];
+        all_arrays[0] = recv;
+        int narrays = 1;
+        for (int i = 0; i < argc && narrays < 65; i++) {
+            if (args[i].kind != VAL_ARRAY) { *out = eval_raise_class(ev, site, "TypeError", "Array#product requires Arrays"); return 1; }
+            all_arrays[narrays++] = args[i];
+        }
+        Value result = val_array_new();
+        Value current[65];
+        product_helper(all_arrays, narrays, 0, current, &result);
+        if (blk) {
+            for (size_t i = 0; i < result.array->len; i++) {
+                Value r = call_block(ev, env, *blk, &result.array->elems[i], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
+        } else {
+            *out = result;
+        }
         return 1;
     }
     if (strcmp(name, "rotate") == 0 || strcmp(name, "rotate!") == 0) {

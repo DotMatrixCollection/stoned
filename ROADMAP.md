@@ -148,6 +148,7 @@ Recent Stage 5 progress already landed:
 - `String#[]` range form fixed: `"abcde"[1..3]` now returns `"bcd"` (was always returning the first character due to range not being handled in the integer-index branch); negative indices and exclusive ranges also work
 - `Array#rotate` and `rotate!` added
 - `Hash#transform_values`/`transform_values!`, `Hash#transform_keys`/`transform_keys!`, `Hash#filter_map`, `Hash#count` with block; `Hash#count` no-block fast path split from `length`/`size` so the block form falls through correctly
+- Array set operators `Array#-` (difference), `Array#&` (intersection), `Array#|` (union), `Array#*` (repeat integer or join-with-string); `Array#combination(k)`, `Array#permutation(k)`, `Array#product(*arrays)` with optional block form
 - Blockless iterators now return arrays instead of raising `LocalJumpError`: `Integer#times`, `upto`, `downto`, `step`; `Array#each`, `each_with_index`; `Hash#each`/`each_pair`, `each_key`, `each_value`; `Range#each`, `each_with_index` — enables all common chained patterns (`3.times.map {}`, `arr.each_with_index.select {}`, etc.) without a full Enumerator implementation
 
 Exit gate:
