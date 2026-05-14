@@ -960,17 +960,28 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             return val_bool(recv.obj == args[0].obj);
         return val_bool(val_equal(recv, args[0]));
     }
+    if (strcmp(name, "eql?") == 0) {
+        if (argc < 1) return val_false();
+        /* eql? requires same type and value — differs from == for numeric cross-type */
+        if (recv.kind != args[0].kind) return val_false();
+        return val_bool(val_equal(recv, args[0]));
+    }
     if (strcmp(name, "freeze") == 0) {
         if (recv.kind == VAL_OBJECT) recv.obj->frozen = 1;
+        else if (recv.kind == VAL_ARRAY) recv.array->frozen = 1;
+        else if (recv.kind == VAL_HASH)  recv.hash->frozen = 1;
+        else recv.frozen = 1;
         return recv;
     }
     if (strcmp(name, "frozen?") == 0) {
         if (recv.kind == VAL_OBJECT) return val_bool(recv.obj->frozen);
-        /* integers, symbols, nil, true, false are always frozen */
+        if (recv.kind == VAL_ARRAY)  return val_bool(recv.array->frozen);
+        if (recv.kind == VAL_HASH)   return val_bool(recv.hash->frozen);
+        /* integers, floats, symbols, nil, true, false are always frozen */
         if (recv.kind == VAL_INT || recv.kind == VAL_FLOAT ||
             recv.kind == VAL_SYMBOL || recv.kind == VAL_NIL || recv.kind == VAL_BOOL)
             return val_true();
-        return val_false();
+        return val_bool(recv.frozen);
     }
     if (strcmp(name, "dup") == 0 || strcmp(name, "clone") == 0) {
         int is_clone = (strcmp(name, "clone") == 0);

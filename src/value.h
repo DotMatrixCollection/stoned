@@ -47,6 +47,7 @@ typedef struct RubyModuleInclusion RubyModuleInclusion;
 
 typedef struct Value {
     ValueKind kind;
+    int       frozen; /* used for VAL_STRING/VAL_SYMBOL; arrays/hashes/objects have their own flag */
     union {
         int         bval;    /* VAL_BOOL */
         int64_t     ival;    /* VAL_INT */
@@ -85,6 +86,7 @@ struct RubyArray {
     Value  *elems;
     size_t  len;
     size_t  cap;
+    int     frozen;
 };
 
 typedef struct IVarEntry {
@@ -123,6 +125,7 @@ struct RubyHash {
     size_t  cap;
     Value   default_value;
     Value   default_proc;
+    int     frozen;
 };
 
 struct RubyRange {

@@ -789,19 +789,22 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         }
         return 1;
     }
-    if (strcmp(name, "any?") == 0 || strcmp(name, "all?") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError",
-                                          strcmp(name, "any?") == 0 ? "Hash#any? requires a block" : "Hash#all? requires a block");
-        else {
-            *out = strcmp(name, "all?") == 0 ? val_true() : val_false();
-            for (size_t i = 0; i < h->len; i++) {
-                Value bargs[2] = { h->keys[i], h->vals[i] };
-                Value r = call_block(ev, env, *blk, bargs, 2, site);
-                if (ev->errored) { *out = val_nil(); return 1; }
-                if (r.kind == VAL_EXCEPTION) { *out = r; return 1; }
-                if (strcmp(name, "any?") == 0 && val_truthy(r)) { *out = val_true(); return 1; }
-                if (strcmp(name, "all?") == 0 && !val_truthy(r)) { *out = val_false(); return 1; }
-            }
+    if (strcmp(name, "any?") == 0 || strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) {
+        if (!blk) {
+            /* no-block: any?=non-empty, all?=always-true, none?=empty */
+            if (strcmp(name, "none?") == 0) { *out = val_bool(h->len == 0); return 1; }
+            if (strcmp(name, "any?") == 0)  { *out = val_bool(h->len > 0);  return 1; }
+            *out = val_true(); return 1;
+        }
+        *out = (strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) ? val_true() : val_false();
+        for (size_t i = 0; i < h->len; i++) {
+            Value bargs[2] = { h->keys[i], h->vals[i] };
+            Value r = call_block(ev, env, *blk, bargs, 2, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (r.kind == VAL_EXCEPTION) { *out = r; return 1; }
+            if (strcmp(name, "any?")  == 0 && val_truthy(r))  { *out = val_true();  return 1; }
+            if (strcmp(name, "all?")  == 0 && !val_truthy(r)) { *out = val_false(); return 1; }
+            if (strcmp(name, "none?") == 0 && val_truthy(r))  { *out = val_false(); return 1; }
         }
         return 1;
     }
@@ -1016,8 +1019,6 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         }
         *out = val_nil(); return 1;
     }
-    if (strcmp(name, "any?") == 0 && !blk) { *out = val_bool(h->len > 0); return 1; }
-    if (strcmp(name, "none?") == 0 && !blk) { *out = val_bool(h->len == 0); return 1; }
     if (strcmp(name, "nil?") == 0) { *out = val_false(); return 1; }
     *out = eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for Hash", name);
     return 1;

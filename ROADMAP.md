@@ -152,6 +152,9 @@ Recent Stage 5 progress already landed:
 - Array bang mutators: `map!`/`collect!`, `select!`/`filter!`/`keep_if`, `reject!`/`delete_if`, `sort!`, `uniq!`, `compact!`, `flatten!` (all return `nil` when no change was made, per MRI)
 - Hash: `slice(*keys)`, `except(*keys)`, `invert`, `to_a`, `key(v)`/`index(v)`, `assoc(k)`, `rassoc(v)`; `any?`/`none?` without block check emptiness
 - String: `delete_prefix`, `delete_suffix`; `start_with?` and `end_with?` upgraded to accept multiple arguments (any-match)
+- `freeze`/`frozen?` extended to strings (`frozen` bit on Value), arrays, and hashes (`frozen` field on RubyArray/RubyHash); integers/floats/symbols/nil/bool remain always-frozen
+- `eql?` added to universal dispatch: same-type strict equality (`1.eql?(1.0)` → false)
+- Enumerable: `minmax` and `minmax_by` added to prelude; `Hash#none?` with block fixed (was handled for any?/all? but missed none?)
 - Blockless iterators now return arrays instead of raising `LocalJumpError`: `Integer#times`, `upto`, `downto`, `step`; `Array#each`, `each_with_index`; `Hash#each`/`each_pair`, `each_key`, `each_value`; `Range#each`, `each_with_index` — enables all common chained patterns (`3.times.map {}`, `arr.each_with_index.select {}`, etc.) without a full Enumerator implementation
 
 Exit gate:
