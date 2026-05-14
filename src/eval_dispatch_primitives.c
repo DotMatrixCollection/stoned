@@ -474,7 +474,11 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         int c = strcmp(s, args[0].sval ? args[0].sval : "");
         *out = val_int(c < 0 ? -1 : c > 0 ? 1 : 0); return 1;
     }
-    if (strcmp(name, "to_i") == 0) { *out = val_int(atoll(s)); return 1; }
+    if (strcmp(name, "to_i") == 0) {
+        int base = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : 10;
+        if (base < 2 || base > 36) base = 10;
+        *out = val_int((int64_t)strtoll(s, NULL, base)); return 1;
+    }
     if (strcmp(name, "to_f") == 0) { *out = val_float(atof(s)); return 1; }
     if (strcmp(name, "to_sym") == 0) { *out = val_symbol(s); return 1; }
     if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0) { *out = val_int((int64_t)utf8_char_count(s)); return 1; }

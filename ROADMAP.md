@@ -161,6 +161,8 @@ Recent Stage 5 progress already landed:
 - Splat in array literals: `[*a]`, `[0, *a, 4]`, `[*1..5]` now work; parser's `prefix_bp(TOK_STAR)` returns 2 (low, so it captures full expression including ranges); eval expands splat elements and calls `to_a` on non-Array iterables
 - `Range#step` without block now returns an array instead of raising, enabling `(1..10).step(2).to_a`, `(1..10).step(2).map {}` etc.
 - Value struct frozen field: all inline Value constructors now zero `frozen` to prevent garbage-stack false-positive `frozen?` results on freshly created strings
+- `Array#index`/`find_index` (value or block), `Array#rindex` (value or block), `Array#sample`, `Array#shuffle`/`shuffle!`
+- `String#to_i(base)`: now accepts base 2–36 via `strtoll`; `"ff".to_i(16)` = 255, `"1010".to_i(2)` = 10
 - Blockless iterators now return arrays instead of raising `LocalJumpError`: `Integer#times`, `upto`, `downto`, `step`; `Array#each`, `each_with_index`; `Hash#each`/`each_pair`, `each_key`, `each_value`; `Range#each`, `each_with_index` — enables all common chained patterns (`3.times.map {}`, `arr.each_with_index.select {}`, etc.) without a full Enumerator implementation
 
 Exit gate:

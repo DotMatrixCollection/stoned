@@ -482,6 +482,59 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = (strcmp(name, "delete_if") == 0 || w != orig) ? recv : val_nil();
         return 1;
     }
+    if (strcmp(name, "index") == 0 || strcmp(name, "find_index") == 0) {
+        if (blk) {
+            for (size_t i = 0; i < recv.array->len; i++) {
+                Value r = call_block(ev, env, *blk, &recv.array->elems[i], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+                if (val_truthy(r)) { *out = val_int((int64_t)i); return 1; }
+            }
+            *out = val_nil(); return 1;
+        }
+        if (argc < 1) { *out = val_nil(); return 1; }
+        for (size_t i = 0; i < recv.array->len; i++)
+            if (val_equal(recv.array->elems[i], args[0])) { *out = val_int((int64_t)i); return 1; }
+        *out = val_nil(); return 1;
+    }
+    if (strcmp(name, "rindex") == 0) {
+        if (blk) {
+            for (size_t i = recv.array->len; i-- > 0;) {
+                Value r = call_block(ev, env, *blk, &recv.array->elems[i], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+                if (val_truthy(r)) { *out = val_int((int64_t)i); return 1; }
+            }
+            *out = val_nil(); return 1;
+        }
+        if (argc < 1) { *out = val_nil(); return 1; }
+        for (size_t i = recv.array->len; i-- > 0;)
+            if (val_equal(recv.array->elems[i], args[0])) { *out = val_int((int64_t)i); return 1; }
+        *out = val_nil(); return 1;
+    }
+    if (strcmp(name, "sample") == 0) {
+        if (recv.array->len == 0) { *out = val_nil(); return 1; }
+        size_t idx = (size_t)rand() % recv.array->len;
+        *out = recv.array->elems[idx]; return 1;
+    }
+    if (strcmp(name, "shuffle") == 0 || strcmp(name, "shuffle!") == 0) {
+        size_t n = recv.array->len;
+        Value result = val_array_new();
+        for (size_t i = 0; i < n; i++) val_array_push(&result, recv.array->elems[i]);
+        for (size_t i = n - 1; i > 0; i--) {
+            size_t j = (size_t)rand() % (i + 1);
+            Value tmp = result.array->elems[i];
+            result.array->elems[i] = result.array->elems[j];
+            result.array->elems[j] = tmp;
+        }
+        if (strcmp(name, "shuffle!") == 0) {
+            for (size_t i = 0; i < n; i++) recv.array->elems[i] = result.array->elems[i];
+            *out = recv;
+        } else {
+            *out = result;
+        }
+        return 1;
+    }
     if (strcmp(name, "-") == 0) {
         if (argc < 1 || args[0].kind != VAL_ARRAY) { *out = eval_raise_class(ev, site, "TypeError", "Array#- requires an Array"); return 1; }
         Value result = val_array_new();
