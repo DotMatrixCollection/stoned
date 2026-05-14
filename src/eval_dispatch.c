@@ -1081,6 +1081,48 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         return recv;
     }
     if (strcmp(name, "itself") == 0) return recv;
+    if (strcmp(name, "instance_variable_get") == 0) {
+        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        const char *raw = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!raw) return eval_raise_class(ev, site, "TypeError", "instance_variable_get requires a Symbol or String");
+        const char *ivar = raw[0] == '@' ? raw + 1 : raw; /* strip leading @ */
+        if (recv.kind != VAL_OBJECT) return val_nil();
+        Value v;
+        return val_object_get_ivar(recv, ivar, &v) ? v : val_nil();
+    }
+    if (strcmp(name, "instance_variable_set") == 0) {
+        if (argc < 2) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        const char *raw = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!raw) return eval_raise_class(ev, site, "TypeError", "instance_variable_set requires a Symbol or String");
+        const char *ivar = raw[0] == '@' ? raw + 1 : raw;
+        if (recv.kind != VAL_OBJECT) return val_nil();
+        val_object_set_ivar(ev->arena, recv, ivar, args[1]);
+        return args[1];
+    }
+    if (strcmp(name, "instance_variable_defined?") == 0) {
+        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        const char *raw = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!raw || recv.kind != VAL_OBJECT) return val_false();
+        const char *ivar = raw[0] == '@' ? raw + 1 : raw;
+        Value v;
+        return val_bool(val_object_get_ivar(recv, ivar, &v));
+    }
+    if (strcmp(name, "instance_variables") == 0) {
+        Value arr = val_array_new();
+        if (recv.kind == VAL_OBJECT) {
+            for (IVarEntry *iv = recv.obj->ivars; iv; iv = iv->next) {
+                if (iv->name[0] != '_') { /* skip internal __ fields */
+                    /* prepend @ to match Ruby convention */
+                    size_t nlen = strlen(iv->name);
+                    char *sym = arena_alloc(ev->arena, nlen + 2);
+                    sym[0] = '@';
+                    memcpy(sym + 1, iv->name, nlen + 1);
+                    val_array_push(&arr, val_symbol(sym));
+                }
+            }
+        }
+        return arr;
+    }
     if (strcmp(name, "tap") == 0) {
         if (!blk) return eval_raise_class(ev, site, "LocalJumpError", "no block given");
         Value result = call_block(ev, env, *blk, &recv, 1, site);
