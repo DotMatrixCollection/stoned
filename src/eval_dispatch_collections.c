@@ -184,48 +184,42 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#map requires a block");
-        else {
-            Value result = val_array_new();
-            for (size_t i = 0; i < recv.array->len; i++) {
-                Value arg = recv.array->elems[i];
-                Value r = call_block(ev, env, *blk, &arg, 1, site);
-                if (ev->errored) { *out = val_nil(); return 1; }
-                if (flow_signal_out(r, out)) return 1;
-                val_array_push(&result, r);
-            }
-            *out = result;
+        if (!blk) { *out = recv; return 1; } /* no-block: return self for chaining (.with_index etc.) */
+        Value result = val_array_new();
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value arg = recv.array->elems[i];
+            Value r = call_block(ev, env, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            val_array_push(&result, r);
         }
+        *out = result;
         return 1;
     }
     if (strcmp(name, "select") == 0 || strcmp(name, "filter") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#select requires a block");
-        else {
-            Value result = val_array_new();
-            for (size_t i = 0; i < recv.array->len; i++) {
-                Value arg = recv.array->elems[i];
-                Value r = call_block(ev, env, *blk, &arg, 1, site);
-                if (ev->errored) { *out = val_nil(); return 1; }
-                if (flow_signal_out(r, out)) return 1;
-                if (val_truthy(r)) val_array_push(&result, arg);
-            }
-            *out = result;
+        if (!blk) { *out = recv; return 1; }
+        Value result = val_array_new();
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value arg = recv.array->elems[i];
+            Value r = call_block(ev, env, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            if (val_truthy(r)) val_array_push(&result, arg);
         }
+        *out = result;
         return 1;
     }
     if (strcmp(name, "reject") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#reject requires a block");
-        else {
-            Value result = val_array_new();
-            for (size_t i = 0; i < recv.array->len; i++) {
-                Value arg = recv.array->elems[i];
-                Value r = call_block(ev, env, *blk, &arg, 1, site);
-                if (ev->errored) { *out = val_nil(); return 1; }
-                if (flow_signal_out(r, out)) return 1;
-                if (!val_truthy(r)) val_array_push(&result, arg);
-            }
-            *out = result;
+        if (!blk) { *out = recv; return 1; }
+        Value result = val_array_new();
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value arg = recv.array->elems[i];
+            Value r = call_block(ev, env, *blk, &arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            if (!val_truthy(r)) val_array_push(&result, arg);
         }
+        *out = result;
         return 1;
     }
     if (strcmp(name, "reduce") == 0 || strcmp(name, "inject") == 0) {
@@ -481,6 +475,48 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         recv.array->len = w;
         *out = (strcmp(name, "delete_if") == 0 || w != orig) ? recv : val_nil();
         return 1;
+    }
+    if (strcmp(name, "to_h") == 0) {
+        Value result = val_hash_new(ev->arena);
+        if (blk) {
+            for (size_t i = 0; i < recv.array->len; i++) {
+                Value r = call_block(ev, env, *blk, &recv.array->elems[i], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+                if (r.kind == VAL_ARRAY && r.array->len >= 2)
+                    val_hash_set(result.hash, r.array->elems[0], r.array->elems[1]);
+            }
+        } else {
+            for (size_t i = 0; i < recv.array->len; i++) {
+                Value pair = recv.array->elems[i];
+                if (pair.kind == VAL_ARRAY && pair.array->len >= 2)
+                    val_hash_set(result.hash, pair.array->elems[0], pair.array->elems[1]);
+            }
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "with_index") == 0) {
+        int64_t offset = (argc > 0 && args[0].kind == VAL_INT) ? args[0].ival : 0;
+        if (blk) {
+            /* collect block results — enables arr.map.with_index { |x,i| ... } */
+            Value result = val_array_new();
+            for (size_t i = 0; i < recv.array->len; i++) {
+                Value bargs[2] = { recv.array->elems[i], val_int((int64_t)i + offset) };
+                Value r = call_block(ev, env, *blk, bargs, 2, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+                val_array_push(&result, r);
+            }
+            *out = result; return 1;
+        }
+        Value arr = val_array_new();
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value pair = val_array_new();
+            val_array_push(&pair, recv.array->elems[i]);
+            val_array_push(&pair, val_int((int64_t)i + offset));
+            val_array_push(&arr, pair);
+        }
+        *out = arr; return 1;
     }
     if (strcmp(name, "values_at") == 0) {
         Value result = val_array_new();
@@ -1110,6 +1146,19 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         for (int i = 0; i < argc; i++) {
             Value v;
             val_array_push(&result, val_hash_get(h, args[i], &v) ? v : h->default_value);
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "to_h") == 0) {
+        if (!blk) { *out = recv; return 1; }
+        Value result = val_hash_new(ev->arena);
+        for (size_t i = 0; i < h->len; i++) {
+            Value bargs[2] = { h->keys[i], h->vals[i] };
+            Value r = call_block(ev, env, *blk, bargs, 2, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            if (r.kind == VAL_ARRAY && r.array->len >= 2)
+                val_hash_set(result.hash, r.array->elems[0], r.array->elems[1]);
         }
         *out = result; return 1;
     }
