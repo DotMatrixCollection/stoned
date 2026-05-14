@@ -320,6 +320,18 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(name, "min") == 0) {
         if (blk) return 0; /* min with block — fall through to Enumerable */
+        if (argc > 0 && args[0].kind == VAL_INT) {
+            /* min(n): return n smallest as sorted array */
+            Value sorted_out;
+            dispatch_array(ev, env, recv, "sort", NULL, 0, NULL, site, &sorted_out);
+            if (sorted_out.kind != VAL_ARRAY) { *out = val_nil(); return 1; }
+            int64_t n = args[0].ival;
+            if (n < 0) { *out = eval_raise_class(ev, site, "ArgumentError", "count must be positive"); return 1; }
+            if ((size_t)n > sorted_out.array->len) n = (int64_t)sorted_out.array->len;
+            Value result = val_array_new();
+            for (int64_t i = 0; i < n; i++) val_array_push(&result, sorted_out.array->elems[i]);
+            *out = result; return 1;
+        }
         if (recv.array->len == 0) { *out = val_nil(); return 1; }
         Value m = recv.array->elems[0];
         for (size_t i = 1; i < recv.array->len; i++) {
@@ -342,6 +354,20 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(name, "max") == 0) {
         if (blk) return 0; /* max with block — fall through to Enumerable */
+        if (argc > 0 && args[0].kind == VAL_INT) {
+            /* max(n): return n largest as descending-sorted array */
+            Value sorted_out;
+            dispatch_array(ev, env, recv, "sort", NULL, 0, NULL, site, &sorted_out);
+            if (sorted_out.kind != VAL_ARRAY) { *out = val_nil(); return 1; }
+            int64_t n = args[0].ival;
+            if (n < 0) { *out = eval_raise_class(ev, site, "ArgumentError", "count must be positive"); return 1; }
+            size_t len = sorted_out.array->len;
+            if ((size_t)n > len) n = (int64_t)len;
+            Value result = val_array_new();
+            for (int64_t i = (int64_t)len - 1; i >= (int64_t)len - n; i--)
+                val_array_push(&result, sorted_out.array->elems[i]);
+            *out = result; return 1;
+        }
         if (recv.array->len == 0) { *out = val_nil(); return 1; }
         Value m = recv.array->elems[0];
         for (size_t i = 1; i < recv.array->len; i++) {
