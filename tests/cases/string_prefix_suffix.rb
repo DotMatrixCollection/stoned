@@ -1,0 +1,8 @@
+p "hello world".delete_prefix("hello ")
+p "hello world".delete_prefix("xyz")
+p "hello world".delete_suffix(" world")
+p "hello world".delete_suffix("xyz")
+p "hello".start_with?("hel", "xyz")
+p "hello".start_with?("xyz", "abc")
+p "hello".end_with?("llo", "xyz")
+p "hello".end_with?("xyz", "abc")

@@ -379,6 +379,90 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = result;
         return 1;
     }
+    if (strcmp(name, "compact!") == 0) {
+        size_t w = 0;
+        for (size_t i = 0; i < recv.array->len; i++)
+            if (recv.array->elems[i].kind != VAL_NIL) recv.array->elems[w++] = recv.array->elems[i];
+        int changed = w != recv.array->len;
+        recv.array->len = w;
+        *out = changed ? recv : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "flatten!") == 0) {
+        int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : -1;
+        Value result = val_array_new();
+        array_flatten_into(recv, &result, depth);
+        int changed = result.array->len != recv.array->len;
+        if (!changed) {
+            for (size_t i = 0; i < recv.array->len && !changed; i++)
+                if (!val_equal(recv.array->elems[i], result.array->elems[i])) changed = 1;
+        }
+        recv.array->len = 0;
+        for (size_t i = 0; i < result.array->len; i++) val_array_push(&recv, result.array->elems[i]);
+        *out = changed ? recv : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "uniq!") == 0) {
+        size_t orig = recv.array->len;
+        Value seen = val_array_new();
+        size_t w = 0;
+        for (size_t i = 0; i < recv.array->len; i++) {
+            int found = 0;
+            for (size_t j = 0; j < seen.array->len; j++) if (val_equal(seen.array->elems[j], recv.array->elems[i])) { found = 1; break; }
+            if (!found) { val_array_push(&seen, recv.array->elems[i]); recv.array->elems[w++] = recv.array->elems[i]; }
+        }
+        recv.array->len = w;
+        *out = w != orig ? recv : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "sort!") == 0) {
+        Value sorted = val_array_new();
+        for (size_t i = 0; i < recv.array->len; i++) val_array_push(&sorted, recv.array->elems[i]);
+        Value sort_out;
+        dispatch_array(ev, env, sorted, "sort", args, argc, blk, site, &sort_out);
+        if (sort_out.kind == VAL_ARRAY) {
+            for (size_t i = 0; i < sort_out.array->len; i++) recv.array->elems[i] = sort_out.array->elems[i];
+        }
+        *out = recv; return 1;
+    }
+    if (strcmp(name, "map!" ) == 0 || strcmp(name, "collect!") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Array#map! requires a block"); return 1; }
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value r = call_block(ev, env, *blk, &recv.array->elems[i], 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            recv.array->elems[i] = r;
+        }
+        *out = recv; return 1;
+    }
+    if (strcmp(name, "select!") == 0 || strcmp(name, "filter!") == 0 || strcmp(name, "keep_if") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Array#select! requires a block"); return 1; }
+        size_t w = 0;
+        size_t orig = recv.array->len;
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value r = call_block(ev, env, *blk, &recv.array->elems[i], 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            if (val_truthy(r)) recv.array->elems[w++] = recv.array->elems[i];
+        }
+        recv.array->len = w;
+        *out = (strcmp(name, "keep_if") == 0 || w != orig) ? recv : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "reject!") == 0 || strcmp(name, "delete_if") == 0) {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Array#reject! requires a block"); return 1; }
+        size_t w = 0;
+        size_t orig = recv.array->len;
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value r = call_block(ev, env, *blk, &recv.array->elems[i], 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            if (!val_truthy(r)) recv.array->elems[w++] = recv.array->elems[i];
+        }
+        recv.array->len = w;
+        *out = (strcmp(name, "delete_if") == 0 || w != orig) ? recv : val_nil();
+        return 1;
+    }
     if (strcmp(name, "-") == 0) {
         if (argc < 1 || args[0].kind != VAL_ARRAY) { *out = eval_raise_class(ev, site, "TypeError", "Array#- requires an Array"); return 1; }
         Value result = val_array_new();
@@ -877,6 +961,63 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         }
         *out = acc; return 1;
     }
+    if (strcmp(name, "to_a") == 0) {
+        Value arr = val_array_new();
+        for (size_t i = 0; i < h->len; i++) {
+            Value pair = val_array_new();
+            val_array_push(&pair, h->keys[i]);
+            val_array_push(&pair, h->vals[i]);
+            val_array_push(&arr, pair);
+        }
+        *out = arr; return 1;
+    }
+    if (strcmp(name, "invert") == 0) {
+        Value result = val_hash_new(ev->arena);
+        for (size_t i = 0; i < h->len; i++) val_hash_set(result.hash, h->vals[i], h->keys[i]);
+        *out = result; return 1;
+    }
+    if (strcmp(name, "slice") == 0) {
+        Value result = val_hash_new(ev->arena);
+        for (int i = 0; i < argc; i++) {
+            Value v;
+            if (val_hash_get(h, args[i], &v)) val_hash_set(result.hash, args[i], v);
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "except") == 0) {
+        Value result = val_hash_new(ev->arena);
+        for (size_t i = 0; i < h->len; i++) {
+            int excluded = 0;
+            for (int j = 0; j < argc; j++) if (val_equal(h->keys[i], args[j])) { excluded = 1; break; }
+            if (!excluded) val_hash_set(result.hash, h->keys[i], h->vals[i]);
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "key") == 0 || strcmp(name, "index") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Hash#key requires a value"); return 1; }
+        for (size_t i = 0; i < h->len; i++) if (val_equal(h->vals[i], args[0])) { *out = h->keys[i]; return 1; }
+        *out = val_nil(); return 1;
+    }
+    if (strcmp(name, "assoc") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        for (size_t i = 0; i < h->len; i++) if (val_equal(h->keys[i], args[0])) {
+            Value pair = val_array_new();
+            val_array_push(&pair, h->keys[i]); val_array_push(&pair, h->vals[i]);
+            *out = pair; return 1;
+        }
+        *out = val_nil(); return 1;
+    }
+    if (strcmp(name, "rassoc") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        for (size_t i = 0; i < h->len; i++) if (val_equal(h->vals[i], args[0])) {
+            Value pair = val_array_new();
+            val_array_push(&pair, h->keys[i]); val_array_push(&pair, h->vals[i]);
+            *out = pair; return 1;
+        }
+        *out = val_nil(); return 1;
+    }
+    if (strcmp(name, "any?") == 0 && !blk) { *out = val_bool(h->len > 0); return 1; }
+    if (strcmp(name, "none?") == 0 && !blk) { *out = val_bool(h->len == 0); return 1; }
     if (strcmp(name, "nil?") == 0) { *out = val_false(); return 1; }
     *out = eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for Hash", name);
     return 1;

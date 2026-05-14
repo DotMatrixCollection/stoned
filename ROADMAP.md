@@ -149,6 +149,9 @@ Recent Stage 5 progress already landed:
 - `Array#rotate` and `rotate!` added
 - `Hash#transform_values`/`transform_values!`, `Hash#transform_keys`/`transform_keys!`, `Hash#filter_map`, `Hash#count` with block; `Hash#count` no-block fast path split from `length`/`size` so the block form falls through correctly
 - Array set operators `Array#-` (difference), `Array#&` (intersection), `Array#|` (union), `Array#*` (repeat integer or join-with-string); `Array#combination(k)`, `Array#permutation(k)`, `Array#product(*arrays)` with optional block form
+- Array bang mutators: `map!`/`collect!`, `select!`/`filter!`/`keep_if`, `reject!`/`delete_if`, `sort!`, `uniq!`, `compact!`, `flatten!` (all return `nil` when no change was made, per MRI)
+- Hash: `slice(*keys)`, `except(*keys)`, `invert`, `to_a`, `key(v)`/`index(v)`, `assoc(k)`, `rassoc(v)`; `any?`/`none?` without block check emptiness
+- String: `delete_prefix`, `delete_suffix`; `start_with?` and `end_with?` upgraded to accept multiple arguments (any-match)
 - Blockless iterators now return arrays instead of raising `LocalJumpError`: `Integer#times`, `upto`, `downto`, `step`; `Array#each`, `each_with_index`; `Hash#each`/`each_pair`, `each_key`, `each_value`; `Range#each`, `each_with_index` — enables all common chained patterns (`3.times.map {}`, `arr.each_with_index.select {}`, etc.) without a full Enumerator implementation
 
 Exit gate:

@@ -554,20 +554,38 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "start_with?") == 0) {
-        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "String#start_with? requires an argument");
-        else {
-            const char *needle = val_to_s(ev->arena, args[0]);
-            *out = val_bool(strncmp(s, needle, strlen(needle)) == 0);
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#start_with? requires an argument"); return 1; }
+        for (int i = 0; i < argc; i++) {
+            const char *needle = val_to_s(ev->arena, args[i]);
+            if (strncmp(s, needle, strlen(needle)) == 0) { *out = val_true(); return 1; }
         }
-        return 1;
+        *out = val_false(); return 1;
     }
     if (strcmp(name, "end_with?") == 0) {
-        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "String#end_with? requires an argument");
-        else {
-            const char *needle = val_to_s(ev->arena, args[0]);
-            size_t slen = strlen(s), nlen = strlen(needle);
-            *out = val_bool(slen >= nlen && strcmp(s + slen - nlen, needle) == 0);
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#end_with? requires an argument"); return 1; }
+        size_t slen = strlen(s);
+        for (int i = 0; i < argc; i++) {
+            const char *needle = val_to_s(ev->arena, args[i]);
+            size_t nlen = strlen(needle);
+            if (slen >= nlen && strcmp(s + slen - nlen, needle) == 0) { *out = val_true(); return 1; }
         }
+        *out = val_false(); return 1;
+    }
+    if (strcmp(name, "delete_prefix") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#delete_prefix requires an argument"); return 1; }
+        const char *prefix = val_to_s(ev->arena, args[0]);
+        size_t plen = strlen(prefix);
+        if (strncmp(s, prefix, plen) == 0) *out = val_string(ev->arena, s + plen);
+        else *out = val_string(ev->arena, s);
+        return 1;
+    }
+    if (strcmp(name, "delete_suffix") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#delete_suffix requires an argument"); return 1; }
+        const char *suffix = val_to_s(ev->arena, args[0]);
+        size_t slen = strlen(s), suflen = strlen(suffix);
+        if (slen >= suflen && strcmp(s + slen - suflen, suffix) == 0)
+            *out = val_string_n(ev->arena, s, slen - suflen);
+        else *out = val_string(ev->arena, s);
         return 1;
     }
     if (strcmp(name, "split") == 0) {
