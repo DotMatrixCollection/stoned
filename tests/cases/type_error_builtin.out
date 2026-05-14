@@ -1,2 +1,2 @@
 TypeError
-Hash#merge requires a Hash
+Hash#merge requires Hash arguments

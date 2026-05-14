@@ -921,26 +921,37 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = arr; return 1;
     }
     if (strcmp(name, "merge") == 0) {
-        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#merge requires a Hash");
-        else if (args[0].kind != VAL_HASH) *out = eval_raise_class(ev, site, "TypeError", "Hash#merge requires a Hash");
-        else {
-            Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
-            for (size_t i = 0; i < h->len; i++) val_hash_set(result.hash, h->keys[i], h->vals[i]);
-            RubyHash *other = args[0].hash;
-            for (size_t i = 0; i < other->len; i++) val_hash_set(result.hash, other->keys[i], other->vals[i]);
-            *out = result;
+        Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
+        for (size_t i = 0; i < h->len; i++) val_hash_set(result.hash, h->keys[i], h->vals[i]);
+        for (int i = 0; i < argc; i++) {
+            if (args[i].kind != VAL_HASH) { *out = eval_raise_class(ev, site, "TypeError", "Hash#merge requires Hash arguments"); return 1; }
+            RubyHash *other = args[i].hash;
+            if (blk) {
+                for (size_t j = 0; j < other->len; j++) {
+                    Value existing;
+                    if (val_hash_get(result.hash, other->keys[j], &existing)) {
+                        Value bargs[3] = { other->keys[j], existing, other->vals[j] };
+                        Value r = call_block(ev, env, *blk, bargs, 3, site);
+                        if (ev->errored) { *out = val_nil(); return 1; }
+                        if (flow_signal_out(r, out)) return 1;
+                        val_hash_set(result.hash, other->keys[j], r);
+                    } else {
+                        val_hash_set(result.hash, other->keys[j], other->vals[j]);
+                    }
+                }
+            } else {
+                for (size_t j = 0; j < other->len; j++) val_hash_set(result.hash, other->keys[j], other->vals[j]);
+            }
         }
-        return 1;
+        *out = result; return 1;
     }
     if (strcmp(name, "merge!") == 0 || strcmp(name, "update") == 0) {
-        if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#merge! requires a Hash");
-        else if (args[0].kind != VAL_HASH) *out = eval_raise_class(ev, site, "TypeError", "Hash#merge! requires a Hash");
-        else {
-            RubyHash *other = args[0].hash;
-            for (size_t i = 0; i < other->len; i++) val_hash_set(h, other->keys[i], other->vals[i]);
-            *out = recv;
+        for (int i = 0; i < argc; i++) {
+            if (args[i].kind != VAL_HASH) { *out = eval_raise_class(ev, site, "TypeError", "Hash#merge! requires Hash arguments"); return 1; }
+            RubyHash *other = args[i].hash;
+            for (size_t j = 0; j < other->len; j++) val_hash_set(h, other->keys[j], other->vals[j]);
         }
-        return 1;
+        *out = recv; return 1;
     }
     if (strcmp(name, "each") == 0 || strcmp(name, "each_pair") == 0) {
         if (!blk) { *out = recv; return 1; }
