@@ -2018,6 +2018,19 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 *out = val_string_n(ev->arena, string.sval + off, slen - off);
                 return 1;
             }
+            if (strcmp(name, "to_a") == 0 || strcmp(name, "captures") == 0) {
+                Value arr = val_array_new();
+                int start = strcmp(name, "captures") == 0 ? 1 : 0;
+                int total = (int)ncaps + 1;
+                for (int i = start; i < total; i++) val_array_push(&arr, MD_GROUP_STR(i));
+                *out = arr; return 1;
+            }
+            if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0)
+                { *out = val_int(ncaps + 1); return 1; }
+            if (strcmp(name, "string") == 0) { *out = string; return 1; }
+            if (strcmp(name, "regexp") == 0) { *out = regexp; return 1; }
+            if (strcmp(name, "named_captures") == 0)
+                { *out = val_hash_new(ev->arena); return 1; } /* stub: no named capture support yet */
 #undef MD_GROUP_STR
         }
     }

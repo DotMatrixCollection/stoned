@@ -575,6 +575,39 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         *out = val_false(); return 1;
     }
+    if (strcmp(name, "insert") == 0) {
+        if (argc < 2 || args[0].kind != VAL_INT || args[1].kind != VAL_STRING)
+            { *out = eval_raise_class(ev, site, "ArgumentError", "String#insert requires index and string"); return 1; }
+        size_t slen = strlen(s);
+        int64_t idx = args[0].ival;
+        if (idx < 0) idx = (int64_t)slen + 1 + idx;
+        if (idx < 0) idx = 0;
+        if ((size_t)idx > slen) idx = (int64_t)slen;
+        const char *ins = args[1].sval;
+        size_t ilen = strlen(ins);
+        char *buf = arena_alloc(ev->arena, slen + ilen + 1);
+        memcpy(buf, s, (size_t)idx);
+        memcpy(buf + idx, ins, ilen);
+        memcpy(buf + idx + ilen, s + idx, slen - (size_t)idx);
+        buf[slen + ilen] = '\0';
+        *out = val_string(ev->arena, buf); return 1;
+    }
+    if (strcmp(name, "slice!") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        size_t slen = strlen(s);
+        int64_t idx = args[0].kind == VAL_INT ? args[0].ival : 0;
+        if (idx < 0) idx += (int64_t)slen;
+        if (idx < 0 || (size_t)idx >= slen) { *out = val_nil(); return 1; }
+        if (argc >= 2 && args[1].kind == VAL_INT) {
+            int64_t len = args[1].ival;
+            if (len < 0) { *out = val_nil(); return 1; }
+            size_t take = ((size_t)idx + (size_t)len > slen) ? slen - (size_t)idx : (size_t)len;
+            *out = val_string_n(ev->arena, s + idx, take);
+        } else {
+            *out = val_string_n(ev->arena, s + idx, 1);
+        }
+        return 1;
+    }
     if (strcmp(name, "delete_prefix") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#delete_prefix requires an argument"); return 1; }
         const char *prefix = val_to_s(ev->arena, args[0]);

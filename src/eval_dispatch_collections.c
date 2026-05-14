@@ -482,6 +482,20 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = (strcmp(name, "delete_if") == 0 || w != orig) ? recv : val_nil();
         return 1;
     }
+    if (strcmp(name, "values_at") == 0) {
+        Value result = val_array_new();
+        for (int i = 0; i < argc; i++) {
+            if (args[i].kind == VAL_INT) {
+                int64_t idx = args[i].ival;
+                if (idx < 0) idx += (int64_t)recv.array->len;
+                if (idx >= 0 && (size_t)idx < recv.array->len)
+                    val_array_push(&result, recv.array->elems[idx]);
+                else
+                    val_array_push(&result, val_nil());
+            }
+        }
+        *out = result; return 1;
+    }
     if (strcmp(name, "index") == 0 || strcmp(name, "find_index") == 0) {
         if (blk) {
             for (size_t i = 0; i < recv.array->len; i++) {
@@ -1090,6 +1104,14 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             *out = pair; return 1;
         }
         *out = val_nil(); return 1;
+    }
+    if (strcmp(name, "values_at") == 0) {
+        Value result = val_array_new();
+        for (int i = 0; i < argc; i++) {
+            Value v;
+            val_array_push(&result, val_hash_get(h, args[i], &v) ? v : h->default_value);
+        }
+        *out = result; return 1;
     }
     if (strcmp(name, "nil?") == 0) { *out = val_false(); return 1; }
     *out = eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for Hash", name);
