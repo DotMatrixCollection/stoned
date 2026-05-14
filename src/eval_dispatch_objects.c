@@ -767,12 +767,37 @@ Value regexp_search_value(Eval *ev, Value regexp, Value string, int return_index
         regexp.obj->native = compiled;
     }
 
+    static const char *cap_keys[] = {"1","2","3","4","5","6","7","8","9"};
+
     status = regex_search(compiled, string.sval, strlen(string.sval), 0, &match);
-    if (status == REGEX_MISMATCH)
+    if (status == REGEX_MISMATCH) {
+        global_set(ev->arena, &ev->globals, "~", val_nil());
+        for (int i = 0; i < 9; i++)
+            global_set(ev->arena, &ev->globals, cap_keys[i], val_nil());
         return val_nil();
+    }
     if (status != REGEX_OK)
         return eval_raise_class(ev, site, "RuntimeError", "regexp search failed");
-    Value result = return_index ? val_int(match.beg) : build_match_data(ev, regexp, string, match);
+
+    /* build MatchData only if needed ($~ or match method); =~ also needs it for $~ */
+    Value md = build_match_data(ev, regexp, string, match);
+    global_set(ev->arena, &ev->globals, "~", md);
+
+    /* set $1..$9 from capture groups */
+    const char *str = string.sval;
+    for (size_t i = 0; i < 9; i++) {
+        Value cap;
+        if (i < match.capture_count && match.cap_beg && match.cap_end && match.cap_beg[i] >= 0) {
+            size_t start = (size_t)match.cap_beg[i];
+            size_t len   = (size_t)(match.cap_end[i] - match.cap_beg[i]);
+            cap = val_string_n(ev->arena, str + start, len);
+        } else {
+            cap = val_nil();
+        }
+        global_set(ev->arena, &ev->globals, cap_keys[i], cap);
+    }
+
+    Value result = return_index ? val_int(match.beg) : md;
     regex_match_free(&match);
     return result;
 }

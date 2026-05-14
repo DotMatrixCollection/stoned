@@ -163,6 +163,7 @@ Recent Stage 5 progress already landed:
 - Value struct frozen field: all inline Value constructors now zero `frozen` to prevent garbage-stack false-positive `frozen?` results on freshly created strings
 - `Array#index`/`find_index` (value or block), `Array#rindex` (value or block), `Array#sample`, `Array#shuffle`/`shuffle!`
 - `String#to_i(base)`: now accepts base 2–36 via `strtoll`; `"ff".to_i(16)` = 255, `"1010".to_i(2)` = 10
+- Regex match globals: `$~` (MatchData), `$1`–`$9` (capture groups) now set after every `=~`, `String#match`, `Regexp#match`, and `Regexp#=~`; cleared to nil on no-match. Bug was stack-allocated key strings passed to `global_set` which stores the pointer — fixed with static key table
 - Blockless iterators now return arrays instead of raising `LocalJumpError`: `Integer#times`, `upto`, `downto`, `step`; `Array#each`, `each_with_index`; `Hash#each`/`each_pair`, `each_key`, `each_value`; `Range#each`, `each_with_index` — enables all common chained patterns (`3.times.map {}`, `arr.each_with_index.select {}`, etc.) without a full Enumerator implementation
 
 Exit gate:
