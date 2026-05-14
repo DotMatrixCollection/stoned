@@ -479,6 +479,66 @@ static Value dispatch_method_missing(Eval *ev, Env *env, Value recv, const char 
     return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", name, val_kind_name(recv.kind));
 }
 
+static const char *dispatch_to_s(Eval *ev, Env *env, Value v, Node *site) {
+    if (v.kind == VAL_OBJECT) {
+        Value s = dispatch_method(ev, env, v, "to_s", NULL, 0, NULL, site, 0, 1);
+        if (!ev->errored && s.kind == VAL_STRING) return s.sval;
+        ev->errored = 0; ev->exception_class = NULL;
+    }
+    return val_to_s(ev->arena, v);
+}
+
+static const char *dispatch_inspect(Eval *ev, Env *env, Value v, Node *site) {
+    if (v.kind == VAL_OBJECT) {
+        Value s = dispatch_method(ev, env, v, "inspect", NULL, 0, NULL, site, 0, 1);
+        if (!ev->errored && s.kind == VAL_STRING) return s.sval;
+        ev->errored = 0; ev->exception_class = NULL;
+    }
+    if (v.kind == VAL_ARRAY) {
+        size_t n = v.array->len;
+        if (n == 0) return "[]";
+        const char **parts = arena_alloc(ev->arena, n * sizeof(char *));
+        size_t total = 2;
+        for (size_t i = 0; i < n; i++) {
+            parts[i] = dispatch_inspect(ev, env, v.array->elems[i], site);
+            total += strlen(parts[i]) + (i < n - 1 ? 2 : 0);
+        }
+        char *buf = arena_alloc(ev->arena, total + 1);
+        size_t j = 0; buf[j++] = '[';
+        for (size_t i = 0; i < n; i++) {
+            size_t plen = strlen(parts[i]);
+            memcpy(buf + j, parts[i], plen); j += plen;
+            if (i < n - 1) { buf[j++] = ','; buf[j++] = ' '; }
+        }
+        buf[j++] = ']'; buf[j] = '\0';
+        return buf;
+    }
+    if (v.kind == VAL_HASH) {
+        RubyHash *h = v.hash;
+        if (h->len == 0) return "{}";
+        const char **ks = arena_alloc(ev->arena, h->len * sizeof(char *));
+        const char **vs = arena_alloc(ev->arena, h->len * sizeof(char *));
+        size_t total = 2;
+        for (size_t i = 0; i < h->len; i++) {
+            ks[i] = dispatch_inspect(ev, env, h->keys[i], site);
+            vs[i] = dispatch_inspect(ev, env, h->vals[i], site);
+            total += strlen(ks[i]) + 2 + strlen(vs[i]) + (i < h->len - 1 ? 2 : 0);
+        }
+        char *buf = arena_alloc(ev->arena, total + 1);
+        size_t j = 0; buf[j++] = '{';
+        for (size_t i = 0; i < h->len; i++) {
+            size_t klen = strlen(ks[i]), vlen = strlen(vs[i]);
+            memcpy(buf + j, ks[i], klen); j += klen;
+            buf[j++] = '='; buf[j++] = '>';
+            memcpy(buf + j, vs[i], vlen); j += vlen;
+            if (i < h->len - 1) { buf[j++] = ','; buf[j++] = ' '; }
+        }
+        buf[j++] = '}'; buf[j] = '\0';
+        return buf;
+    }
+    return val_inspect(ev->arena, v);
+}
+
 static Value builtin_kernel(Eval *ev, Env *env, const char *name,
                             Value *args, int argc, Value *blk, Node *site) {
     Value stdout_obj = val_nil();
@@ -517,7 +577,7 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
             for (int i = 0; i < argc; i++) {
                 if (args[i].kind == VAL_ARRAY) {
                     for (size_t j = 0; j < args[i].array->len; j++) {
-                        const char *s = val_to_s(ev->arena, args[i].array->elems[j]);
+                        const char *s = dispatch_to_s(ev, env, args[i].array->elems[j], site);
                         size_t len = strlen(s);
                         char *buf = arena_alloc(ev->arena, len + 2);
                         memcpy(buf, s, len);
@@ -528,7 +588,7 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
                         if (val_is_signal(out)) return out;
                     }
                 } else {
-                    const char *s = val_to_s(ev->arena, args[i]);
+                    const char *s = dispatch_to_s(ev, env, args[i], site);
                     size_t len = strlen(s);
                     char *buf = arena_alloc(ev->arena, len + 2);
                     memcpy(buf, s, len);
@@ -543,14 +603,16 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         }
         if (strcmp(name, "print") == 0) {
             for (int i = 0; i < argc; i++) {
-                Value str = val_string(ev->arena, val_to_s(ev->arena, args[i]));
+                Value str = val_string(ev->arena, dispatch_to_s(ev, env, args[i], site));
                 Value out = dispatch_method(ev, env, stdout_obj, "write", &str, 1, NULL, site, 0, 1);
                 if (val_is_signal(out)) return out;
             }
             return val_nil();
         }
+        /* p/pp: dispatch inspect for objects, fall back to val_inspect */
         for (int i = 0; i < argc; i++) {
-            const char *s = val_inspect(ev->arena, args[i]);
+            const char *s;
+            s = dispatch_inspect(ev, env, args[i], site);
             size_t len = strlen(s);
             char *buf = arena_alloc(ev->arena, len + 2);
             memcpy(buf, s, len);
@@ -567,28 +629,28 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     }
 
     if (strcmp(name, "puts") == 0) {
-        if (argc == 0) {
-            fprintf(ev->out, "\n");
-            return val_nil();
-        }
+        if (argc == 0) { fprintf(ev->out, "\n"); return val_nil(); }
         for (int i = 0; i < argc; i++) {
             if (args[i].kind == VAL_ARRAY) {
                 for (size_t j = 0; j < args[i].array->len; j++)
-                    fprintf(ev->out, "%s\n", val_to_s(ev->arena, args[i].array->elems[j]));
+                    fprintf(ev->out, "%s\n", dispatch_to_s(ev, env, args[i].array->elems[j], site));
             } else {
-                fprintf(ev->out, "%s\n", val_to_s(ev->arena, args[i]));
+                fprintf(ev->out, "%s\n", dispatch_to_s(ev, env, args[i], site));
             }
         }
         return val_nil();
     }
     if (strcmp(name, "print") == 0) {
         for (int i = 0; i < argc; i++)
-            fprintf(ev->out, "%s", val_to_s(ev->arena, args[i]));
+            fprintf(ev->out, "%s", dispatch_to_s(ev, env, args[i], site));
         return val_nil();
     }
     if (strcmp(name, "p") == 0 || strcmp(name, "pp") == 0) {
-        for (int i = 0; i < argc; i++)
-            fprintf(ev->out, "%s\n", val_inspect(ev->arena, args[i]));
+        for (int i = 0; i < argc; i++) {
+            const char *s;
+            s = dispatch_inspect(ev, env, args[i], site);
+            fprintf(ev->out, "%s\n", s);
+        }
         if (argc == 1) return args[0];
         Value arr = val_array_new();
         for (int i = 0; i < argc; i++) val_array_push(&arr, args[i]);
