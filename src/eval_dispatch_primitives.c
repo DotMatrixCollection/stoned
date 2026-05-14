@@ -896,8 +896,10 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = arr;
         return 1;
     }
-    if (strcmp(name, "<<") == 0) {
+    if (strcmp(name, "+") == 0 || strcmp(name, "<<") == 0) {
         if (argc < 1) { *out = recv; return 1; }
+        if (strcmp(name, "+") == 0 && args[0].kind != VAL_STRING)
+            { *out = eval_raise_class(ev, site, "TypeError", "String#+ requires a String"); return 1; }
         const char *rhs = val_to_s(ev->arena, args[0]);
         size_t slen = strlen(s), rlen = strlen(rhs);
         char *buf = arena_alloc(ev->arena, slen + rlen + 1);

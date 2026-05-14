@@ -155,6 +155,9 @@ Recent Stage 5 progress already landed:
 - `freeze`/`frozen?` extended to strings (`frozen` bit on Value), arrays, and hashes (`frozen` field on RubyArray/RubyHash); integers/floats/symbols/nil/bool remain always-frozen
 - `eql?` added to universal dispatch: same-type strict equality (`1.eql?(1.0)` → false)
 - Enumerable: `minmax` and `minmax_by` added to prelude; `Hash#none?` with block fixed (was handled for any?/all? but missed none?)
+- `reduce`/`inject` symbol form: `[1,2,3].reduce(:+)`, `reduce(init, :sym)`, `(1..5).reduce(:+)` now work; symbol dispatches via `dispatch_method` so any defined operator works; Hash reduce still requires a block
+- `String#+` added to `dispatch_string` so it's reachable via `send`, `reduce(:+)`, and similar method dispatch paths
+- `p` inspect bug fixed: `val_inspect` in value.c was doing raw `memcpy` without escaping special characters; now escapes `\n`, `\t`, `\r`, `\"`, `\\`, and control chars to `\xNN`
 - Blockless iterators now return arrays instead of raising `LocalJumpError`: `Integer#times`, `upto`, `downto`, `step`; `Array#each`, `each_with_index`; `Hash#each`/`each_pair`, `each_key`, `each_value`; `Range#each`, `each_with_index` — enables all common chained patterns (`3.times.map {}`, `arr.each_with_index.select {}`, etc.) without a full Enumerator implementation
 
 Exit gate:

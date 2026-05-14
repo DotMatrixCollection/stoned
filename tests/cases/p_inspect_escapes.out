@@ -1,0 +1,5 @@
+"hello\n"
+"tab\there"
+"quote\"here"
+"back\\slash"
+[1, "hello\n", nil]

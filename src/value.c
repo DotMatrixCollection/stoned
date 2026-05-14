@@ -288,12 +288,32 @@ const char *val_inspect(Arena *a, Value v) {
         case VAL_NIL:    return "nil";
         case VAL_BOOL:   return v.bval ? "true" : "false";
         case VAL_STRING: {
-            size_t len = v.sval ? strlen(v.sval) : 0;
-            buf = arena_alloc(a, len + 3);
-            buf[0] = '"';
-            if (v.sval) memcpy(buf + 1, v.sval, len);
-            buf[len + 1] = '"';
-            buf[len + 2] = '\0';
+            const char *s = v.sval ? v.sval : "";
+            size_t len = strlen(s);
+            buf = arena_alloc(a, len * 4 + 3);
+            size_t j = 0;
+            buf[j++] = '"';
+            for (size_t i = 0; i < len; i++) {
+                unsigned char c = (unsigned char)s[i];
+                switch (c) {
+                    case '"':  buf[j++] = '\\'; buf[j++] = '"';  break;
+                    case '\\': buf[j++] = '\\'; buf[j++] = '\\'; break;
+                    case '\n': buf[j++] = '\\'; buf[j++] = 'n';  break;
+                    case '\r': buf[j++] = '\\'; buf[j++] = 'r';  break;
+                    case '\t': buf[j++] = '\\'; buf[j++] = 't';  break;
+                    default:
+                        if (c < 0x20) {
+                            buf[j++] = '\\'; buf[j++] = 'x';
+                            buf[j++] = "0123456789abcdef"[c >> 4];
+                            buf[j++] = "0123456789abcdef"[c & 0xf];
+                        } else {
+                            buf[j++] = (char)c;
+                        }
+                        break;
+                }
+            }
+            buf[j++] = '"';
+            buf[j] = '\0';
             return buf;
         }
         case VAL_SYMBOL:

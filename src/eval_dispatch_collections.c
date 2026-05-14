@@ -229,20 +229,39 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "reduce") == 0 || strcmp(name, "inject") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Array#reduce requires a block");
-        else if (recv.array->len == 0) *out = argc > 0 ? args[0] : val_nil();
-        else {
-            size_t start = 0;
-            Value acc = argc > 0 ? args[0] : recv.array->elems[start++];
-            for (size_t i = start; i < recv.array->len; i++) {
-                Value bargs[2] = { acc, recv.array->elems[i] };
-                Value r = call_block(ev, env, *blk, bargs, 2, site);
-                if (ev->errored) { *out = val_nil(); return 1; }
-                if (flow_signal_out(r, out)) return 1;
-                acc = r;
+        /* Determine initial accumulator and optional symbol operator */
+        const char *sym_op = NULL;
+        size_t start = 0;
+        Value acc;
+        if (!blk) {
+            /* symbol-only: reduce(:+) */
+            if (argc == 1 && args[0].kind == VAL_SYMBOL) {
+                sym_op = args[0].sval;
+                if (recv.array->len == 0) { *out = val_nil(); return 1; }
+                acc = recv.array->elems[start++];
+            /* initial + symbol: reduce(0, :+) */
+            } else if (argc == 2 && args[1].kind == VAL_SYMBOL) {
+                acc = args[0]; sym_op = args[1].sval;
+            } else {
+                *out = eval_raise_class(ev, site, "LocalJumpError", "Array#reduce requires a block or symbol");
+                return 1;
             }
-            *out = acc;
+        } else {
+            acc = argc > 0 ? args[0] : recv.array->elems[start++];
         }
+        for (size_t i = start; i < recv.array->len; i++) {
+            Value r;
+            if (sym_op) {
+                r = dispatch_method(ev, env, acc, sym_op, &recv.array->elems[i], 1, NULL, site, 0, 1);
+            } else {
+                Value bargs[2] = { acc, recv.array->elems[i] };
+                r = call_block(ev, env, *blk, bargs, 2, site);
+            }
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            acc = r;
+        }
+        *out = acc;
         return 1;
     }
     if (strcmp(name, "any?") == 0 || strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) {
@@ -836,9 +855,9 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "reduce") == 0 || strcmp(name, "inject") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#reduce requires a block");
-        else if (h->len == 0) *out = argc > 0 ? args[0] : val_nil();
-        else {
+        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#reduce requires a block"); return 1; }
+        if (h->len == 0) { *out = argc > 0 ? args[0] : val_nil(); return 1; }
+        {
             size_t start = 0;
             Value acc;
             if (argc > 0) acc = args[0];
@@ -1268,15 +1287,25 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
 
     if (strcmp(name, "reduce") == 0 || strcmp(name, "inject") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#reduce requires a block"); return 1; }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range#reduce requires Integer range"); return 1; }
+        const char *sym_op = NULL;
+        if (!blk) {
+            if (argc == 1 && args[0].kind == VAL_SYMBOL) sym_op = args[0].sval;
+            else if (argc == 2 && args[1].kind == VAL_SYMBOL) sym_op = args[1].sval;
+            else { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#reduce requires a block or symbol"); return 1; }
+        }
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
         int64_t start = lo;
-        Value acc = argc > 0 ? args[0] : val_int(start++);
+        Value acc;
+        if (sym_op && argc == 2) acc = args[0];
+        else if (!sym_op && argc > 0) acc = args[0];
+        else { if (r->exclusive ? lo >= hi : lo > hi) { *out = val_nil(); return 1; } acc = val_int(start++); }
         for (int64_t i = start; r->exclusive ? i < hi : i <= hi; i++) {
-            Value bargs[2] = { acc, val_int(i) };
-            Value res = call_block(ev, env, *blk, bargs, 2, site);
+            Value elem = val_int(i);
+            Value res;
+            if (sym_op) res = dispatch_method(ev, env, acc, sym_op, &elem, 1, NULL, site, 0, 1);
+            else { Value bargs[2] = { acc, elem }; res = call_block(ev, env, *blk, bargs, 2, site); }
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(res, out)) return 1;
             acc = res;
