@@ -1643,6 +1643,20 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = arr;
         return 1;
     }
+    if (strcmp(name, "include?") == 0) {
+        if (argc < 1 || args[0].kind != VAL_CLASS)
+            { *out = eval_raise_class(ev, site, "TypeError", "Class#include? requires a module"); return 1; }
+        const char *mname = args[0].klass->name;
+        RubyClass *k = recv.klass;
+        while (k) {
+            for (RubyModuleInclusion *m = k->included_modules; m; m = m->next)
+                if (strcmp(m->mod->name, mname) == 0) { *out = val_true(); return 1; }
+            for (RubyModuleInclusion *m = k->prepended_modules; m; m = m->next)
+                if (strcmp(m->mod->name, mname) == 0) { *out = val_true(); return 1; }
+            k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL;
+        }
+        *out = val_false(); return 1;
+    }
 
     if (strcmp(name, "instance_methods") == 0 ||
         strcmp(name, "public_instance_methods") == 0 ||

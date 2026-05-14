@@ -192,6 +192,14 @@ static Value dispatch_dynamic_send(Eval *ev, Env *env, Value recv, const char *d
     return dispatch_method(ev, env, recv, mname, args + 1, argc - 1, blk, site, public_only, explicit_receiver);
 }
 
+static int class_includes_module(RubyClass *k, const char *mod_name) {
+    for (RubyModuleInclusion *m = k->included_modules; m; m = m->next)
+        if (strcmp(m->mod->name, mod_name) == 0) return 1;
+    for (RubyModuleInclusion *m = k->prepended_modules; m; m = m->next)
+        if (strcmp(m->mod->name, mod_name) == 0) return 1;
+    return 0;
+}
+
 int val_is_a(Value v, Value klass_arg) {
     if (klass_arg.kind != VAL_CLASS) return 0;
     const char *kname = klass_arg.klass->name;
@@ -205,14 +213,17 @@ int val_is_a(Value v, Value klass_arg) {
         RubyClass *k = v.obj->klass.klass;
         while (k) {
             if (strcmp(k->name, kname) == 0) return 1;
+            if (class_includes_module(k, kname)) return 1;
             k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL;
         }
         return 0;
     }
     if (strcmp(kname, "Numeric") == 0)
         return v.kind == VAL_INT || v.kind == VAL_FLOAT;
+    if (strcmp(kname, "Comparable") == 0)
+        return v.kind == VAL_INT || v.kind == VAL_FLOAT || v.kind == VAL_STRING || v.kind == VAL_SYMBOL;
     if (strcmp(kname, "Enumerable") == 0)
-        return v.kind == VAL_RANGE;
+        return v.kind == VAL_RANGE || v.kind == VAL_ARRAY || v.kind == VAL_HASH;
     return strcmp(prim_class_name(v), kname) == 0;
 }
 
