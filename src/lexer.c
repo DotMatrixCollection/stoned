@@ -83,6 +83,11 @@ static void skip_whitespace(Lexer *l) {
     while (!at_end(l)) {
         char c = peek_ch(l);
         if (c == ' ' || c == '\t' || c == '\r') { advance(l); l->had_space = 1; }
+        else if (c == '\\' && peek2(l) == '\n') {
+            advance(l);
+            advance(l);
+            l->had_space = 1;
+        }
         else if (c == '#') {
             while (!at_end(l) && peek_ch(l) != '\n') advance(l);
             l->had_space = 1;
@@ -573,10 +578,11 @@ static Token scan_heredoc_content(Lexer *l) {
 
 static Token scan_heredoc(Lexer *l, size_t start, uint32_t sline, uint32_t scol) {
     /* `<<` already consumed */
-    int squiggly = 0, interp = 1;
+    int squiggly = 0, indent_ok = 0, interp = 1;
     char quote = 0;
 
-    if (peek_ch(l) == '~') { squiggly = 1; advance(l); }
+    if (peek_ch(l) == '-') { indent_ok = 1; advance(l); }
+    else if (peek_ch(l) == '~') { squiggly = 1; indent_ok = 1; advance(l); }
     char nc = peek_ch(l);
     if      (nc == '"')  { quote = '"';  interp = 1; advance(l); }
     else if (nc == '\'') { quote = '\''; interp = 0; advance(l); }
@@ -622,7 +628,7 @@ static Token scan_heredoc(Lexer *l, size_t start, uint32_t sline, uint32_t scol)
             memcmp(l->src + l->pos, term, term_len) == 0) {
             size_t after = l->pos + term_len;
             if (after >= l->len || l->src[after] == '\n' || l->src[after] == '\r') {
-                if (squiggly || indent == 0) is_term = 1;
+                if (indent_ok || indent == 0) is_term = 1;
             }
         }
 
@@ -881,7 +887,7 @@ static Token scan(Lexer *l) {
                 advance(l);
                 {
                     char hd_nc = peek_ch(l);
-                    if (hd_nc == '~' || hd_nc == '"' || hd_nc == '\'' ||
+                    if (hd_nc == '-' || hd_nc == '~' || hd_nc == '"' || hd_nc == '\'' ||
                         isalpha((unsigned char)hd_nc) || hd_nc == '_') {
                         return scan_heredoc(l, start, sline, scol);
                     }

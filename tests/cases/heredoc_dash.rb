@@ -1,0 +1,3 @@
+puts <<-EOT
+hello
+  EOT

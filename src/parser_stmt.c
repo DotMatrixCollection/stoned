@@ -13,6 +13,42 @@ static void mark_assign_targets_stmt(Parser *p, Node *target) {
 
 static Node *parse_expr_list(Parser *p, Node *first, int elem_min_bp, int assignment_target);
 
+static Token peek_next_token_stmt(Parser *p) {
+    Parser copy = *p;
+    advance(&copy);
+    return peek(&copy);
+}
+
+static const char *parse_const_path_name(Parser *p) {
+    (void)match(p, TOK_COLON2);
+    Token name_tok = advance(p);
+    if (name_tok.kind != TOK_CONST) {
+        error(p, "expected constant name", name_tok.line, name_tok.col);
+        return NULL;
+    }
+
+    size_t len = strlen(name_tok.sval);
+    char *buf = arena_alloc(p->arena, len + 1);
+    memcpy(buf, name_tok.sval, len + 1);
+
+    while (match(p, TOK_COLON2)) {
+        Token part = advance(p);
+        if (part.kind != TOK_CONST) {
+            error(p, "expected constant name after '::'", part.line, part.col);
+            return NULL;
+        }
+        size_t plen = strlen(part.sval);
+        char *next = arena_alloc(p->arena, len + 2 + plen + 1);
+        memcpy(next, buf, len);
+        memcpy(next + len, "::", 2);
+        memcpy(next + len + 2, part.sval, plen + 1);
+        buf = next;
+        len += 2 + plen;
+    }
+
+    return buf;
+}
+
 static const char *method_name_from_token(Parser *p, Token tok) {
     switch (tok.kind) {
         case TOK_IDENT:
@@ -124,6 +160,10 @@ static Node *parse_expr_list(Parser *p, Node *first, int elem_min_bp, int assign
     NodeList *elems = NULL;
     elems = nodelist_append(p->arena, elems, first);
     while (match(p, TOK_COMMA)) {
+        if (assignment_target &&
+            (check(p, TOK_EQ) || check(p, TOK_NEWLINE) || check(p, TOK_SEMICOLON) ||
+             check(p, TOK_RPAREN) || check(p, TOK_EOF)))
+            break;
         Node *elem = assignment_target ? parse_assignment_target_elem(p) : parse_expr(p, elem_min_bp);
         if (elem) elems = nodelist_append(p->arena, elems, elem);
     }
@@ -242,14 +282,20 @@ Node *parse_stmt(Parser *p) {
             return NULL;
         }
         Token def_suffix_tok = peek(p);
+        int setter_suffix = 0;
         if ((name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) &&
-            (def_suffix_tok.kind == TOK_QUESTION || def_suffix_tok.kind == TOK_BANG) &&
-            token_adjacent(name_tok, def_suffix_tok)) {
+            def_suffix_tok.kind == TOK_EQ) {
+            Token after_eq = peek_next_token_stmt(p);
+            setter_suffix = token_adjacent(name_tok, def_suffix_tok) && after_eq.kind == TOK_LPAREN;
+        }
+        if ((name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) &&
+            ((((def_suffix_tok.kind == TOK_QUESTION || def_suffix_tok.kind == TOK_BANG) &&
+               token_adjacent(name_tok, def_suffix_tok))) || setter_suffix)) {
             Token suffix = advance(p);
             size_t nlen = strlen(def_name);
             char *buf = arena_alloc(p->arena, nlen + 2);
             memcpy(buf, def_name, nlen);
-            buf[nlen] = suffix.kind == TOK_QUESTION ? '?' : '!';
+            buf[nlen] = suffix.kind == TOK_QUESTION ? '?' : (suffix.kind == TOK_BANG ? '!' : '=');
             buf[nlen + 1] = '\0';
             def_name = buf;
         }
@@ -341,23 +387,15 @@ Node *parse_stmt(Parser *p) {
             expect(p, TOK_END, "expected 'end'");
             return n;
         }
-        Token name_tok = advance(p);
-        if (name_tok.kind != TOK_CONST) {
-            error(p, "expected class name after 'class'", name_tok.line, name_tok.col);
-            return NULL;
-        }
+        const char *name = parse_const_path_name(p);
+        if (!name) return NULL;
         Node *n = node_new(p->arena, NODE_CLASS, s);
-        n->klass.name = name_tok.sval;
+        n->klass.name = name;
         n->klass.superclass = NULL;
 
         if (match(p, TOK_LT)) {
-            Token super_tok = advance(p);
-            if (super_tok.kind != TOK_CONST) {
-                error(p, "expected superclass name after '<'", super_tok.line, super_tok.col);
-                return NULL;
-            }
-            n->klass.superclass = node_new(p->arena, NODE_CONST, tok_span(super_tok));
-            n->klass.superclass->sval = super_tok.sval;
+            n->klass.superclass = parse_expr(p, 0);
+            if (!n->klass.superclass) return NULL;
         }
 
         skip_terminators(p);
@@ -404,13 +442,10 @@ Node *parse_stmt(Parser *p) {
 
     if (t.kind == TOK_MODULE) {
         advance(p);
-        Token name_tok = advance(p);
-        if (name_tok.kind != TOK_CONST) {
-            error(p, "expected module name after 'module'", name_tok.line, name_tok.col);
-            return NULL;
-        }
+        const char *name = parse_const_path_name(p);
+        if (!name) return NULL;
         Node *n = node_new(p->arena, NODE_MODULE, s);
-        n->klass.name = name_tok.sval;
+        n->klass.name = name;
         skip_terminators(p);
         n->klass.body = parse_body(p, 0);
         expect(p, TOK_END, "expected 'end'");
@@ -506,6 +541,7 @@ Node *parse_stmt(Parser *p) {
 
     if (t.kind == TOK_IF || t.kind == TOK_UNLESS) {
         advance(p);
+        skip_terminators(p);
         NodeKind kind = (t.kind == TOK_IF) ? NODE_IF : NODE_UNLESS;
         Node *cond = parse_expr(p, 0);
         Node *n = node_new(p->arena, kind, s);
@@ -516,6 +552,7 @@ Node *parse_stmt(Parser *p) {
     }
     if (t.kind == TOK_WHILE || t.kind == TOK_UNTIL) {
         advance(p);
+        skip_terminators(p);
         NodeKind kind = (t.kind == TOK_WHILE) ? NODE_WHILE : NODE_UNTIL;
         Node *cond = parse_expr(p, 0);
         Node *n = node_new(p->arena, kind, s);

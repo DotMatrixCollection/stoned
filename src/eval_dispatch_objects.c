@@ -854,6 +854,30 @@ static void collect_class_ancestors(RubyClass *klass, Value *arr, RubyClass **vi
 int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     if (recv.kind != VAL_CLASS) return 0;
+    if (strcmp(recv.klass->name, "Process") == 0 && strcmp(name, "pid") == 0) {
+        if (argc != 0) {
+            *out = wrong_arg_count(ev, site, argc, 0);
+            return 1;
+        }
+        *out = val_int((int64_t)getpid());
+        return 1;
+    }
+    if (strcmp(name, "autoload") == 0) {
+        if (argc != 2) {
+            *out = eval_raise_class(ev, site, "ArgumentError",
+                                    "wrong number of arguments (given %d, expected 2)", argc);
+            return 1;
+        }
+        const char *path = NULL;
+        if (args[1].kind == VAL_STRING || args[1].kind == VAL_SYMBOL)
+            path = args[1].sval;
+        if (!path) {
+            *out = eval_raise_class(ev, site, "TypeError", "autoload path must be a String");
+            return 1;
+        }
+        *out = eval_require(ev, env, path, site);
+        return 1;
+    }
     if (strcmp(name, "===") == 0) {
         if (argc < 1) { *out = val_false(); return 1; }
         *out = val_bool(val_is_a(args[0], recv));
@@ -861,7 +885,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (recv.klass->is_module && recv.klass->class_env) {
         Value const_val;
-        if (env_get(recv.klass->class_env, name, &const_val) && const_val.kind == VAL_CLASS) {
+        if (env_get(recv.klass->class_env, name, &const_val) && const_val.kind != VAL_METHOD) {
             *out = const_val;
             return 1;
         }

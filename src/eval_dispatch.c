@@ -951,6 +951,41 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         env_define(ev->arena, self.klass->class_env, new_name, method);
         return val_symbol(new_name);
     }
+    if (strcmp(name, "module_function") == 0) {
+        Value self;
+        if (!env_get(env, "self", &self) || self.kind != VAL_CLASS || !self.klass->is_module)
+            return eval_raise_class(ev, site, "TypeError", "module_function must be called in a module body");
+        if (argc == 0)
+            return eval_raise_class(ev, site, "ArgumentError", "module_function requires at least one method name");
+        for (int i = 0; i < argc; i++) {
+            const char *mname = (args[i].kind == VAL_SYMBOL || args[i].kind == VAL_STRING) ? args[i].sval : NULL;
+            if (!mname) continue;
+            Value method;
+            if (!ruby_class_find_instance_method(self.klass, mname, &method, NULL))
+                return eval_raise_class(ev, site, "NameError", "undefined method '%s' for module_function", mname);
+            size_t nlen = strlen(mname);
+            char *key = arena_alloc(ev->arena, nlen + 6);
+            memcpy(key, "self.", 5);
+            memcpy(key + 5, mname, nlen + 1);
+            env_define(ev->arena, self.klass->class_env, key, method);
+            update_method_visibility(self.klass->class_env, mname, METHOD_PRIVATE, 0);
+        }
+        return val_nil();
+    }
+    if (strcmp(name, "autoload") == 0) {
+        Value self;
+        if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
+            return eval_raise_class(ev, site, "TypeError", "autoload must be called in a class or module body");
+        if (argc != 2)
+            return eval_raise_class(ev, site, "ArgumentError",
+                                    "wrong number of arguments (given %d, expected 2)", argc);
+        const char *path = NULL;
+        if (args[1].kind == VAL_STRING || args[1].kind == VAL_SYMBOL)
+            path = args[1].sval;
+        if (!path)
+            return eval_raise_class(ev, site, "TypeError", "autoload path must be a String");
+        return eval_require(ev, env, path, site);
+    }
     (void)blk;
     return val_nil();
 }
@@ -1081,6 +1116,13 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         return recv;
     }
     if (strcmp(name, "itself") == 0) return recv;
+    if (recv.kind == VAL_HASH && strcmp(name, "to_hash") == 0) return recv;
+    if (recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS &&
+        strcmp(recv.obj->klass.klass->name, "Thread::Mutex") == 0 &&
+        strcmp(name, "synchronize") == 0) {
+        if (!blk) return recv;
+        return call_block(ev, env, *blk, NULL, 0, site);
+    }
     if (strcmp(name, "instance_variable_get") == 0) {
         if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         const char *raw = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
@@ -1573,7 +1615,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
-            "attr_reader", "attr_writer", "attr_accessor", "alias_method", "__dir__", "__method__", NULL
+            "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload", "__dir__", "__method__", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
             if (strcmp(name, kernel_names[i]) == 0)
@@ -1585,6 +1627,15 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             goto call_method;
 
         Value self;
+        if (env_get(env, "self", &self)) {
+            return dispatch_method(ev, env, self, name, args, argc, blk, node, 0, 0);
+        }
+
+        /*
+         * Fallbacks below are retained for environments that somehow lack self,
+         * but ordinary bare calls should already have returned through
+         * dispatch_method(self, ...).
+         */
         if (env_get(env, "self", &self) && self.kind == VAL_OBJECT) {
             if (self.obj->singleton_env && env_get(self.obj->singleton_env, name, &fn) && fn.kind == VAL_METHOD) {
                 Env *method_env = env_new(ev->arena, fn.method.closure, 1);

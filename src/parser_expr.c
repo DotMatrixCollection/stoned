@@ -235,18 +235,33 @@ static NodeList *parse_command_args(Parser *p) {
     NodeList *args = NULL;
     int saved_allow_commas = p->allow_command_arg_commas;
     p->allow_command_arg_commas = 0;
-    Node *first = parse_command_arg(p);
-    p->allow_command_arg_commas = saved_allow_commas;
-    if (first) args = nodelist_append(p->arena, args, first);
-
-    while (saved_allow_commas && match(p, TOK_COMMA)) {
+    while (1) {
+        if (check(p, TOK_AMP)) {
+            Span ss = tok_span(peek(p));
+            advance(p);
+            Node *bp = node_new(p->arena, NODE_BLOCK_PASS, ss);
+            bp->block_pass.expr = parse_expr(p, 0);
+            args = nodelist_append(p->arena, args, bp);
+            break;
+        }
+        if (check(p, TOK_STAR)) {
+            Span ss = tok_span(peek(p));
+            advance(p);
+            Node *splat = node_new(p->arena, NODE_UNOP, ss);
+            splat->unop.op = "*";
+            splat->unop.operand = parse_expr(p, 0);
+            splat->unop.operand = attach_pending_do_block(p, splat->unop.operand, 0);
+            args = nodelist_append(p->arena, args, splat);
+        } else {
+            Node *arg = parse_command_arg(p);
+            if (arg) args = nodelist_append(p->arena, args, arg);
+        }
+        if (!(saved_allow_commas && match(p, TOK_COMMA)))
+            break;
         skip_terminators(p);
         p->allow_command_arg_commas = 0;
-        Node *arg = parse_command_arg(p);
-        p->allow_command_arg_commas = saved_allow_commas;
-        if (arg) args = nodelist_append(p->arena, args, arg);
     }
-
+    p->allow_command_arg_commas = saved_allow_commas;
     return args;
 }
 
@@ -563,7 +578,10 @@ Node *parse_block(Parser *p) {
         expect(p, TOK_PIPE, "expected '|' to close block params");
     }
     skip_terminators(p);
+    int saved_allow_commas = p->allow_command_arg_commas;
+    p->allow_command_arg_commas = 1;
     n->block.body = parse_body(p, brace);
+    p->allow_command_arg_commas = saved_allow_commas;
     if (check(p, TOK_RESCUE) || check(p, TOK_ENSURE)) {
         n->block.body = wrap_rescue_ensure(p, s, n->block.body);
         if (!n->block.body) return NULL;
@@ -749,6 +767,17 @@ Node *parse_primary(Parser *p) {
         case TOK_IVAR: { advance(p); Node *n = node_new(p->arena, NODE_IVAR, s); n->sval = t.sval; return n; }
         case TOK_CVAR: { advance(p); Node *n = node_new(p->arena, NODE_CVAR, s); n->sval = t.sval; return n; }
         case TOK_GVAR: { advance(p); Node *n = node_new(p->arena, NODE_GVAR, s); n->sval = t.sval; return n; }
+        case TOK_COLON2: {
+            advance(p);
+            Token name = advance(p);
+            if (name.kind != TOK_CONST) {
+                error(p, "expected constant name after '::'", name.line, name.col);
+                return NULL;
+            }
+            Node *n = node_new(p->arena, NODE_CONST, s);
+            n->sval = name.sval;
+            return n;
+        }
         case TOK_CONST: {
             advance(p);
             Token nxt = peek(p);

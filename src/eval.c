@@ -7,9 +7,75 @@
 
 #define CHECK(v) do { if (ev->errored || val_is_signal(v)) return (v); } while(0)
 
+extern char **environ;
+
 static void assign_lvar(Eval *ev, Env *env, const char *name, Value val) {
     if (!env_update(env, name, val))
         env_set(ev->arena, env, name, val);
+}
+
+static Value lookup_const_path(Eval *ev, const char *name) {
+    const char *cursor = name;
+    if (cursor[0] == ':' && cursor[1] == ':')
+        cursor += 2;
+
+    const char *sep = strstr(cursor, "::");
+    if (!sep) {
+        Value v;
+        if (env_get(ev->top_env, cursor, &v))
+            return v;
+        return val_nil();
+    }
+
+    size_t head_len = (size_t)(sep - cursor);
+    char head[256];
+    if (head_len >= sizeof(head))
+        return val_nil();
+    memcpy(head, cursor, head_len);
+    head[head_len] = '\0';
+
+    Value current;
+    if (!env_get(ev->top_env, head, &current))
+        return val_nil();
+
+    cursor = sep + 2;
+    while (1) {
+        sep = strstr(cursor, "::");
+        size_t part_len = sep ? (size_t)(sep - cursor) : strlen(cursor);
+        char part[256];
+        if (part_len >= sizeof(part))
+            return val_nil();
+        memcpy(part, cursor, part_len);
+        part[part_len] = '\0';
+        if (current.kind != VAL_CLASS || !current.klass->class_env)
+            return val_nil();
+        if (!env_get(current.klass->class_env, part, &current))
+            return val_nil();
+        if (!sep) break;
+        cursor = sep + 2;
+    }
+
+    return current;
+}
+
+static void split_const_path(Arena *arena, const char *full_name, const char **parent_out, const char **leaf_out) {
+    const char *cursor = full_name;
+    if (cursor[0] == ':' && cursor[1] == ':')
+        cursor += 2;
+    const char *last = NULL;
+    for (const char *p = cursor; (p = strstr(p, "::")); p += 2)
+        last = p;
+    if (!last) {
+        *parent_out = NULL;
+        *leaf_out = cursor;
+        return;
+    }
+    *leaf_out = last + 2;
+    size_t parent_len = (size_t)(last - cursor);
+    char *parent = arena_alloc(arena, parent_len + 1);
+    memcpy(parent, cursor, parent_len);
+    parent[parent_len] = '\0';
+    *parent_out = parent;
 }
 
 static int validate_special_global_assignment(Eval *ev, Node *target, Value val) {
@@ -189,8 +255,8 @@ static const char *defined_expr(Eval *ev, Env *env, Node *node) {
             return defined_simple_value(ev, env, node, &v) ? "global-variable" : NULL;
         }
         case NODE_CONST: {
-            Value v;
-            return env_get(ev->top_env, node->sval, &v) ? "constant" : NULL;
+            Value v = lookup_const_path(ev, node->sval);
+            return v.kind != VAL_NIL ? "constant" : NULL;
         }
         case NODE_SELF:
             return "self";
@@ -294,8 +360,8 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             return v;
         }
         case NODE_CONST: {
-            Value v;
-            if (!env_get(ev->top_env, node->sval, &v))
+            Value v = lookup_const_path(ev, node->sval);
+            if (v.kind == VAL_NIL)
                 return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", node->sval);
             return v;
         }
@@ -683,8 +749,19 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         }
 
         case NODE_CLASS: {
+            const char *parent_name = NULL;
+            const char *leaf_name = NULL;
+            split_const_path(ev->arena, node->klass.name, &parent_name, &leaf_name);
+            Env *target_env = ev->top_env;
+            if (parent_name) {
+                Value parent = lookup_const_path(ev, parent_name);
+                if (parent.kind != VAL_CLASS)
+                    return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", parent_name);
+                target_env = parent.klass->class_env;
+            }
+
             Value existing;
-            int reopen = env_get(ev->top_env, node->klass.name, &existing) &&
+            int reopen = env_get(target_env, leaf_name, &existing) &&
                          existing.kind == VAL_CLASS;
 
             Value klass;
@@ -700,13 +777,13 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 } else {
                     /* implicit superclass is Object unless we are defining Object itself */
                     Value object_val;
-                    if (strcmp(node->klass.name, "Object") != 0 &&
+                    if (strcmp(leaf_name, "Object") != 0 &&
                         env_get(ev->top_env, "Object", &object_val) &&
                         object_val.kind == VAL_CLASS)
                         superclass = object_val;
                 }
                 klass = val_class(ev->arena, node->klass.name, superclass);
-                klass.klass->class_env = env_new(ev->arena, ev->top_env, 1);
+                klass.klass->class_env = env_new(ev->arena, target_env, 1);
             }
 
             env_set(ev->arena, klass.klass->class_env, "self", klass);
@@ -716,8 +793,10 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 if (val_is_signal(body_result)) return body_result;
             }
 
-            if (!reopen)
+            if (!reopen) {
+                env_define(ev->arena, target_env, leaf_name, klass);
                 env_define(ev->arena, ev->top_env, node->klass.name, klass);
+            }
             return klass;
         }
 
@@ -747,8 +826,19 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         }
 
         case NODE_MODULE: {
+            const char *parent_name = NULL;
+            const char *leaf_name = NULL;
+            split_const_path(ev->arena, node->klass.name, &parent_name, &leaf_name);
+            Env *target_env = ev->top_env;
+            if (parent_name) {
+                Value parent = lookup_const_path(ev, parent_name);
+                if (parent.kind != VAL_CLASS)
+                    return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", parent_name);
+                target_env = parent.klass->class_env;
+            }
+
             Value existing;
-            int reopen = env_get(ev->top_env, node->klass.name, &existing) &&
+            int reopen = env_get(target_env, leaf_name, &existing) &&
                          existing.kind == VAL_CLASS;
 
             Value mod;
@@ -756,7 +846,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 mod = existing;
             } else {
                 mod = val_class(ev->arena, node->klass.name, val_nil());
-                mod.klass->class_env = env_new(ev->arena, ev->top_env, 1);
+                mod.klass->class_env = env_new(ev->arena, target_env, 1);
                 mod.klass->is_module = 1;
             }
 
@@ -767,8 +857,10 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 if (val_is_signal(body_result)) return body_result;
             }
 
-            if (!reopen)
+            if (!reopen) {
+                env_define(ev->arena, target_env, leaf_name, mod);
                 env_define(ev->arena, ev->top_env, node->klass.name, mod);
+            }
             return mod;
         }
 
@@ -861,6 +953,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         "Integer", "Float", "String", "Symbol",
         "Array", "Hash", "Range", "NilClass", "TrueClass", "FalseClass", "IO", "File", "Dir", "Time",
         "Class", "Module", "Method", "UnboundMethod", "Proc", "Regexp", "MatchData", "Comparable", "Enumerable",
+        "Thread", "Process",
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NameError", "NoMethodError", "RegexpError",
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError", "StopIteration", "EOFError",
@@ -872,7 +965,39 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         klass.klass->class_env = env_new(arena, ev->top_env, 1);
         if (strcmp(builtins[i], "Comparable") == 0 || strcmp(builtins[i], "Enumerable") == 0)
             klass.klass->is_module = 1;
+        if (strcmp(builtins[i], "Thread") == 0 || strcmp(builtins[i], "Process") == 0)
+            klass.klass->is_module = 1;
         env_define(arena, ev->top_env, builtins[i], klass);
+    }
+
+    {
+        Value thread_mod;
+        if (env_get(ev->top_env, "Thread", &thread_mod) && thread_mod.kind == VAL_CLASS) {
+            Value mutex_class = val_class(arena, "Thread::Mutex", val_nil());
+            mutex_class.klass->class_env = env_new(arena, ev->top_env, 1);
+            env_define(arena, ev->top_env, "Thread::Mutex", mutex_class);
+            env_define(arena, thread_mod.klass->class_env, "Mutex", mutex_class);
+        }
+    }
+
+    env_define(arena, ev->top_env, "ARGV", val_array_new());
+    env_define(arena, ev->top_env, "RUBY_ENGINE", val_string(arena, "stoned"));
+    env_define(arena, ev->top_env, "RUBY_VERSION", val_string(arena, "4.0.0"));
+    env_define(arena, ev->top_env, "RUBY_PLATFORM", val_string(arena, "x86_64-linux"));
+
+    {
+        Value env_hash = val_hash_new(arena);
+        for (char **entry = environ; entry && *entry; entry++) {
+            const char *eq = strchr(*entry, '=');
+            if (!eq) continue;
+            size_t key_len = (size_t)(eq - *entry);
+            if (key_len == 0) continue;
+            char *key = arena_alloc(arena, key_len + 1);
+            memcpy(key, *entry, key_len);
+            key[key_len] = '\0';
+            val_hash_set(env_hash.hash, val_string(arena, key), val_string(arena, eq + 1));
+        }
+        env_define(arena, ev->top_env, "ENV", env_hash);
     }
 
     Value exception, standard_error, runtime_error, argument_error, type_error, name_error, no_method_error, regexp_error;

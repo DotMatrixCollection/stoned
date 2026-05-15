@@ -1042,7 +1042,7 @@ void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc) {
             for (int j = argi; j < positional_argc; j++) val_array_push(&rest, args[j]);
             bind_pattern(ev, env, p, rest);
             argi = positional_argc;
-            break;
+            continue;
         }
         Value pval = argi < positional_argc ? args[argi]
                    : (p->kind == NODE_PARAM && p->param.default_val
