@@ -176,6 +176,39 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         *out = recv; return 1;
     }
+    if (strcmp(name, "[]=") == 0) {
+        if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        if (args[0].kind == VAL_RANGE) {
+            /* Array[range] = val — replace slice */
+            RubyRange *r = args[0].range;
+            int64_t alen = (int64_t)recv.array->len;
+            int64_t beg = r->begin_val.kind == VAL_INT ? r->begin_val.ival : 0;
+            int64_t end = r->end_val.kind == VAL_INT ? r->end_val.ival : alen;
+            if (beg < 0) beg += alen;
+            if (end < 0) end += alen;
+            if (!r->exclusive) end++;
+            if (beg < 0) beg = 0; if (end > alen) end = alen;
+            /* Simple: rebuild array */
+            Value repl = args[1].kind == VAL_ARRAY ? args[1] : val_array_new();
+            if (args[1].kind != VAL_ARRAY) val_array_push(&repl, args[1]);
+            Value result = val_array_new();
+            for (int64_t i = 0; i < beg; i++) val_array_push(&result, recv.array->elems[i]);
+            for (size_t i = 0; i < repl.array->len; i++) val_array_push(&result, repl.array->elems[i]);
+            for (int64_t i = end; i < alen; i++) val_array_push(&result, recv.array->elems[i]);
+            /* Update in place */
+            recv.array->len = 0;
+            for (size_t i = 0; i < result.array->len; i++) val_array_push(&recv, result.array->elems[i]);
+        } else if (args[0].kind == VAL_INT) {
+            int64_t idx = args[0].ival;
+            if (idx < 0) idx += (int64_t)recv.array->len;
+            if (idx >= 0) {
+                /* Extend array if needed */
+                while ((size_t)idx >= recv.array->len) val_array_push(&recv, val_nil());
+                recv.array->elems[idx] = args[1];
+            }
+        }
+        *out = args[1]; return 1;
+    }
     if (strcmp(name, "<=>") == 0) {
         if (argc < 1 || args[0].kind != VAL_ARRAY) { *out = val_nil(); return 1; }
         size_t alen = recv.array->len, blen = args[0].array->len;
