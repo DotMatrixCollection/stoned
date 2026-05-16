@@ -1090,6 +1090,45 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         }
         *out = recv; return 1;
     }
+    if (strcmp(name, "find") == 0 || strcmp(name, "detect") == 0) {
+        if (!blk) { *out = val_nil(); return 1; }
+        for (size_t i = 0; i < h->len; i++) {
+            Value pair[2] = { h->keys[i], h->vals[i] };
+            Value r = call_block(ev, env, *blk, pair, 2, site);
+            if (val_is_signal(r)) { *out = r; return 1; }
+            if (val_truthy(r)) {
+                Value result = val_array_new();
+                val_array_push(&result, h->keys[i]);
+                val_array_push(&result, h->vals[i]);
+                *out = result; return 1;
+            }
+        }
+        *out = val_nil(); return 1;
+    }
+    if (strcmp(name, "find_all") == 0 || strcmp(name, "filter") == 0 || strcmp(name, "select") == 0) {
+        if (!blk) { *out = recv; return 1; }
+        Value result = val_hash_new(ev->arena);
+        for (size_t i = 0; i < h->len; i++) {
+            Value pair[2] = { h->keys[i], h->vals[i] };
+            Value r = call_block(ev, env, *blk, pair, 2, site);
+            if (val_is_signal(r)) { *out = r; return 1; }
+            if (val_truthy(r)) val_hash_set(result.hash, h->keys[i], h->vals[i]);
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "flat_map") == 0 || strcmp(name, "collect_concat") == 0) {
+        if (!blk) { *out = recv; return 1; }
+        Value result = val_array_new();
+        for (size_t i = 0; i < h->len; i++) {
+            Value pair[2] = { h->keys[i], h->vals[i] };
+            Value r = call_block(ev, env, *blk, pair, 2, site);
+            if (val_is_signal(r)) { *out = r; return 1; }
+            if (r.kind == VAL_ARRAY) {
+                for (size_t j = 0; j < r.array->len; j++) val_array_push(&result, r.array->elems[j]);
+            } else { val_array_push(&result, r); }
+        }
+        *out = result; return 1;
+    }
     if (strcmp(name, "each") == 0 || strcmp(name, "each_pair") == 0) {
         if (!blk) { *out = recv; return 1; }
         for (size_t i = 0; i < h->len; i++) {
@@ -1573,6 +1612,35 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
 
     if (strcmp(name, "to_a") == 0 || strcmp(name, "entries") == 0) {
+        if (r->begin_val.kind == VAL_STRING && r->end_val.kind == VAL_STRING) {
+            /* String range: "a".."e" etc. using String#succ */
+            Value arr = val_array_new();
+            const char *beg = r->begin_val.sval, *end_s = r->end_val.sval;
+            if (strlen(beg) == 1 && strlen(end_s) == 1) {
+                /* Single-char optimization */
+                for (char c = beg[0]; r->exclusive ? c < end_s[0] : c <= end_s[0]; c++) {
+                    char buf[2] = {c, '\0'};
+                    val_array_push(&arr, val_string(ev->arena, buf));
+                }
+            } else {
+                /* Multi-char: use succ-based iteration */
+                Value cur = r->begin_val;
+                int limit = 10000;
+                while (limit-- > 0) {
+                    int cmp_to_end = strcmp(cur.sval, end_s);
+                    if (r->exclusive ? cmp_to_end >= 0 : cmp_to_end > 0) break;
+                    val_array_push(&arr, cur);
+                    /* cur = cur.succ */
+                    Value succ = dispatch_method(ev, env, cur, "succ", NULL, 0, NULL, site, 0, 1);
+                    if (val_is_signal(succ)) { *out = succ; return 1; }
+                    cur = succ;
+                    if (strcmp(cur.sval, end_s) == 0 && !r->exclusive) {
+                        val_array_push(&arr, cur); break;
+                    }
+                }
+            }
+            *out = arr; return 1;
+        }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range#to_a requires Integer range"); return 1; }
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;

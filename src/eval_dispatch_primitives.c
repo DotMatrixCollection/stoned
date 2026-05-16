@@ -244,6 +244,32 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         }
         return 1;
     }
+    if (strcmp(name, "remainder") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        int64_t b = args[0].kind == VAL_INT ? args[0].ival : (int64_t)args[0].fval;
+        if (b == 0) { *out = eval_raise_class(ev, site, "ZeroDivisionError", "divided by 0"); return 1; }
+        *out = val_int(n % b);  /* C's % is truncated, matching Ruby's remainder */
+        return 1;
+    }
+    if (strcmp(name, "integer?") == 0) { *out = val_true(); return 1; }
+    if (strcmp(name, "to_r") == 0) {
+        /* Return a simplified Rational representation as a string for now */
+        char buf[32]; snprintf(buf, sizeof(buf), "(%lld/1)", (long long)n);
+        *out = val_string(ev->arena, buf); return 1;
+    }
+    if (strcmp(name, "to_c") == 0) {
+        char buf[32]; snprintf(buf, sizeof(buf), "(%lld+0i)", (long long)n);
+        *out = val_string(ev->arena, buf); return 1;
+    }
+    if (strcmp(name, "ceil") == 0 || strcmp(name, "floor") == 0 ||
+        strcmp(name, "truncate") == 0 || strcmp(name, "round") == 0) {
+        *out = recv; return 1;  /* integers are already integers */
+    }
+    if (strcmp(name, "fdiv") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        double b = args[0].kind == VAL_FLOAT ? args[0].fval : (double)args[0].ival;
+        *out = val_float(b == 0.0 ? (n >= 0 ? 1.0/0.0 : -1.0/0.0) : (double)n / b); return 1;
+    }
     if (strcmp(name, "divmod") == 0) {
         if (argc < 1 || args[0].kind != VAL_INT) { *out = eval_raise_class(ev, site, "TypeError", "Integer#divmod requires an Integer"); return 1; }
         int64_t b = args[0].ival;
