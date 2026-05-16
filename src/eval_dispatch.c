@@ -2368,13 +2368,20 @@ call_method:
 
     Value result = dispatch_method(ev, env, recv, node->call.method, args, argc, blk, node, 0, 1);
 
-    /* For mutating string methods (<<, concat, replace) on LVAR/IVAR/GVAR receivers,
-       update the binding so the caller sees the mutated value. */
-    if (!val_is_signal(result) && result.kind == VAL_STRING &&
+    /* For mutating methods on LVAR/IVAR/GVAR receivers, update the binding. */
+    if (!val_is_signal(result) &&
+        (result.kind == VAL_STRING || result.kind == VAL_ARRAY || result.kind == VAL_HASH) &&
         (strcmp(node->call.method, "<<") == 0 ||
          strcmp(node->call.method, "concat") == 0 ||
          strcmp(node->call.method, "replace") == 0 ||
-         strcmp(node->call.method, "force_encoding") == 0) &&
+         strcmp(node->call.method, "force_encoding") == 0 ||
+         strcmp(node->call.method, "freeze") == 0 ||
+         strcmp(node->call.method, "upcase!") == 0 ||
+         strcmp(node->call.method, "downcase!") == 0 ||
+         strcmp(node->call.method, "strip!") == 0 ||
+         strcmp(node->call.method, "chomp!") == 0 ||
+         strcmp(node->call.method, "gsub!") == 0 ||
+         strcmp(node->call.method, "sub!") == 0) &&
         node->call.recv) {
         Node *recv_node = node->call.recv;
         if (recv_node->kind == NODE_LVAR)

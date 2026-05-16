@@ -271,6 +271,33 @@ static void assign_target(Eval *ev, Env *env, Node *target, Value val) {
         } else {
             env_define(ev->arena, ev->top_env, target->sval, val);
         }
+    } else if (target->kind == NODE_CALL) {
+        /* Subscript assignment: h[k] = v, obj.attr = v, etc. */
+        Value recv = eval_node(ev, env, target->call.recv ? target->call.recv : target);
+        if (val_is_signal(recv)) { ev->errored = 1; return; }
+        /* Build []=  args: original subscript args + val */
+        Value setargs[65];
+        int setargc = 0;
+        for (NodeList *l = target->call.args; l && setargc < 64; l = l->next) {
+            if (!l->node) continue;
+            Value a = eval_node(ev, env, l->node);
+            if (val_is_signal(a)) { ev->errored = 1; return; }
+            setargs[setargc++] = a;
+        }
+        setargs[setargc++] = val;
+        const char *setter = target->call.method;
+        /* For [] → []= */
+        if (strcmp(setter, "[]") == 0) setter = "[]=";
+        else {
+            /* attr= — append = if not already there */
+            size_t slen = strlen(setter);
+            if (slen > 0 && setter[slen-1] != '=') {
+                char *s = arena_alloc(ev->arena, slen + 2);
+                memcpy(s, setter, slen); s[slen] = '='; s[slen+1] = '\0';
+                setter = s;
+            }
+        }
+        dispatch_method(ev, env, recv, setter, setargs, setargc, NULL, target, 0, 1);
     }
 }
 
