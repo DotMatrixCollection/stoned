@@ -1283,6 +1283,39 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         }
     }
 
+    /* Wire up the class hierarchy superclasses */
+    {
+        static const char *hierarchy[][2] = {
+            {"Integer",   "Numeric"},  {"Float",    "Numeric"},
+            {"Numeric",   "Object"},   {"String",   "Object"},
+            {"Symbol",    "Object"},   {"Array",    "Object"},
+            {"Hash",      "Object"},   {"Range",    "Object"},
+            {"Regexp",    "Object"},   {"NilClass", "Object"},
+            {"TrueClass", "Object"},   {"FalseClass","Object"},
+            {"IO",        "Object"},   {"File",     "IO"},
+            {"Proc",      "Object"},   {"Method",   "Object"},
+            {"UnboundMethod","Object"},{"Binding",  "Object"},
+            {"Exception", "Object"},   {"StandardError","Exception"},
+            {"RuntimeError","StandardError"}, {"TypeError","StandardError"},
+            {"ArgumentError","StandardError"},{"NameError","StandardError"},
+            {"NoMethodError","NameError"},    {"StopIteration","StandardError"},
+            {"RangeError","StandardError"},   {"IOError","StandardError"},
+            {"KeyError","StandardError"},     {"ZeroDivisionError","StandardError"},
+            {"NotImplementedError","StandardError"},
+            {"EncodingError","StandardError"},{"FrozenError","RuntimeError"},
+            {"LoadError","StandardError"},    {"SyntaxError","StandardError"},
+            {"BasicObject","Object"},
+            {NULL, NULL}
+        };
+        for (int hi = 0; hierarchy[hi][0]; hi++) {
+            Value child, parent;
+            if (env_get(ev->top_env, hierarchy[hi][0], &child) && child.kind == VAL_CLASS &&
+                env_get(ev->top_env, hierarchy[hi][1], &parent) && parent.kind == VAL_CLASS) {
+                child.klass->superclass = parent;
+            }
+        }
+    }
+
     env_define(arena, ev->top_env, "ARGV", val_array_new());
     env_define(arena, ev->top_env, "RUBY_ENGINE", val_string(arena, "stoned"));
     env_define(arena, ev->top_env, "RUBY_VERSION", val_string(arena, "4.0.0"));

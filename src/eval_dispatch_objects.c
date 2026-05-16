@@ -1014,6 +1014,23 @@ static int singleton_class_method_lookup(Eval *ev, Env *env, Value recv, const c
     return singleton_env && env_get(singleton_env, name, out) && out->kind == VAL_METHOD;
 }
 
+static const char *primitive_methods_for_class(const char *klass_name) {
+    /* Returns a comma-sep list of primitive methods; used for instance_methods reflection */
+    if (strcmp(klass_name, "Integer") == 0 || strcmp(klass_name, "Numeric") == 0)
+        return "to_s,to_i,to_f,to_r,to_c,inspect,+,-,*,/,%,**,<,<=,>,>=,<=>,==,!=,abs,divmod,gcd,lcm,pow,digits,chr,succ,pred,next,times,upto,downto,step,zero?,nonzero?,positive?,negative?,odd?,even?,integer?,between?,clamp,floor,ceil,round,truncate,fdiv,remainder,gcd,lcm,bit_length,size,[]";
+    if (strcmp(klass_name, "Float") == 0)
+        return "to_s,to_i,to_f,to_r,inspect,+,-,*,/,%,**,<,<=,>,>=,<=>,==,abs,divmod,floor,ceil,round,truncate,nan?,infinite?,finite?,zero?,positive?,negative?,between?,clamp";
+    if (strcmp(klass_name, "String") == 0)
+        return "to_s,to_i,to_f,to_sym,to_str,length,size,empty?,upcase,downcase,capitalize,swapcase,strip,lstrip,rstrip,chomp,chop,chars,bytes,lines,split,join,include?,start_with?,end_with?,index,rindex,[],[]=,slice,replace,reverse,center,ljust,rjust,count,delete,squeeze,tr,scan,sub,gsub,match,match?,=~,ord,hex,oct,succ,next,encode,encoding,freeze,frozen?,dup,clone,inspect,<<,+,*,each_line,each_char,each_byte,insert,delete_prefix,delete_suffix,b,unicode_normalize,force_encoding,valid_encoding?,ascii_only?,bytesize";
+    if (strcmp(klass_name, "Symbol") == 0)
+        return "to_s,to_sym,to_proc,id2name,inspect,length,size,upcase,downcase,capitalize,match,match?,=~,[]";
+    if (strcmp(klass_name, "Array") == 0)
+        return "length,size,count,empty?,first,last,push,pop,shift,unshift,append,prepend,<<,+,-,&,|,*,flatten,compact,uniq,sort,sort_by,reverse,map,collect,select,filter,reject,each,each_with_index,each_with_object,each_slice,each_cons,flat_map,collect_concat,inject,reduce,zip,product,combination,permutation,sample,shuffle,include?,index,find_index,rindex,to_a,join,min,max,min_by,max_by,minmax,minmax_by,sum,any?,all?,none?,count,tally,group_by,chunk,chunk_while,slice_when,rotate,take,take_while,drop,drop_while,flatten,flatten!,inspect,to_s,freeze,frozen?,dup,clone,pack,[]";
+    if (strcmp(klass_name, "Hash") == 0)
+        return "keys,values,length,size,empty?,has_key?,has_value?,key?,value?,include?,member?,fetch,merge,merge!,update,delete,each,each_pair,each_key,each_value,map,select,filter,reject,any?,all?,none?,count,sum,flat_map,find,detect,min_by,max_by,sort_by,group_by,each_with_object,transform_keys,transform_values,transform_keys!,transform_values!,to_a,to_h,invert,inspect,to_s,freeze,frozen?,dup,clone,[],[]=";
+    return NULL;
+}
+
 static int primitive_unbound_method_name(const char *name) {
     static const char *names[] = {
         "inspect", "to_s", "class",
@@ -2453,6 +2470,25 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         } else {
             collect_own_instance_methods(recv.klass->class_env, &arr, vis_mask);
         }
+        /* Add primitive methods for known builtin classes */
+        if ((vis_mask & 1) && strcmp(name, "private_instance_methods") != 0) {
+            const char *prim_list = primitive_methods_for_class(recv.klass->name);
+            if (prim_list) {
+                const char *p = prim_list;
+                while (*p) {
+                    const char *end = strchr(p, ','); size_t len = end ? (size_t)(end-p) : strlen(p);
+                    if (len < 128) {
+                        char *mname = arena_alloc(ev->arena, len + 1);
+                        memcpy(mname, p, len); mname[len] = '\0';
+                        int dup = 0;
+                        for (size_t ai = 0; ai < arr.array->len; ai++)
+                            if (arr.array->elems[ai].kind == VAL_SYMBOL && strcmp(arr.array->elems[ai].sval, mname) == 0) { dup = 1; break; }
+                        if (!dup) val_array_push(&arr, val_symbol(mname));
+                    }
+                    if (!end) break; p = end + 1;
+                }
+            }
+        }
         *out = arr;
         return 1;
     }
@@ -2485,8 +2521,19 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
         if (!mname) { *out = eval_raise_class(ev, site, "TypeError", "expected Symbol or String"); return 1; }
         Value method_val; RubyClass *owner = NULL;
-        if (!ruby_class_find_instance_method(recv.klass, mname, &method_val, &owner) &&
-            !primitive_unbound_method_name(mname)) {
+        /* Check if it's a primitive method for this class */
+        const char *prim_list = primitive_methods_for_class(recv.klass->name);
+        int is_primitive = primitive_unbound_method_name(mname);
+        if (!is_primitive && prim_list) {
+            /* scan comma-separated list */
+            const char *p = prim_list;
+            while (*p) {
+                const char *end = strchr(p, ','); size_t len = end ? (size_t)(end-p) : strlen(p);
+                if (strlen(mname) == len && strncmp(mname, p, len) == 0) { is_primitive = 1; break; }
+                if (!end) break; p = end + 1;
+            }
+        }
+        if (!ruby_class_find_instance_method(recv.klass, mname, &method_val, &owner) && !is_primitive) {
             *out = eval_raise_class(ev, site, "NameError", "undefined method '%s' for class '%s'", mname, recv.klass->name);
             return 1;
         }
