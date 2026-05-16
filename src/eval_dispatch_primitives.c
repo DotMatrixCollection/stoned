@@ -1000,6 +1000,45 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = val_string_n(ev->arena, s + bstart, bend - bstart);
             return 1;
         }
+        /* Regex match: s[/pattern/] or s[/pattern/, capture_group_idx] */
+        if (value_is_regexp(args[0])) {
+            Regex *compiled = args[0].obj->native;
+            if (!compiled) {
+                Value src;
+                RegexError rerr = {0};
+                if (!val_object_get_ivar(args[0], "source", &src) || src.kind != VAL_STRING ||
+                    regex_compile(ev->arena, src.sval, 0, &compiled, &rerr) != REGEX_OK) {
+                    *out = val_nil(); return 1;
+                }
+                args[0].obj->native = compiled;
+            }
+            RegexMatch m = {0, 0, 0, NULL, NULL};
+            size_t blen = strlen(s);
+            if (regex_search(compiled, s, blen, 0, &m) != REGEX_OK) { *out = val_nil(); return 1; }
+            if (argc >= 2 && args[1].kind == VAL_INT) {
+                int64_t ci = args[1].ival;
+                if (ci == 0) {
+                    *out = val_string_n(ev->arena, s + (size_t)m.beg, (size_t)(m.end - m.beg));
+                } else if (ci > 0 && ci <= (int64_t)m.capture_count &&
+                           m.cap_beg[ci-1] >= 0) {
+                    *out = val_string_n(ev->arena, s + (size_t)m.cap_beg[ci-1],
+                                       (size_t)(m.cap_end[ci-1] - m.cap_beg[ci-1]));
+                } else {
+                    *out = val_nil();
+                }
+            } else {
+                *out = val_string_n(ev->arena, s + (size_t)m.beg, (size_t)(m.end - m.beg));
+            }
+            regex_match_free(&m);
+            return 1;
+        }
+        /* String match: s[substr] */
+        if (args[0].kind == VAL_STRING) {
+            const char *needle = args[0].sval;
+            const char *found = strstr(s, needle);
+            *out = found ? val_string(ev->arena, needle) : val_nil();
+            return 1;
+        }
         int64_t idx = args[0].kind == VAL_INT ? args[0].ival : 0;
         if (idx < 0) idx += (int64_t)slen;
         if (idx < 0 || (size_t)idx >= slen) { *out = val_nil(); return 1; }
@@ -1319,6 +1358,19 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 const char *repl;
                 if (blk) {
                     Value matched = val_string_n(ev->arena, s + (size_t)m.beg, mlen);
+                    /* Set $~, $1..$9 from capture groups before calling block */
+                    {
+                        static const char *cap_keys[] = {"1","2","3","4","5","6","7","8","9"};
+                        for (size_t ci = 0; ci < m.capture_count && ci < 9; ci++) {
+                            Value cv = (m.cap_beg[ci] >= 0 && m.cap_end[ci] >= m.cap_beg[ci])
+                                ? val_string_n(ev->arena, s + (size_t)m.cap_beg[ci],
+                                               (size_t)(m.cap_end[ci] - m.cap_beg[ci]))
+                                : val_nil();
+                            global_set(ev->arena, &ev->globals, cap_keys[ci], cv);
+                        }
+                        for (size_t ci = m.capture_count; ci < 9; ci++)
+                            global_set(ev->arena, &ev->globals, cap_keys[ci], val_nil());
+                    }
                     regex_match_free(&m);
                     Value r = call_block(ev, env, *blk, &matched, 1, site);
                     if (ev->errored) { free(buf); *out = val_nil(); return 1; }
