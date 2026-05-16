@@ -52,7 +52,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `347 passed, 0 failed, 347 total`.
+Current coverage in the tree: `347 passed, 0 failed, 347 total`. Session 7 additions: `Float::INFINITY`, `Enumerator::Lazy`, `Array#chunk/chunk_while`, Symbol methods, `Integer#clamp(range)`, Class comparison operators, `Kernel.instance_method`, StringIO shim, `execute_as_command?` fix enabling IRB commands, subscript compound assignment (`h[k]+=1`), numeric underscore separators (`1_000_000`), `Array#[]=`, `String#chomp(sep)`, `String/Range#to_a` for string ranges, and many more.
 
 What is working today:
 
