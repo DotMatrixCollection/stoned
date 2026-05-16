@@ -116,83 +116,124 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
             continue;
         }
 
-        int width = 0;
-        int precision = -1;
-        while (isdigit((unsigned char)fmt[i])) {
-            width = width * 10 + (fmt[i] - '0');
+        /* Collect flags, width, precision, type into a single format spec */
+        char spec[64] = "%";
+        size_t slen = 1;
+        /* flags */
+        while (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == '0' ||
+               fmt[i] == ' ' || fmt[i] == '#') {
+            if (slen < sizeof(spec) - 1) spec[slen++] = fmt[i];
             i++;
         }
-        if (fmt[i] == '.') {
-            precision = 0;
+        /* width */
+        if (fmt[i] == '*') {
+            /* dynamic width from args */
+            if (argi < argc && args[argi].kind == VAL_INT) {
+                int wv = (int)args[argi++].ival;
+                int wlen = snprintf(spec + slen, sizeof(spec) - slen, "%d", wv < 0 ? -wv : wv);
+                slen += wlen > 0 ? (size_t)wlen : 0;
+                if (wv < 0 && slen < sizeof(spec) - 1) { memmove(spec+2, spec+1, slen-1); spec[1]='-'; slen++; }
+            }
             i++;
-            while (isdigit((unsigned char)fmt[i])) {
-                precision = precision * 10 + (fmt[i] - '0');
-                i++;
+        } else {
+            while (isdigit((unsigned char)fmt[i]) && slen < sizeof(spec) - 1) {
+                spec[slen++] = fmt[i++];
             }
         }
+        /* precision */
+        if (fmt[i] == '.') {
+            if (slen < sizeof(spec) - 1) spec[slen++] = '.';
+            i++;
+            while (isdigit((unsigned char)fmt[i]) && slen < sizeof(spec) - 1) {
+                spec[slen++] = fmt[i++];
+            }
+        }
+        spec[slen] = '\0';
 
         if (argi >= argc) {
             free(buf);
             return eval_raise_class(ev, site, "ArgumentError", "too few arguments for format string");
         }
 
-        char tmp[256];
+        char tmp[4096];
         const char *piece = tmp;
         size_t piece_len = 0;
         Value v = args[argi++];
 
+        char full_spec[68];
+        int nlen;
         switch (fmt[i]) {
             case 's': {
-                piece = val_to_s(ev->arena, v);
-                piece_len = strlen(piece);
-                break;
-            }
-            case 'd':
-            case 'i': {
-                int64_t n;
-                if (v.kind == VAL_INT) n = v.ival;
-                else if (v.kind == VAL_FLOAT) n = (int64_t)v.fval;
-                else {
-                    free(buf);
-                    return eval_raise_class(ev, site, "TypeError", "can't convert %s into Integer", val_kind_name(v.kind));
-                }
-                int nlen;
-                if (width > 0) nlen = snprintf(tmp, sizeof(tmp), "%*lld", width, (long long)n);
-                else nlen = snprintf(tmp, sizeof(tmp), "%lld", (long long)n);
+                const char *sv = val_to_s(ev->arena, v);
+                snprintf(full_spec, sizeof(full_spec), "%ss", spec);
+                nlen = snprintf(tmp, sizeof(tmp), full_spec, sv);
                 piece_len = nlen < 0 ? 0 : (size_t)nlen;
                 break;
             }
-            case 'f': {
-                double f;
-                if (v.kind == VAL_FLOAT) f = v.fval;
-                else if (v.kind == VAL_INT) f = (double)v.ival;
-                else {
-                    free(buf);
-                    return eval_raise_class(ev, site, "TypeError", "can't convert %s into Float", val_kind_name(v.kind));
-                }
-                char spec[32];
-                if (precision >= 0 && width > 0) snprintf(spec, sizeof(spec), "%%%d.%df", width, precision);
-                else if (precision >= 0) snprintf(spec, sizeof(spec), "%%.%df", precision);
-                else if (width > 0) snprintf(spec, sizeof(spec), "%%%df", width);
-                else snprintf(spec, sizeof(spec), "%%f");
-                int nlen = snprintf(tmp, sizeof(tmp), spec, f);
+            case 'p': {
+                const char *sv = val_inspect(ev->arena, v);
+                snprintf(full_spec, sizeof(full_spec), "%ss", spec);
+                nlen = snprintf(tmp, sizeof(tmp), full_spec, sv);
                 piece_len = nlen < 0 ? 0 : (size_t)nlen;
                 break;
+            }
+            case 'd': case 'i': {
+                int64_t n = v.kind == VAL_INT ? v.ival : (v.kind == VAL_FLOAT ? (int64_t)v.fval : 0);
+                snprintf(full_spec, sizeof(full_spec), "%slld", spec);
+                nlen = snprintf(tmp, sizeof(tmp), full_spec, (long long)n);
+                piece_len = nlen < 0 ? 0 : (size_t)nlen;
+                break;
+            }
+            case 'u': {
+                uint64_t n = (uint64_t)(v.kind == VAL_INT ? v.ival : 0);
+                snprintf(full_spec, sizeof(full_spec), "%sllu", spec);
+                nlen = snprintf(tmp, sizeof(tmp), full_spec, (unsigned long long)n);
+                piece_len = nlen < 0 ? 0 : (size_t)nlen;
+                break;
+            }
+            case 'f': case 'e': case 'E': case 'g': case 'G': {
+                double f = v.kind == VAL_FLOAT ? v.fval : (v.kind == VAL_INT ? (double)v.ival : 0.0);
+                snprintf(full_spec, sizeof(full_spec), "%s%c", spec, fmt[i]);
+                nlen = snprintf(tmp, sizeof(tmp), full_spec, f);
+                piece_len = nlen < 0 ? 0 : (size_t)nlen;
+                break;
+            }
+            case 'x': case 'X': {
+                uint64_t n = (uint64_t)(v.kind == VAL_INT ? v.ival : 0);
+                snprintf(full_spec, sizeof(full_spec), "%sll%c", spec, fmt[i]);
+                nlen = snprintf(tmp, sizeof(tmp), full_spec, (unsigned long long)n);
+                piece_len = nlen < 0 ? 0 : (size_t)nlen;
+                break;
+            }
+            case 'o': {
+                uint64_t n = (uint64_t)(v.kind == VAL_INT ? v.ival : 0);
+                snprintf(full_spec, sizeof(full_spec), "%sllo", spec);
+                nlen = snprintf(tmp, sizeof(tmp), full_spec, (unsigned long long)n);
+                piece_len = nlen < 0 ? 0 : (size_t)nlen;
+                break;
+            }
+            case 'b': {
+                /* Binary — C doesn't have %b, do it manually */
+                int64_t n = v.kind == VAL_INT ? v.ival : 0;
+                if (n == 0) { tmp[0]='0'; tmp[1]='\0'; piece_len=1; break; }
+                char bitbuf[70]; int bi = 0;
+                uint64_t un = (uint64_t)n;
+                while (un) { bitbuf[bi++] = (un & 1) ? '1' : '0'; un >>= 1; }
+                /* reverse */
+                for (int li=0, ri=bi-1; li<ri; li++,ri--) { char c=bitbuf[li]; bitbuf[li]=bitbuf[ri]; bitbuf[ri]=c; }
+                bitbuf[bi] = '\0';
+                piece = bitbuf; piece_len = bi;
+                break;
+            }
+            case 'c': {
+                tmp[0] = (char)(v.kind == VAL_INT ? (v.ival & 0xFF) : 0);
+                tmp[1] = '\0'; piece_len = 1; break;
             }
             default:
                 free(buf);
                 return eval_raise_class(ev, site, "ArgumentError", "unsupported format specifier '%c'", fmt[i]);
         }
 
-        if (fmt[i] == 's' && width > 0 && piece_len < (size_t)width) {
-            size_t pad = (size_t)width - piece_len;
-            for (size_t j = 0; j < pad; j++) {
-                if (!append_dynamic(&buf, &cap, &used, " ", 1)) {
-                    free(buf);
-                    return eval_raise_class(ev, site, "RuntimeError", "out of memory");
-                }
-            }
-        }
         if (!append_dynamic(&buf, &cap, &used, piece, piece_len)) {
             free(buf);
             return eval_raise_class(ev, site, "RuntimeError", "out of memory");
@@ -1477,8 +1518,39 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         return val_true();
     if (strcmp(path, "forwardable") == 0 || strcmp(path, "forwardable.rb") == 0)
         return val_true();
-    if (strcmp(path, "ostruct") == 0 || strcmp(path, "ostruct.rb") == 0)
-        return val_true();
+    if (strcmp(path, "ostruct") == 0 || strcmp(path, "ostruct.rb") == 0) {
+        static const char *ostruct_shim =
+"class OpenStruct\n"
+"  def initialize(hash = {})\n"
+"    @table = hash.to_h\n"
+"  end\n"
+"  def [](key)\n"
+"    @table[key.to_sym]\n"
+"  end\n"
+"  def []=(key, val)\n"
+"    @table[key.to_sym] = val\n"
+"    self\n"
+"  end\n"
+"  def to_h; @table.dup; end\n"
+"  def respond_to_missing?(name, include_private = false)\n"
+"    @table.key?(name.to_s.chomp('=').to_sym) || super\n"
+"  end\n"
+"  def method_missing(name, *args)\n"
+"    n = name.to_s\n"
+"    if n.end_with?('=')\n"
+"      @table[n.chomp('=').to_sym] = args[0]\n"
+"    else\n"
+"      @table[name]\n"
+"    end\n"
+"  end\n"
+"  def inspect\n"
+"    parts = @table.map{|k,v| \"#{k}=#{v.inspect}\"}.join(\", \")\n"
+"    \"#<OpenStruct #{parts}>\"\n"
+"  end\n"
+"  def to_s; inspect; end\n"
+"end\n";
+        return eval_ruby_string(ev, ostruct_shim, "ostruct_shim", site);
+    }
     if (strcmp(path, "tmpdir") == 0 || strcmp(path, "tmpdir.rb") == 0)
         return val_true();
     if (strcmp(path, "tempfile") == 0 || strcmp(path, "tempfile.rb") == 0)

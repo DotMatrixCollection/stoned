@@ -967,6 +967,20 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         }
         return val_nil();
     }
+    if (strcmp(name, "printf") == 0) {
+        /* printf([io,] format, *args) — write formatted string to stdout */
+        if (argc < 1) return val_nil();
+        int fmt_idx = 0;
+        /* Check if first arg is an IO object (skip it) */
+        if (args[0].kind == VAL_OBJECT) fmt_idx = 1;
+        if (fmt_idx >= argc) return val_nil();
+        const char *fmt = args[fmt_idx].kind == VAL_STRING ? args[fmt_idx].sval : val_to_s(ev->arena, args[fmt_idx]);
+        Value result = eval_format_string(ev, env, fmt, args + fmt_idx + 1, argc - fmt_idx - 1, site);
+        if (val_is_signal(result)) return result;
+        if (result.kind == VAL_STRING)
+            fprintf(ev->out, "%s", result.sval);
+        return val_nil();
+    }
     if (strcmp(name, "format") == 0 || strcmp(name, "sprintf") == 0) {
         if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         const char *fmt = val_to_s(ev->arena, args[0]);
@@ -2043,7 +2057,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
+            "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "printf", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload",

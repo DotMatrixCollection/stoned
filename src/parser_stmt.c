@@ -90,12 +90,11 @@ static const char *method_name_from_token(Parser *p, Token tok) {
         case TOK_LSHIFT: return "<<";
         case TOK_RSHIFT: return ">>";
         case TOK_LBRACKET:
-            if (match(p, TOK_RBRACKET)) return "[]";
-            if (match(p, TOK_EQ)) {
-                expect(p, TOK_RBRACKET, "expected ']'");
-                return "[]=";
+            if (match(p, TOK_RBRACKET)) {
+                if (match(p, TOK_EQ)) return "[]=";
+                return "[]";
             }
-            error(p, "expected ']' or ']=' after '[' in method name", tok.line, tok.col);
+            error(p, "expected ']' after '[' in method name", tok.line, tok.col);
             return NULL;
         default:
             return NULL;
