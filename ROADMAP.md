@@ -175,6 +175,18 @@ Recent Stage 5 progress already landed:
 - `String#to_i(base)`: now accepts base 2–36 via `strtoll`; `"ff".to_i(16)` = 255, `"1010".to_i(2)` = 10
 - Regex match globals: `$~` (MatchData), `$1`–`$9` (capture groups) now set after every `=~`, `String#match`, `Regexp#match`, and `Regexp#=~`; cleared to nil on no-match. Bug was stack-allocated key strings passed to `global_set` which stores the pointer — fixed with static key table
 - Blockless iterators now return arrays instead of raising `LocalJumpError`: `Integer#times`, `upto`, `downto`, `step`; `Array#each`, `each_with_index`; `Hash#each`/`each_pair`, `each_key`, `each_value`; `Range#each`, `each_with_index` — enables all common chained patterns (`3.times.map {}`, `arr.each_with_index.select {}`, etc.) without a full Enumerator implementation
+- Namespaced constant paths (`Foo::Bar`) in parser, eval, and const lookup; `Module.constants`, `Module#constants`; nested constant assignment (`Outer::K = v`); `private_constant`/`public_constant`/`deprecate_constant` no-ops
+- ENV hash populated from host environment; ARGV, RUBY_ENGINE/VERSION/PLATFORM/DESCRIPTION/PATCHLEVEL/REVISION/RELEASE_DATE/COPYRIGHT; Marshal::MAJOR_VERSION/MINOR_VERSION; Thread::Mutex stub with synchronize; Process.pid; rbconfig.rb shim
+- Lexer: 0o/0O octal notation, %r{} percent-regexp literals, ?x char literals, regexp starting with `=` or `=~` now lex correctly
+- Parser: beginless/endless ranges (`..expr`, `expr..`, standalone `..`); multiple-assignment in modifier position (`a, b = x if cond`); for-loop destructuring (`for a, b in coll`); `def Const::path` method definitions; hashrocket hash args in command-call position (`f key => val`); `do` block correctly bound after parenthesized call; yield/proc keyword bare params; yield in modifier position
+- Binding: `local_variable_get`/`set`, `eval` with env injection, `source_location`, `dup`
+- `define_method` with block and symbol name; `method_defined?` guard pattern; `UnboundMethod#bind_call`
+- `using` no-op (refinement block silently accepted, returns nil)
+- IO/console compatibility: `IO.open` with option hash (`external_encoding`, `internal_encoding`); `IO.console_size`; `IO#winsize`, `external_encoding`, `internal_encoding`, `to_i`, `to_int`, `wait_readable` (no-op), `ungetc`; `raw`/`cooked`/`raw!`/`cooked!` wrappers; `require "io/console"` and `require "io/console/size"` load guards
+- Reline, Prism, Singleton module stubs (sub-modules and classes); Pathname stub; Struct.new member access
+- Singleton methods on Array and Hash objects; `attr_reader`/`attr_writer` in singleton env; singleton class expression (`class << obj`)
+- `alias` now resolves builtin methods by probe dispatch, not env-only lookup; nested class body no longer inherits singleton-class def-target from an enclosing `class << self`
+- `Regexp.union` with strings and arrays of strings/regexps; `Regexp#inspect` for union results
 
 Exit gate:
 
