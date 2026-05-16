@@ -993,6 +993,38 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = arr;
         return 1;
     }
+    if (strcmp(name, "unpack") == 0 || strcmp(name, "unpack1") == 0) {
+        if (argc < 1 || args[0].kind != VAL_STRING) { *out = val_array_new(); return 1; }
+        const char *tmpl = args[0].sval;
+        Value arr = val_array_new();
+        size_t si = 0, slen = strlen(s);
+        for (size_t ti = 0; tmpl[ti] && si < slen; ti++) {
+            char dir = tmpl[ti];
+            int count = 1, star = 0;
+            if (tmpl[ti+1] == '*') { star = 1; ti++; count = (int)(slen - si); }
+            else if (isdigit((unsigned char)tmpl[ti+1])) { count = 0; while (isdigit((unsigned char)tmpl[ti+1])) count = count*10 + (tmpl[++ti] - '0'); }
+            for (int ci = 0; ci < count && si < slen; ci++) {
+                switch (dir) {
+                    case 'C': case 'c': val_array_push(&arr, val_int((dir=='c')?(int8_t)(unsigned char)s[si]:(unsigned char)s[si])); si++; break;
+                    case 'A': case 'a': case 'Z': {
+                        /* eat until null or end */
+                        size_t end = si; while (end < slen && s[end]) end++;
+                        val_array_push(&arr, val_string_n(ev->arena, s+si, end-si)); si = end+1; break;
+                    }
+                    default: si++; break;
+                }
+            }
+            if (star) break;
+        }
+        if (strcmp(name, "unpack1") == 0) {
+            *out = arr.array->len > 0 ? arr.array->elems[0] : val_nil();
+        } else { *out = arr; }
+        return 1;
+    }
+    if (strcmp(name, "b") == 0) {
+        /* Return string with binary encoding (stub: return as-is) */
+        *out = recv; return 1;
+    }
     if (strcmp(name, "+") == 0 || strcmp(name, "<<") == 0 || strcmp(name, "concat") == 0) {
         if (argc < 1) { *out = recv; return 1; }
         if (strcmp(name, "<<") == 0 && recv.frozen)
@@ -1124,7 +1156,11 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "each_line") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "String#each_line requires a block"); return 1; }
+        if (!blk) {
+            /* No block: return array of lines */
+            *out = dispatch_method(ev, env, recv, "lines", args, argc, blk, site, 0, 1);
+            return 1;
+        }
         const char *p = s;
         while (*p) {
             const char *nl = strchr(p, '\n');
@@ -1428,7 +1464,38 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     repl = val_to_s(ev->arena, r);
                 } else {
                     if (argc < 2) { free(buf); regex_match_free(&m); *out = eval_raise_class(ev, site, "ArgumentError", "String#%s requires a replacement or block", name); return 1; }
-                    repl = val_to_s(ev->arena, args[1]);
+                    const char *raw = val_to_s(ev->arena, args[1]);
+                    /* Expand backreferences: \1..\9, \0/\& (match), \\ (literal \) */
+                    {
+                        size_t rraw = strlen(raw), rout_cap = rraw * 2 + 64;
+                        char *rout = arena_alloc(ev->arena, rout_cap);
+                        size_t ri = 0, ro = 0;
+                        while (ri < rraw) {
+                            if (raw[ri] == '\\' && ri + 1 < rraw) {
+                                char next = raw[ri + 1];
+                                if (next >= '1' && next <= '9') {
+                                    int ci = next - '1';
+                                    if (ci < (int)m.capture_count && m.cap_beg[ci] >= 0) {
+                                        size_t clen = (size_t)(m.cap_end[ci] - m.cap_beg[ci]);
+                                        while (ro + clen + 1 > rout_cap) { rout_cap *= 2; char *nr = arena_alloc(ev->arena, rout_cap); memcpy(nr, rout, ro); rout = nr; }
+                                        memcpy(rout + ro, s + m.cap_beg[ci], clen); ro += clen;
+                                    }
+                                    ri += 2; continue;
+                                }
+                                if (next == '0' || next == '&') {
+                                    size_t mlen2 = (size_t)(m.end - m.beg);
+                                    while (ro + mlen2 + 1 > rout_cap) { rout_cap *= 2; char *nr = arena_alloc(ev->arena, rout_cap); memcpy(nr, rout, ro); rout = nr; }
+                                    memcpy(rout + ro, s + m.beg, mlen2); ro += mlen2;
+                                    ri += 2; continue;
+                                }
+                                if (next == '\\') { if (ro + 2 > rout_cap) { rout_cap *= 2; char *nr = arena_alloc(ev->arena, rout_cap); memcpy(nr, rout, ro); rout = nr; } rout[ro++] = '\\'; ri += 2; continue; }
+                            }
+                            if (ro + 2 > rout_cap) { rout_cap *= 2; char *nr = arena_alloc(ev->arena, rout_cap); memcpy(nr, rout, ro); rout = nr; }
+                            rout[ro++] = raw[ri++];
+                        }
+                        rout[ro] = '\0';
+                        repl = rout;
+                    }
                     regex_match_free(&m);
                 }
                 size_t rlen = strlen(repl);

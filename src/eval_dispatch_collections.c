@@ -1,5 +1,6 @@
 #include "eval_internal.h"
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -571,6 +572,49 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         if (group.array->len > 0) val_array_push(&result, group);
         *out = result; return 1;
+    }
+    if (strcmp(name, "pack") == 0) {
+        if (argc < 1 || args[0].kind != VAL_STRING) { *out = eval_raise_class(ev, site, "ArgumentError", "Array#pack requires a template string"); return 1; }
+        const char *tmpl = args[0].sval;
+        size_t out_cap = recv.array->len + 16, out_len = 0;
+        char *out_buf = malloc(out_cap);
+        if (!out_buf) { *out = val_nil(); return 1; }
+        size_t ai = 0; /* array index */
+        for (size_t ti = 0; tmpl[ti] && ai <= recv.array->len; ti++) {
+            char dir = tmpl[ti];
+            /* Parse count: * means all remaining, N means N times */
+            int count = 1, star = 0;
+            if (tmpl[ti+1] == '*') { star = 1; ti++; count = (int)(recv.array->len - ai); }
+            else if (isdigit((unsigned char)tmpl[ti+1])) {
+                count = 0;
+                while (isdigit((unsigned char)tmpl[ti+1])) { count = count*10 + (tmpl[++ti] - '0'); }
+            }
+            for (int ci = 0; ci < count && ai < recv.array->len; ci++, ai++) {
+                Value v = recv.array->elems[ai];
+                if (out_len + 8 > out_cap) { out_cap *= 2; char *nb = realloc(out_buf, out_cap); if (!nb) { free(out_buf); *out = val_nil(); return 1; } out_buf = nb; }
+                switch (dir) {
+                    case 'C': case 'c': { uint8_t b = (uint8_t)(v.kind==VAL_INT ? v.ival : 0); out_buf[out_len++] = (char)b; break; }
+                    case 'S': case 's': { uint16_t n2 = (uint16_t)(v.kind==VAL_INT ? v.ival : 0); memcpy(out_buf+out_len, &n2, 2); out_len+=2; break; }
+                    case 'L': case 'l': { uint32_t n4 = (uint32_t)(v.kind==VAL_INT ? v.ival : 0); memcpy(out_buf+out_len, &n4, 4); out_len+=4; break; }
+                    case 'Q': case 'q': { uint64_t n8 = (uint64_t)(v.kind==VAL_INT ? v.ival : 0); memcpy(out_buf+out_len, &n8, 8); out_len+=8; break; }
+                    case 'A': case 'a': case 'Z': {
+                        const char *sv = (v.kind==VAL_STRING) ? v.sval : "";
+                        size_t sl = strlen(sv);
+                        while (out_len + sl + 2 > out_cap) { out_cap *= 2; char *nb = realloc(out_buf, out_cap); if (!nb) { free(out_buf); *out=val_nil(); return 1; } out_buf = nb; }
+                        memcpy(out_buf+out_len, sv, sl); out_len += sl;
+                        if (dir == 'Z') out_buf[out_len++] = '\0'; /* null-terminated */
+                        break;
+                    }
+                    default: break;
+                }
+            }
+            if (star) break;
+        }
+        char *result = arena_alloc(ev->arena, out_len + 1);
+        memcpy(result, out_buf, out_len); result[out_len] = '\0';
+        free(out_buf);
+        *out = val_string_n(ev->arena, result, out_len);
+        return 1;
     }
     if (strcmp(name, "flatten") == 0) {
         int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : -1;
