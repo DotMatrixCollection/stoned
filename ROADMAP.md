@@ -221,6 +221,22 @@ Recent Stage 5 progress already landed:
 - `String#[]` with Regexp argument: performs regex_search and returns matched substring; `String#[regex, n]` returns nth capture group
 - `String#[]` with String argument: substring match
 - **birb complete**: `IRB.start` runs the full REPL loop through prompt generation and exits 0 on EOF
+- `NODE_LVAR` now returns nil (not NameError) when a variable was seen by the parser but not yet assigned — matches Ruby semantics for conditional branches
+- `class << self` now saves/restores `__visibility__` in addition to `__singleton_target__` so `private` inside singleton blocks doesn't bleed into the outer class body
+- `String#<<` and `String#concat` mutation propagation: for LVAR/IVAR/GVAR receivers, update the binding after the operation via `env_set`/`val_object_set_ivar`
+- `String#clear`, `String#setbyte` stubs; `String#[]` with Regexp, String, and capture-group index arguments
+- `String#gsub`/`#sub` with block: sets `$1`..$9` capture globals before calling the replacement block
+- `NilClass`: `match?`, `byteslice`, `[]`, `empty?`, `size`, `length`, `lines`, `chomp`, `strip`, `clear` all return safe values
+- `Proc#parameters` returns `[[:type, :name], ...]` pairs from the block's param list
+- `Class#to_s`, `Class#inspect`, `Class#name` all return the class name string
+- `Array#concat`: append elements from argument arrays in place
+- `Reline::Unicode.calculate_width`, `split_by_width` stubs for IRB pager width calculations
+- `Reline` module class-level dispatch: `get_screen_size`, `ambiguous_width`, etc.
+- `Binding#local_variables`: scans env chain and collects local variable symbol names
+- Prism shim (`require "prism"`): `ParseLexResult`, `ParseResult`, `StubNode`, `Source`, `Visitor`; `Prism.parse` vs `Prism.parse_lex` return different result types; Source handles empty code
+- PP shim (`require "pp"`): minimal `PP` class with `initialize`, `guard_inspect_key`, `pp`, `flush`, `self.pp`
+- `$>` global alias for `$stdout`
+- **birb session-6 milestone**: the REPL evaluates expressions and echoes results — `1+1` returns `2`, `puts 2+2` prints `4`
 
 Exit gate:
 
