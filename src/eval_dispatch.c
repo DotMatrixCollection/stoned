@@ -465,8 +465,23 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
         strcmp(name, "freeze") == 0 || strcmp(name, "frozen?") == 0 ||
         strcmp(name, "object_id") == 0 || strcmp(name, "to_s") == 0 ||
         strcmp(name, "inspect") == 0 || strcmp(name, "==") == 0 ||
-        strcmp(name, "!=") == 0 || strcmp(name, "equal?") == 0)
+        strcmp(name, "!=") == 0 || strcmp(name, "equal?") == 0 ||
+        strcmp(name, "method") == 0 || strcmp(name, "tap") == 0 ||
+        strcmp(name, "then") == 0 || strcmp(name, "yield_self") == 0)
         return 1;
+    /* Kernel functions available on every object */
+    {
+        static const char *kernel[] = {
+            "puts", "print", "p", "pp", "warn", "require", "require_relative",
+            "raise", "fail", "exit", "abort", "lambda", "proc", "loop", "rand",
+            "__method__", "__dir__", "__FILE__", "__LINE__",
+            "sleep", "catch", "throw", "trap", "at_exit", "printf", "sprintf", "format",
+            NULL
+        };
+        for (int ki = 0; kernel[ki]; ki++) {
+            if (strcmp(name, kernel[ki]) == 0) return 1;
+        }
+    }
 
     Env *singleton_env = value_singleton_env(recv);
     if (singleton_env) {
@@ -860,6 +875,13 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         signal.throw_sig.tag = tag;
         signal.throw_sig.value = valptr;
         return signal;
+    }
+    if (strcmp(name, "method") == 0) {
+        /* Bare method(:name) — look up on self */
+        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        Value self = val_nil();
+        env_get(env, "self", &self);
+        return dispatch_method(ev, env, self, "method", args, argc, blk, site, 0, 1);
     }
     if (strcmp(name, "trap") == 0) {
         return val_string(ev->arena, "DEFAULT");
@@ -1680,8 +1702,9 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
         if (!mname) return eval_raise_class(ev, site, "TypeError", "expected Symbol or String");
+        /* val_responds_to now includes kernel functions — no longer raises for them */
         if (!val_responds_to(ev, recv, mname, 1))
-            return eval_raise_class(ev, site, "NameError", "undefined method '%s'", mname);
+            return eval_raise_class(ev, site, "NameError", "undefined method '%s' for class '%s'", mname, prim_class_name(recv));
         Value method_val = val_nil();
         if (singleton_env) {
             Value m;
@@ -1744,6 +1767,18 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (recv.kind == VAL_ARRAY && dispatch_array(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (recv.kind == VAL_HASH && dispatch_hash(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (recv.kind == VAL_RANGE && dispatch_range(ev, env, recv, name, args, argc, blk, site, &out)) return out;
+    /* Nil receiver calling kernel function (e.g. Method#call on a Kernel method) */
+    if (recv.kind == VAL_NIL) {
+        static const char *kern_nil[] = {
+            "puts", "print", "p", "pp", "warn", "require", "require_relative", "raise",
+            "lambda", "proc", "loop", "rand", "exit", "format", "sprintf", "printf",
+            "sleep", "catch", "throw", "trap", "at_exit", "`", NULL
+        };
+        for (int ki = 0; kern_nil[ki]; ki++) {
+            if (strcmp(name, kern_nil[ki]) == 0)
+                return builtin_kernel(ev, env, name, args, argc, blk, site);
+        }
+    }
     if (recv.kind == VAL_NIL && dispatch_nil(ev, recv, name, site, &out)) return out;
     if (dispatch_bool(ev, recv, name, site, &out)) return out;
 
@@ -2063,7 +2098,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload",
             "deprecate_constant", "private_constant", "public_constant",
             "__dir__", "__method__", "__FILE__", "__LINE__", "__callee__", "binding", "eval", "`",
-            "trap", "at_exit", "sleep", "catch", "throw", NULL
+            "trap", "at_exit", "sleep", "catch", "throw", "method", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
             if (strcmp(name, kernel_names[i]) == 0)

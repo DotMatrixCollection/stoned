@@ -1503,6 +1503,15 @@ int dispatch_nil(Eval *ev, Value recv, const char *name, Node *site, Value *out)
     if (strcmp(name, "chomp") == 0 || strcmp(name, "strip") == 0 || strcmp(name, "chop") == 0)
         { *out = val_string(ev->arena, ""); return 1; }
     if (strcmp(name, "lines") == 0) { *out = val_array_new(); return 1; }
+    /* For "method", "respond_to?", "class", "object_id", etc. — let dispatch_method handle them */
+    if (strcmp(name, "method") == 0 || strcmp(name, "respond_to?") == 0 ||
+        strcmp(name, "class") == 0 || strcmp(name, "object_id") == 0 ||
+        strcmp(name, "is_a?") == 0 || strcmp(name, "kind_of?") == 0 ||
+        strcmp(name, "instance_of?") == 0 || strcmp(name, "send") == 0 ||
+        strcmp(name, "tap") == 0 || strcmp(name, "then") == 0 ||
+        strcmp(name, "itself") == 0 || strcmp(name, "equal?") == 0 ||
+        strcmp(name, "==" ) == 0 || strcmp(name, "!=" ) == 0)
+        return 0;
     *out = eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for nil", name);
     return 1;
 }
