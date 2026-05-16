@@ -73,6 +73,8 @@ Value val_array_new(void) {
     arr->elems = NULL;
     arr->len   = 0;
     arr->cap   = 0;
+    arr->singleton_env = NULL;
+    arr->frozen = 0;
     Value v; v.kind = VAL_ARRAY;
     v.array = arr;
     return v;
@@ -104,8 +106,10 @@ Value val_hash_new_with_defaults(Arena *a, Value default_value, Value default_pr
     h->vals = NULL;
     h->len  = 0;
     h->cap  = 0;
+    h->singleton_env = NULL;
     h->default_value = default_value;
     h->default_proc = default_proc;
+    h->frozen = 0;
     return val_hash_val(h);
 }
 

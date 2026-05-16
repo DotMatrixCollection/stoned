@@ -39,6 +39,23 @@ static void scope_add(Sema *s, const char *name) {
     s->scope->locals = e;
 }
 
+static void scope_add_target(Sema *s, Node *target) {
+    if (!target) return;
+    if (target->kind == NODE_LVAR) {
+        scope_add(s, target->sval);
+        return;
+    }
+    if (target->kind == NODE_ARRAY) {
+        for (NodeList *l = target->array.elements; l; l = l->next)
+            scope_add_target(s, l->node);
+        return;
+    }
+    if (target->kind == NODE_PARAM && target->param.splat && target->param.name) {
+        scope_add(s, target->param.name);
+        return;
+    }
+}
+
 /* Look up name in scope chain. Stops at def boundaries. */
 static int scope_has(Sema *s, const char *name) {
     for (Scope *sc = s->scope; sc; sc = sc->parent) {
@@ -334,8 +351,7 @@ static void resolve(Sema *s, Node *node) {
 
         case NODE_FOR:
             resolve(s, node->for_loop.iterable);
-            if (node->for_loop.target && node->for_loop.target->kind == NODE_LVAR)
-                scope_add(s, node->for_loop.target->sval);
+            scope_add_target(s, node->for_loop.target);
             s->loop_depth++;
             resolve(s, node->for_loop.body);
             s->loop_depth--;

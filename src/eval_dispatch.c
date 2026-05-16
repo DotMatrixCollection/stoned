@@ -1,14 +1,115 @@
 #include "eval_internal.h"
+#include "parser.h"
+#include "sema.h"
 
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #define CHECK(v) do { if (ev->errored || val_is_signal(v)) return (v); } while(0)
 
 static Value val_class_of(Eval *ev, Value v);
+
+static NativeBinding *native_binding(Value v) {
+    if (v.kind != VAL_OBJECT || v.obj->klass.kind != VAL_CLASS ||
+        strcmp(v.obj->klass.klass->name, "Binding") != 0)
+        return NULL;
+    return (NativeBinding *)v.obj->native;
+}
+
+static int is_local_identifier_name(const char *name) {
+    if (!name || !name[0] || strcmp(name, "self") == 0)
+        return 0;
+    if (!((name[0] >= 'a' && name[0] <= 'z') || name[0] == '_'))
+        return 0;
+    for (const char *p = name + 1; *p; p++) {
+        if (!( (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+               (*p >= '0' && *p <= '9') || *p == '_'))
+            return 0;
+    }
+    return 1;
+}
+
+static Value eval_string_in_context(Eval *ev, Env *caller_env, const char *src, Env *target_env,
+                                    const char *file, int64_t line, Node *site) {
+    if (!src)
+        src = "";
+
+    size_t src_len = strlen(src);
+    size_t local_prelude_len = 0;
+    for (EnvEntry *entry = target_env ? target_env->vars : NULL; entry; entry = entry->next) {
+        if (!is_local_identifier_name(entry->name))
+            continue;
+        local_prelude_len += strlen(entry->name) * 2 + 2;
+    }
+    if (local_prelude_len > 0)
+        local_prelude_len += 10; /* begin;...;end; */
+    size_t prefix_len = line > 1 ? (size_t)(line - 1) : 0;
+    char *shifted = arena_alloc(ev->arena, prefix_len + local_prelude_len + src_len + 1);
+    for (size_t i = 0; i < prefix_len; i++)
+        shifted[i] = '\n';
+    size_t pos = prefix_len;
+    if (local_prelude_len > 0) {
+        memcpy(shifted + pos, "begin;", 6);
+        pos += 6;
+        for (EnvEntry *entry = target_env ? target_env->vars : NULL; entry; entry = entry->next) {
+            size_t nlen;
+            if (!is_local_identifier_name(entry->name))
+                continue;
+            nlen = strlen(entry->name);
+            memcpy(shifted + pos, entry->name, nlen);
+            pos += nlen;
+            shifted[pos++] = '=';
+            memcpy(shifted + pos, entry->name, nlen);
+            pos += nlen;
+            shifted[pos++] = ';';
+        }
+        memcpy(shifted + pos, "end;", 4);
+        pos += 4;
+    }
+    memcpy(shifted + pos, src, src_len + 1);
+
+    Parser parser;
+    parser_init(&parser, shifted, prefix_len + pos - prefix_len + src_len, ev->arena);
+    Node *tree = parse_program(&parser);
+    if (parser.error_count > 0)
+        return eval_raise_class(ev, site, "SyntaxError", "%s", parser.errors[0].message);
+
+    Sema sema;
+    sema_init(&sema, ev->arena);
+    sema_run(&sema, tree);
+    if (sema.error_count > 0)
+        return eval_raise_class(ev, site, "SyntaxError", "%s", sema.errors[0].message);
+
+    const char *previous_file = ev->current_file;
+    ev->current_file = file ? file : previous_file;
+    Value result = eval_node(ev, target_env ? target_env : caller_env, tree);
+    ev->current_file = previous_file;
+    return result;
+}
+
+static Env *value_singleton_env(Value recv) {
+    switch (recv.kind) {
+        case VAL_OBJECT: return recv.obj->singleton_env;
+        case VAL_ARRAY:  return recv.array->singleton_env;
+        case VAL_HASH:   return recv.hash->singleton_env;
+        default:         return NULL;
+    }
+}
+
+static Env **value_singleton_env_slot(Value recv) {
+    switch (recv.kind) {
+        case VAL_OBJECT: return &recv.obj->singleton_env;
+        case VAL_ARRAY:  return &recv.array->singleton_env;
+        case VAL_HASH:   return &recv.hash->singleton_env;
+        default:         return NULL;
+    }
+}
 
 static void copy_module_methods(Eval *ev, Env *target, RubyClass *mod, int singleton_prefix) {
     if (!mod || !target) return;
@@ -32,7 +133,7 @@ static void copy_module_methods(Eval *ev, Env *target, RubyClass *mod, int singl
 }
 
 static Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *site) {
-    if (self.kind != VAL_CLASS && self.kind != VAL_OBJECT)
+    if (self.kind != VAL_CLASS && !value_singleton_env_slot(self))
         return eval_raise_class(ev, site, "TypeError", "extend requires an object");
 
     for (int i = 0; i < argc; i++) {
@@ -44,16 +145,17 @@ static Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *s
         for (int i = 0; i < argc; i++)
             copy_module_methods(ev, self.klass->class_env, args[i].klass, 1);
     } else {
-        if (!self.obj->singleton_env)
-            self.obj->singleton_env = env_new(ev->arena, NULL, 1);
+        Env **slot = value_singleton_env_slot(self);
+        if (!*slot) *slot = env_new(ev->arena, NULL, 1);
         for (int i = 0; i < argc; i++)
-            copy_module_methods(ev, self.obj->singleton_env, args[i].klass, 0);
+            copy_module_methods(ev, *slot, args[i].klass, 0);
     }
     return self;
 }
 
-static void define_attr_reader(Eval *ev, Value klass, const char *attr) {
-    if (klass.kind != VAL_CLASS) return;
+static void define_attr_reader_in_env(Eval *ev, Env *target_env,
+                                      const char *method_name, const char *attr) {
+    if (!target_env) return;
     Arena *a = ev->arena;
 
     Node *ivar_node = arena_alloc(a, sizeof(Node));
@@ -73,21 +175,21 @@ static void define_attr_reader(Eval *ev, Value klass, const char *attr) {
     Node *def = arena_alloc(a, sizeof(Node));
     memset(def, 0, sizeof(Node));
     def->kind = NODE_DEF;
-    def->def.name = attr;
+    def->def.name = method_name;
     def->def.body = body;
 
-    env_define(a, klass.klass->class_env, attr, val_method(def, ev->top_env, METHOD_PUBLIC));
+    env_define(a, target_env, method_name, val_method(def, ev->top_env, METHOD_PUBLIC));
 }
 
-static void define_attr_writer(Eval *ev, Value klass, const char *attr) {
+static void define_attr_reader(Eval *ev, Value klass, const char *attr) {
     if (klass.kind != VAL_CLASS) return;
-    Arena *a = ev->arena;
-    size_t alen = strlen(attr);
+    define_attr_reader_in_env(ev, klass.klass->class_env, attr, attr);
+}
 
-    char *method_name = arena_alloc(a, alen + 2);
-    memcpy(method_name, attr, alen);
-    method_name[alen] = '=';
-    method_name[alen + 1] = '\0';
+static void define_attr_writer_in_env(Eval *ev, Env *target_env,
+                                      const char *method_name, const char *attr) {
+    if (!target_env) return;
+    Arena *a = ev->arena;
 
     Node *param = arena_alloc(a, sizeof(Node));
     memset(param, 0, sizeof(Node));
@@ -130,7 +232,18 @@ static void define_attr_writer(Eval *ev, Value klass, const char *attr) {
     def->def.params = params;
     def->def.body = body;
 
-    env_define(a, klass.klass->class_env, method_name, val_method(def, ev->top_env, METHOD_PUBLIC));
+    env_define(a, target_env, method_name, val_method(def, ev->top_env, METHOD_PUBLIC));
+}
+
+static void define_attr_writer(Eval *ev, Value klass, const char *attr) {
+    if (klass.kind != VAL_CLASS) return;
+    Arena *a = ev->arena;
+    size_t alen = strlen(attr);
+    char *method_name = arena_alloc(a, alen + 2);
+    memcpy(method_name, attr, alen);
+    method_name[alen] = '=';
+    method_name[alen + 1] = '\0';
+    define_attr_writer_in_env(ev, klass.klass->class_env, method_name, attr);
 }
 
 static const char *prim_class_name(Value v) {
@@ -164,10 +277,11 @@ static Value dispatch_dynamic_send(Eval *ev, Env *env, Value recv, const char *d
         Value method = val_nil();
         RubyClass *owner = NULL;
         int found = 0;
-        if (recv.kind == VAL_OBJECT) {
-            if (recv.obj->singleton_env)
-                found = env_get(recv.obj->singleton_env, mname, &method) && method.kind == VAL_METHOD;
-            if (!found && recv.obj->klass.kind == VAL_CLASS)
+        Env *singleton_env = value_singleton_env(recv);
+        if (singleton_env)
+            found = env_get(singleton_env, mname, &method) && method.kind == VAL_METHOD;
+        if (!found && recv.kind == VAL_OBJECT) {
+            if (recv.obj->klass.kind == VAL_CLASS)
                 found = ruby_class_find_instance_method(recv.obj->klass.klass, mname, &method, &owner);
         } else if (recv.kind == VAL_CLASS) {
             size_t nlen = strlen(mname);
@@ -240,6 +354,30 @@ static Value val_class_of(Eval *ev, Value v) {
 
 static int method_visible_for_respond_to(Value method, int include_private) {
     return method.kind == VAL_METHOD && (include_private || method.method.visibility == METHOD_PUBLIC);
+}
+
+static int env_get_local_value(Env *env, const char *name, Value *out) {
+    if (!env) return 0;
+    for (EnvEntry *entry = env->vars; entry; entry = entry->next) {
+        if (strcmp(entry->name, name) == 0) {
+            *out = entry->val;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static const char *find_instance_alias_name(RubyClass *klass, const char *name) {
+    for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+        if (!k->class_env) continue;
+        Value alias_target = val_nil();
+        if (env_get_local_value(k->class_env, name, &alias_target) &&
+            (alias_target.kind == VAL_SYMBOL || alias_target.kind == VAL_STRING) &&
+            alias_target.sval && alias_target.sval[0] != '\0')
+            return alias_target.sval;
+        if (k->is_module) break;
+    }
+    return NULL;
 }
 
 static int builtin_primitive_responds_to(Value recv, const char *name) {
@@ -328,11 +466,18 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
         strcmp(name, "!=") == 0 || strcmp(name, "equal?") == 0)
         return 1;
 
-    if (recv.kind == VAL_OBJECT) {
+    Env *singleton_env = value_singleton_env(recv);
+    if (singleton_env) {
         Value m;
-        if (recv.obj->singleton_env && env_get(recv.obj->singleton_env, name, &m) &&
+        if (env_get(singleton_env, name, &m) &&
             method_visible_for_respond_to(m, include_private))
             return 1;
+    }
+
+    if (recv.kind == VAL_OBJECT) {
+        if (find_instance_alias_name(recv.obj->klass.klass, name))
+            return 1;
+        Value m;
         if (ruby_class_find_instance_method(recv.obj->klass.klass, name, &m, NULL))
             return method_visible_for_respond_to(m, include_private);
         return 0;
@@ -576,6 +721,49 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         if (slash == ev->current_file)
             return val_string(ev->arena, "/");
         return val_string_n(ev->arena, ev->current_file, (size_t)(slash - ev->current_file));
+    }
+
+    if (strcmp(name, "binding") == 0) {
+        if (argc != 0)
+            return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        Value binding_class;
+        if (!env_get(ev->top_env, "Binding", &binding_class) || binding_class.kind != VAL_CLASS)
+            return eval_raise_class(ev, site, "NameError", "uninitialized constant Binding");
+        Value obj = val_object(ev->arena, binding_class);
+        obj.obj->native = alloc_native_binding(ev->arena, env, ev->current_file,
+                                               site ? (int64_t)site->span.line : 1);
+        return obj;
+    }
+
+    if (strcmp(name, "eval") == 0) {
+        if (argc < 1 || argc > 4)
+            return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        if (args[0].kind != VAL_STRING)
+            return eval_raise_class(ev, site, "TypeError", "eval requires a String");
+
+        Env *target_env = env;
+        const char *file = ev->current_file;
+        int64_t line = 1;
+        if (argc >= 2 && args[1].kind != VAL_NIL) {
+            NativeBinding *binding = native_binding(args[1]);
+            if (!binding)
+                return eval_raise_class(ev, site, "TypeError", "wrong argument type %s (expected Binding)",
+                                        value_class_name(ev, args[1]));
+            target_env = binding->env;
+            file = binding->file ? binding->file : file;
+            line = binding->line > 0 ? binding->line : 1;
+        }
+        if (argc >= 3 && args[2].kind != VAL_NIL) {
+            if (args[2].kind != VAL_STRING && args[2].kind != VAL_SYMBOL)
+                return eval_raise_class(ev, site, "TypeError", "eval filename must be a String");
+            file = args[2].sval;
+        }
+        if (argc >= 4 && args[3].kind != VAL_NIL) {
+            if (args[3].kind != VAL_INT)
+                return eval_raise_class(ev, site, "TypeError", "eval line number must be an Integer");
+            line = args[3].ival;
+        }
+        return eval_string_in_context(ev, env, args[0].sval, target_env, file, line, site);
     }
 
     if (have_stdout && (strcmp(name, "puts") == 0 || strcmp(name, "print") == 0 ||
@@ -825,16 +1013,34 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     if (strcmp(name, "attr_reader") == 0 || strcmp(name, "attr_writer") == 0 ||
         strcmp(name, "attr_accessor") == 0) {
         Value self;
+        Value singleton_target = val_nil();
+        int in_singleton_class = env_get(env, "__singleton_target__", &singleton_target);
         if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
             return eval_raise_class(ev, site, "TypeError", "%s must be called in a class body", name);
         for (int i = 0; i < argc; i++) {
             const char *attr = (args[i].kind == VAL_SYMBOL || args[i].kind == VAL_STRING)
                                ? args[i].sval : NULL;
             if (!attr) continue;
-            if (strcmp(name, "attr_reader") == 0 || strcmp(name, "attr_accessor") == 0)
-                define_attr_reader(ev, self, attr);
-            if (strcmp(name, "attr_writer") == 0 || strcmp(name, "attr_accessor") == 0)
-                define_attr_writer(ev, self, attr);
+            if (in_singleton_class && singleton_target.kind == VAL_CLASS) {
+                size_t alen = strlen(attr);
+                char *reader_name = arena_alloc(ev->arena, alen + 6);
+                memcpy(reader_name, "self.", 5);
+                memcpy(reader_name + 5, attr, alen + 1);
+                char *writer_name = arena_alloc(ev->arena, alen + 7);
+                memcpy(writer_name, "self.", 5);
+                memcpy(writer_name + 5, attr, alen);
+                writer_name[alen + 5] = '=';
+                writer_name[alen + 6] = '\0';
+                if (strcmp(name, "attr_reader") == 0 || strcmp(name, "attr_accessor") == 0)
+                    define_attr_reader_in_env(ev, singleton_target.klass->class_env, reader_name, attr);
+                if (strcmp(name, "attr_writer") == 0 || strcmp(name, "attr_accessor") == 0)
+                    define_attr_writer_in_env(ev, singleton_target.klass->class_env, writer_name, attr);
+            } else {
+                if (strcmp(name, "attr_reader") == 0 || strcmp(name, "attr_accessor") == 0)
+                    define_attr_reader(ev, self, attr);
+                if (strcmp(name, "attr_writer") == 0 || strcmp(name, "attr_accessor") == 0)
+                    define_attr_writer(ev, self, attr);
+            }
         }
         return val_nil();
     }
@@ -849,6 +1055,15 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
             inc->mod = args[i].klass;
             inc->next = self.klass->included_modules;
             self.klass->included_modules = inc;
+            if (strcmp(args[i].klass->name, "Singleton") == 0) {
+                Node *body = node_new(ev->arena, NODE_BODY, site ? site->span : (Span){0, 0, 0});
+                body->body.stmts = NULL;
+                Node *def = node_new(ev->arena, NODE_DEF, site ? site->span : (Span){0, 0, 0});
+                def->def.name = "instance";
+                def->def.body = body;
+                env_define(ev->arena, self.klass->class_env, "self.instance",
+                           val_method(def, ev->top_env, METHOD_PUBLIC));
+            }
         }
         return val_nil();
     }
@@ -986,6 +1201,11 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
             return eval_raise_class(ev, site, "TypeError", "autoload path must be a String");
         return eval_require(ev, env, path, site);
     }
+    if (strcmp(name, "deprecate_constant") == 0 || strcmp(name, "private_constant") == 0 ||
+        strcmp(name, "public_constant") == 0 || strcmp(name, "using") == 0) {
+        (void)blk;
+        return val_nil();
+    }
     (void)blk;
     return val_nil();
 }
@@ -1029,10 +1249,96 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                       const char *name, Value *args, int argc,
                       Value *blk, Node *site, int public_only, int explicit_receiver) {
     Value out;
+    Env *singleton_env = value_singleton_env(recv);
+
+    if (singleton_env) {
+        Value method;
+        RubyClass *owner = recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS
+                         ? recv.obj->klass.klass : NULL;
+        if (env_get(singleton_env, name, &method) && method.kind == VAL_METHOD) {
+            if (!method_visibility_allows_call(ev, env, recv, owner, method.method.visibility,
+                                               public_only, explicit_receiver)) {
+                if (method.method.visibility == METHOD_PROTECTED)
+                    return eval_raise_class(ev, site, "NoMethodError",
+                                            "protected method '%s' called for an instance of %s",
+                                            name, value_class_name(ev, recv));
+            } else {
+                return call_method_value(ev, env, recv, method, owner, name, args, argc, blk, site);
+            }
+        }
+    }
+
+    if (recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS) {
+        const char *alias_target = find_instance_alias_name(recv.obj->klass.klass, name);
+        if (alias_target && strcmp(alias_target, name) != 0)
+            return dispatch_method(ev, env, recv, alias_target, args, argc, blk, site, public_only, explicit_receiver);
+    }
 
     if (strcmp(name, "nil?") == 0) {
         if (argc != 0) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         return val_bool(recv.kind == VAL_NIL);
+    }
+    if (recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS &&
+        strcmp(recv.obj->klass.klass->name, "Pathname") == 0) {
+        Value path = val_nil();
+        val_object_get_ivar(recv, "path", &path);
+        const char *p = path.kind == VAL_STRING ? path.sval : "";
+        if (strcmp(name, "to_s") == 0) return val_string(ev->arena, p);
+        if (strcmp(name, "dirname") == 0) {
+            const char *slash = strrchr(p, '/');
+            const char *dir = ".";
+            if (slash) {
+                if (slash == p) dir = "/";
+                else {
+                    size_t dlen = (size_t)(slash - p);
+                    char *buf = arena_alloc(ev->arena, dlen + 1);
+                    memcpy(buf, p, dlen);
+                    buf[dlen] = '\0';
+                    dir = buf;
+                }
+            }
+            Value pathname_class;
+            if (!env_get(ev->top_env, "Pathname", &pathname_class) || pathname_class.kind != VAL_CLASS)
+                return val_string(ev->arena, dir);
+            Value obj = val_object(ev->arena, pathname_class);
+            val_object_set_ivar(ev->arena, obj, "path", val_string(ev->arena, dir));
+            return obj;
+        }
+        if (strcmp(name, "exist?") == 0) {
+            struct stat st;
+            return val_bool(stat(p, &st) == 0);
+        }
+        if (strcmp(name, "writable?") == 0)
+            return val_bool(access(p, W_OK) == 0);
+        if (strcmp(name, "stat") == 0) {
+            struct stat st;
+            if (stat(p, &st) != 0)
+                return eval_raise_class(ev, site, errno_class_name(errno), "%s - %s", strerror(errno), p);
+            Value stat_obj = val_hash_new(ev->arena);
+            val_hash_set(stat_obj.hash, val_symbol("mode"), val_int((int64_t)st.st_mode));
+            return stat_obj;
+        }
+        if (strcmp(name, "chmod") == 0) {
+            if (argc != 1 || args[0].kind != VAL_INT)
+                return eval_raise_class(ev, site, "TypeError", "Pathname#chmod requires an Integer");
+            if (chmod(p, (mode_t)args[0].ival) != 0)
+                return eval_raise_class(ev, site, errno_class_name(errno), "%s - %s", strerror(errno), p);
+            return val_int(0);
+        }
+    }
+    if (recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS &&
+        (strcmp(name, "inspect") == 0 || strcmp(name, "to_s") == 0) &&
+        !value_is_a_named_class(ev, recv, "Exception") &&
+        strcmp(recv.obj->klass.klass->name, "Regexp") != 0 &&
+        strcmp(recv.obj->klass.klass->name, "MatchData") != 0 &&
+        strcmp(recv.obj->klass.klass->name, "Time") != 0) {
+        Value custom = val_nil();
+        if (!ruby_class_find_instance_method(recv.obj->klass.klass, name, &custom, NULL)) {
+            const char *klass_name = recv.obj->klass.klass->name ? recv.obj->klass.klass->name : "Object";
+            char buf[128];
+            snprintf(buf, sizeof(buf), "#<%s:%p>", klass_name, (void *)recv.obj);
+            return val_string(ev->arena, buf);
+        }
     }
     if (strcmp(name, "is_a?") == 0 || strcmp(name, "kind_of?") == 0) {
         if (argc != 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
@@ -1097,6 +1403,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             Value copy = val_object(ev->arena, recv.obj->klass);
             for (IVarEntry *iv = recv.obj->ivars; iv; iv = iv->next)
                 val_object_set_ivar(ev->arena, copy, iv->name, iv->val);
+            copy.obj->native = recv.obj->native;
             if (is_clone && recv.obj->frozen) copy.obj->frozen = 1;
             return copy;
         }
@@ -1247,18 +1554,18 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         else if (strcmp(name, "protected_methods") == 0) vis_mask = 2;
         else vis_mask = 3; /* methods: public + protected */
         Value arr = val_array_new();
-        if (recv.kind == VAL_OBJECT) {
-            if (recv.obj->singleton_env) {
-                for (EnvEntry *e = recv.obj->singleton_env->vars; e; e = e->next) {
-                    if (e->val.kind != VAL_METHOD) continue;
-                    MethodVisibility vis = e->val.method.visibility;
-                    int match = ((vis_mask & 1) && vis == METHOD_PUBLIC) ||
-                                ((vis_mask & 2) && vis == METHOD_PROTECTED) ||
-                                ((vis_mask & 4) && vis == METHOD_PRIVATE);
-                    if (match && !sym_in_array(&arr, e->name))
-                        val_array_push(&arr, val_symbol(e->name));
-                }
+        if (singleton_env) {
+            for (EnvEntry *e = singleton_env->vars; e; e = e->next) {
+                if (e->val.kind != VAL_METHOD) continue;
+                MethodVisibility vis = e->val.method.visibility;
+                int match = ((vis_mask & 1) && vis == METHOD_PUBLIC) ||
+                            ((vis_mask & 2) && vis == METHOD_PROTECTED) ||
+                            ((vis_mask & 4) && vis == METHOD_PRIVATE);
+                if (match && !sym_in_array(&arr, e->name))
+                    val_array_push(&arr, val_symbol(e->name));
             }
+        }
+        if (recv.kind == VAL_OBJECT) {
             if (recv.obj->klass.kind == VAL_CLASS) {
                 RubyClass *k = recv.obj->klass.klass;
                 if (include_super) {
@@ -1293,12 +1600,12 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (!val_responds_to(ev, recv, mname, 1))
             return eval_raise_class(ev, site, "NameError", "undefined method '%s'", mname);
         Value method_val = val_nil();
+        if (singleton_env) {
+            Value m;
+            if (env_get(singleton_env, mname, &m) && m.kind == VAL_METHOD)
+                method_val = m;
+        }
         if (recv.kind == VAL_OBJECT) {
-            if (recv.obj->singleton_env) {
-                Value m;
-                if (env_get(recv.obj->singleton_env, mname, &m) && m.kind == VAL_METHOD)
-                    method_val = m;
-            }
             if (method_val.kind == VAL_NIL && recv.obj->klass.kind == VAL_CLASS) {
                 Value m; RubyClass *owner = NULL;
                 if (ruby_class_find_instance_method(recv.obj->klass.klass, mname, &m, &owner))
@@ -1325,6 +1632,9 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0)
             return val_string(ev->arena, recv.block.is_lambda ? "#<Proc:lambda>" : "#<Proc>");
     }
+
+    if (strcmp(name, "inspect") == 0 && recv.kind != VAL_OBJECT && recv.kind != VAL_CLASS)
+        return val_string(ev->arena, val_inspect(ev->arena, recv));
 
     if (dispatch_integer(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (dispatch_float(ev, env, recv, name, args, argc, blk, site, &out)) return out;
@@ -1615,7 +1925,9 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "raise", "proc", "lambda", "loop", "rand", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
-            "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload", "__dir__", "__method__", NULL
+            "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload",
+            "deprecate_constant", "private_constant", "public_constant",
+            "__dir__", "__method__", "binding", "eval", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
             if (strcmp(name, kernel_names[i]) == 0)
@@ -1758,6 +2070,32 @@ call_method:
     if (recv.kind == VAL_ARRAY) {
         if (strcmp(node->call.method, "[]") == 0) {
             if (argc < 1) return eval_raise_class(ev, node, "ArgumentError", "wrong number of args for []");
+            if (args[0].kind == VAL_RANGE) {
+                RubyRange *r = args[0].range;
+                int64_t begin = 0;
+                int64_t end = (int64_t)recv.array->len;
+                if (r->begin_val.kind == VAL_INT) {
+                    begin = r->begin_val.ival;
+                    if (begin < 0) begin += (int64_t)recv.array->len;
+                } else if (r->begin_val.kind != VAL_NIL) {
+                    return val_nil();
+                }
+                if (r->end_val.kind == VAL_INT) {
+                    end = r->end_val.ival;
+                    if (end < 0) end += (int64_t)recv.array->len;
+                    if (!r->exclusive) end++;
+                } else if (r->end_val.kind != VAL_NIL) {
+                    return val_nil();
+                }
+                if (begin < 0) begin = 0;
+                if (end < begin) end = begin;
+                if ((size_t)begin > recv.array->len) return val_nil();
+                if ((size_t)end > recv.array->len) end = (int64_t)recv.array->len;
+                Value slice = val_array_new();
+                for (int64_t i = begin; i < end; i++)
+                    val_array_push(&slice, recv.array->elems[i]);
+                return slice;
+            }
             int64_t idx = args[0].ival;
             if (idx < 0) idx = (int64_t)recv.array->len + idx;
             if (idx < 0 || (size_t)idx >= recv.array->len) return val_nil();

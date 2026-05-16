@@ -86,6 +86,7 @@ struct RubyArray {
     Value  *elems;
     size_t  len;
     size_t  cap;
+    struct Env *singleton_env;
     int     frozen;
 };
 
@@ -123,6 +124,7 @@ struct RubyHash {
     Value  *vals;
     size_t  len;
     size_t  cap;
+    struct Env *singleton_env;
     Value   default_value;
     Value   default_proc;
     int     frozen;

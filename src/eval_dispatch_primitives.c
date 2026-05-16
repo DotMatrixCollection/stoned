@@ -985,13 +985,14 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         size_t slen = utf8_char_count(s);
         if (args[0].kind == VAL_RANGE) {
             RubyRange *r = args[0].range;
-            if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT) { *out = val_nil(); return 1; }
-            int64_t rbeg = r->begin_val.ival;
-            int64_t rend = r->end_val.ival;
-            if (rbeg < 0) rbeg += (int64_t)slen;
-            if (rend < 0) rend += (int64_t)slen;
+            if (r->begin_val.kind != VAL_INT && r->begin_val.kind != VAL_NIL) { *out = val_nil(); return 1; }
+            if (r->end_val.kind != VAL_INT && r->end_val.kind != VAL_NIL) { *out = val_nil(); return 1; }
+            int64_t rbeg = (r->begin_val.kind == VAL_INT) ? r->begin_val.ival : 0;
+            int64_t rend = (r->end_val.kind == VAL_INT) ? r->end_val.ival : (int64_t)slen;
+            if (r->begin_val.kind == VAL_INT && rbeg < 0) rbeg += (int64_t)slen;
+            if (r->end_val.kind == VAL_INT && rend < 0) rend += (int64_t)slen;
             if (rbeg < 0 || (size_t)rbeg > slen) { *out = val_nil(); return 1; }
-            if (!r->exclusive) rend++;
+            if (r->end_val.kind == VAL_INT && !r->exclusive) rend++;
             if (rend < rbeg) { *out = val_string(ev->arena, ""); return 1; }
             if ((size_t)rend > slen) rend = (int64_t)slen;
             size_t bstart = utf8_byte_offset_for_char(s, (size_t)rbeg);

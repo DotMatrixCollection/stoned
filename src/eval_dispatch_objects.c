@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -74,6 +75,72 @@ static Value wrong_arg_count(Eval *ev, Node *site, int given, int expected) {
                             given, expected);
 }
 
+static size_t regexp_union_piece_length(Value v) {
+    if (v.kind == VAL_OBJECT && v.obj->klass.kind == VAL_CLASS &&
+        strcmp(v.obj->klass.klass->name, "Regexp") == 0) {
+        Value source = val_nil();
+        if (val_object_get_ivar(v, "source", &source) && source.kind == VAL_STRING)
+            return strlen(source.sval ? source.sval : "");
+    }
+    const char *s = (v.kind == VAL_STRING || v.kind == VAL_SYMBOL) ? v.sval : NULL;
+    if (!s) return strlen(val_kind_name(v.kind));
+    size_t len = 0;
+    for (const char *p = s; *p; p++) {
+        if (*p == '\\' || *p == '.' || *p == '|' || *p == '^' || *p == '$' ||
+            *p == '?' || *p == '*' || *p == '+' || *p == '(' || *p == ')' ||
+            *p == '[' || *p == ']' || *p == '{' || *p == '}' || *p == '#')
+            len++;
+        len++;
+    }
+    return len;
+}
+
+static char *append_regexp_union_piece(char *dst, Value v) {
+    if (v.kind == VAL_OBJECT && v.obj->klass.kind == VAL_CLASS &&
+        strcmp(v.obj->klass.klass->name, "Regexp") == 0) {
+        Value source = val_nil();
+        if (val_object_get_ivar(v, "source", &source) && source.kind == VAL_STRING) {
+            const char *s = source.sval ? source.sval : "";
+            size_t len = strlen(s);
+            memcpy(dst, s, len);
+            return dst + len;
+        }
+    }
+    const char *s = (v.kind == VAL_STRING || v.kind == VAL_SYMBOL) ? v.sval : NULL;
+    if (!s) s = val_kind_name(v.kind);
+    for (const char *p = s; *p; p++) {
+        if (*p == '\\' || *p == '.' || *p == '|' || *p == '^' || *p == '$' ||
+            *p == '?' || *p == '*' || *p == '+' || *p == '(' || *p == ')' ||
+            *p == '[' || *p == ']' || *p == '{' || *p == '}' || *p == '#')
+            *dst++ = '\\';
+        *dst++ = *p;
+    }
+    return dst;
+}
+
+static Value default_console_winsize(Arena *arena) {
+    Value size = val_array_new();
+    val_array_push(&size, val_int(24));
+    val_array_push(&size, val_int(80));
+    return size;
+}
+
+static Value stream_winsize(Eval *ev, FILE *stream) {
+    if (!stream)
+        return default_console_winsize(ev->arena);
+
+    struct winsize ws;
+    memset(&ws, 0, sizeof(ws));
+    int fd = fileno(stream);
+    if (fd >= 0 && ioctl(fd, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0 && ws.ws_col > 0) {
+        Value size = val_array_new();
+        val_array_push(&size, val_int((int64_t)ws.ws_row));
+        val_array_push(&size, val_int((int64_t)ws.ws_col));
+        return size;
+    }
+    return default_console_winsize(ev->arena);
+}
+
 static const char *join_write_args(Eval *ev, Value *args, int argc) {
     size_t total = 1;
     for (int i = 0; i < argc; i++)
@@ -123,6 +190,17 @@ static Value implicit_string_conversion_error(Eval *ev, Value v, Node *site) {
                                 v.bval ? "true" : "false");
     return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into String",
                             value_class_name(ev, v));
+}
+
+static int class_includes_module_name(RubyClass *klass, const char *name) {
+    for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+        for (RubyModuleInclusion *m = k->included_modules; m; m = m->next)
+            if (strcmp(m->mod->name, name) == 0) return 1;
+        for (RubyModuleInclusion *m = k->prepended_modules; m; m = m->next)
+            if (strcmp(m->mod->name, name) == 0) return 1;
+        if (k->is_module) break;
+    }
+    return 0;
 }
 
 static const char *path_expand_tilde(const char *path, char *buf, size_t buf_size) {
@@ -851,15 +929,136 @@ static void collect_class_ancestors(RubyClass *klass, Value *arr, RubyClass **vi
         collect_class_ancestors(klass->superclass.klass, arr, visited, nv);
 }
 
+static int singleton_class_method_lookup(Eval *ev, Env *env, Value recv, const char *name,
+                                         Value *out) {
+    Value singleton_target = val_nil();
+    if (!env_get(env, "__singleton_target__", &singleton_target))
+        return 0;
+    if (singleton_target.kind != recv.kind)
+        return 0;
+    if (singleton_target.kind == VAL_CLASS && singleton_target.klass != recv.klass)
+        return 0;
+    if (singleton_target.kind == VAL_OBJECT && singleton_target.obj != recv.obj)
+        return 0;
+    if (singleton_target.kind == VAL_ARRAY && singleton_target.array != recv.array)
+        return 0;
+    if (singleton_target.kind == VAL_HASH && singleton_target.hash != recv.hash)
+        return 0;
+
+    if (singleton_target.kind == VAL_CLASS) {
+        size_t nlen = strlen(name);
+        char *key = arena_alloc(ev->arena, nlen + 6);
+        memcpy(key, "self.", 5);
+        memcpy(key + 5, name, nlen + 1);
+        return env_get(singleton_target.klass->class_env, key, out) && out->kind == VAL_METHOD;
+    }
+
+    Env *singleton_env = NULL;
+    if (singleton_target.kind == VAL_OBJECT) singleton_env = singleton_target.obj->singleton_env;
+    else if (singleton_target.kind == VAL_ARRAY) singleton_env = singleton_target.array->singleton_env;
+    else if (singleton_target.kind == VAL_HASH) singleton_env = singleton_target.hash->singleton_env;
+    return singleton_env && env_get(singleton_env, name, out) && out->kind == VAL_METHOD;
+}
+
+static int primitive_unbound_method_name(const char *name) {
+    static const char *names[] = {
+        "inspect", "to_s", "class",
+        "methods", "public_methods", "private_methods", "protected_methods",
+        "instance_variables", "method", "public_method", "constants",
+        NULL
+    };
+    for (int i = 0; names[i]; i++) {
+        if (strcmp(name, names[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
+
 int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     if (recv.kind != VAL_CLASS) return 0;
+    if (strcmp(recv.klass->name, "Struct") == 0 && strcmp(name, "new") == 0) {
+        static int struct_counter = 0;
+        char anon_name[64];
+        snprintf(anon_name, sizeof(anon_name), "Struct::Anonymous%d", ++struct_counter);
+        Value klass = val_class(ev->arena, anon_name, recv);
+        klass.klass->class_env = env_new(ev->arena, recv.klass->class_env, 1);
+
+        Value members = val_array_new();
+        for (int i = 0; i < argc; i++) {
+            const char *member = (args[i].kind == VAL_SYMBOL || args[i].kind == VAL_STRING) ? args[i].sval : NULL;
+            if (!member) {
+                *out = eval_raise_class(ev, site, "TypeError", "Struct member name must be a Symbol or String");
+                return 1;
+            }
+            val_array_push(&members, val_string(ev->arena, member));
+
+            Arena *a = ev->arena;
+            Node *ivar_node = arena_alloc(a, sizeof(Node));
+            memset(ivar_node, 0, sizeof(Node));
+            ivar_node->kind = NODE_IVAR;
+            ivar_node->sval = member;
+
+            NodeList *stmts = arena_alloc(a, sizeof(NodeList));
+            stmts->node = ivar_node;
+            stmts->next = NULL;
+
+            Node *body = arena_alloc(a, sizeof(Node));
+            memset(body, 0, sizeof(Node));
+            body->kind = NODE_BODY;
+            body->body.stmts = stmts;
+
+            Node *def = arena_alloc(a, sizeof(Node));
+            memset(def, 0, sizeof(Node));
+            def->kind = NODE_DEF;
+            def->def.name = member;
+            def->def.body = body;
+
+            env_define(a, klass.klass->class_env, member, val_method(def, ev->top_env, METHOD_PUBLIC));
+        }
+
+        env_define(ev->arena, klass.klass->class_env, "__struct_members__", members);
+        *out = klass;
+        return 1;
+    }
+    if (strcmp(recv.klass->name, "Pathname") == 0 && strcmp(name, "new") == 0) {
+        if (argc != 1 || (args[0].kind != VAL_STRING && args[0].kind != VAL_SYMBOL)) {
+            *out = eval_raise_class(ev, site, "TypeError", "Pathname.new requires a String");
+            return 1;
+        }
+        Value obj = val_object(ev->arena, recv);
+        val_object_set_ivar(ev->arena, obj, "path", val_string(ev->arena, args[0].sval));
+        *out = obj;
+        return 1;
+    }
+    size_t name_len = strlen(name);
+    if (recv.klass->class_env && argc == 1 && name_len > 1 &&
+        name[0] >= 'A' && name[0] <= 'Z' && name[name_len - 1] == '=') {
+        char *const_name = arena_alloc(ev->arena, name_len);
+        memcpy(const_name, name, name_len - 1);
+        const_name[name_len - 1] = '\0';
+        env_define(ev->arena, recv.klass->class_env, const_name, args[0]);
+        size_t full_len = strlen(recv.klass->name) + 2 + (name_len - 1);
+        char *full_name = arena_alloc(ev->arena, full_len + 1);
+        memcpy(full_name, recv.klass->name, strlen(recv.klass->name));
+        memcpy(full_name + strlen(recv.klass->name), "::", 2);
+        memcpy(full_name + strlen(recv.klass->name) + 2, const_name, name_len);
+        env_define(ev->arena, ev->top_env, full_name, args[0]);
+        *out = args[0];
+        return 1;
+    }
     if (strcmp(recv.klass->name, "Process") == 0 && strcmp(name, "pid") == 0) {
         if (argc != 0) {
             *out = wrong_arg_count(ev, site, argc, 0);
             return 1;
         }
         *out = val_int((int64_t)getpid());
+        return 1;
+    }
+    if (strcmp(name, "deprecate_constant") == 0 || strcmp(name, "private_constant") == 0 ||
+        strcmp(name, "public_constant") == 0 || strcmp(name, "using") == 0 ||
+        strcmp(name, "refine") == 0) {
+        *out = val_nil();
         return 1;
     }
     if (strcmp(name, "autoload") == 0) {
@@ -881,6 +1080,47 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (strcmp(name, "===") == 0) {
         if (argc < 1) { *out = val_false(); return 1; }
         *out = val_bool(val_is_a(args[0], recv));
+        return 1;
+    }
+    if (strcmp(name, "define_method") == 0) {
+        if (argc < 1 || argc > 2) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+            return 1;
+        }
+        const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!mname) {
+            *out = eval_raise_class(ev, site, "TypeError", "expected Symbol or String");
+            return 1;
+        }
+
+        Value method_proc = val_nil();
+        if (argc == 2)
+            method_proc = args[1];
+        else if (blk)
+            method_proc = *blk;
+        if (method_proc.kind != VAL_BLOCK) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "define_method requires a block or Proc");
+            return 1;
+        }
+
+        Node *def = node_new(ev->arena, NODE_DEF, site ? site->span : (Span){0, 0, 0});
+        def->def.name = mname;
+        def->def.params = method_proc.block.block_node ? method_proc.block.block_node->block.params : NULL;
+        def->def.body = method_proc.block.block_node ? method_proc.block.block_node->block.body : NULL;
+        Value method = val_method(def, method_proc.block.closure, current_method_visibility(env));
+
+        Value singleton_target = val_nil();
+        if (env_get(env, "__singleton_target__", &singleton_target) &&
+            singleton_target.kind == VAL_CLASS && singleton_target.klass == recv.klass) {
+            size_t nlen = strlen(mname);
+            char *key = arena_alloc(ev->arena, nlen + 6);
+            memcpy(key, "self.", 5);
+            memcpy(key + 5, mname, nlen + 1);
+            env_define(ev->arena, recv.klass->class_env, key, method);
+        } else {
+            env_define(ev->arena, recv.klass->class_env, mname, method);
+        }
+        *out = val_symbol(mname);
         return 1;
     }
     if (recv.klass->is_module && recv.klass->class_env) {
@@ -927,6 +1167,102 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             io_obj.obj->native = opened.obj;
             *out = io_obj;
         }
+        return 1;
+    }
+    if (strcmp(name, "open") == 0 && strcmp(recv.klass->name, "IO") == 0) {
+        if (argc < 1 || argc > 3) {
+            *out = argc < 1
+                 ? wrong_arg_count(ev, site, argc, 1)
+                 : eval_raise_class(ev, site, "ArgumentError",
+                                    "wrong number of arguments (given %d, expected 1..3)", argc);
+            return 1;
+        }
+        if (args[0].kind != VAL_INT) {
+            *out = implicit_integer_conversion_error(ev, args[0], site);
+            return 1;
+        }
+
+        Value mode = val_nil();
+        Value options = val_nil();
+        const char *mode_cstr = NULL;
+
+        if (argc >= 2 && args[1].kind != VAL_NIL) {
+            if (args[1].kind == VAL_STRING) mode = args[1];
+            else if (args[1].kind == VAL_HASH) options = args[1];
+            else {
+                *out = implicit_string_conversion_error(ev, args[1], site);
+                return 1;
+            }
+        }
+        if (argc >= 3 && args[2].kind != VAL_NIL) {
+            if (args[2].kind != VAL_HASH) {
+                *out = eval_raise_class(ev, site, "TypeError", "no implicit conversion into Hash");
+                return 1;
+            }
+            options = args[2];
+        }
+        if (mode.kind == VAL_NIL) {
+            mode_cstr = infer_fd_mode(ev, args[0].ival, site);
+            if (!mode_cstr) {
+                *out = val_exception();
+                return 1;
+            }
+            mode = val_string(ev->arena, mode_cstr);
+        }
+
+        Value opened = io_open_fd(ev, args[0].ival, mode.sval, site);
+        if (val_is_signal(opened)) {
+            *out = opened;
+            return 1;
+        }
+        Value io_obj = val_object(ev->arena, recv);
+        val_object_set_ivar(ev->arena, io_obj, "__fd_num__", args[0]);
+        val_object_set_ivar(ev->arena, io_obj, "mode", mode);
+        val_object_set_ivar(ev->arena, io_obj, "closed", val_false());
+        val_object_set_ivar(ev->arena, io_obj, "sync", val_false());
+        io_obj.obj->native = opened.obj;
+
+        if (options.kind == VAL_HASH) {
+            Value enc = val_nil();
+            if (val_hash_get(options.hash, val_symbol("external_encoding"), &enc))
+                val_object_set_ivar(ev->arena, io_obj, "external_encoding", enc);
+            if (val_hash_get(options.hash, val_symbol("internal_encoding"), &enc))
+                val_object_set_ivar(ev->arena, io_obj, "internal_encoding", enc);
+        }
+
+        if (blk) {
+            Value result = call_block(ev, env, *blk, &io_obj, 1, site);
+            Value closed_result = file_close_stream(ev, io_obj, site);
+            val_object_set_ivar(ev->arena, io_obj, "closed", val_true());
+            if (val_is_signal(closed_result)) {
+                *out = closed_result;
+                return 1;
+            }
+            if (result.kind == VAL_BREAK)
+                result = *result.jump.wrapped;
+            *out = result;
+        } else {
+            *out = io_obj;
+        }
+        return 1;
+    }
+    if (strcmp(name, "console_size") == 0 && strcmp(recv.klass->name, "IO") == 0) {
+        if (argc != 0) {
+            *out = wrong_arg_count(ev, site, argc, 0);
+            return 1;
+        }
+        Value stdout_value = val_nil();
+        if (env_get(ev->top_env, "STDOUT", &stdout_value) &&
+            stdout_value.kind == VAL_OBJECT &&
+            stdout_value.obj->klass.kind == VAL_CLASS &&
+            strcmp(stdout_value.obj->klass.klass->name, "IO") == 0) {
+            NativeFile *stdout_nf = NULL;
+            if (ensure_open_native_file(ev, stdout_value, site, &stdout_nf)) {
+                *out = stream_winsize(ev, stdout_nf->fp);
+                return 1;
+            }
+        }
+        *out = default_console_winsize(ev->arena);
         return 1;
     }
     if (strcmp(recv.klass->name, "Dir") == 0) {
@@ -1523,6 +1859,38 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = val_string(ev->arena, buf);
         return 1;
     }
+    if (strcmp(name, "union") == 0 && strcmp(recv.klass->name, "Regexp") == 0) {
+        Value *items = args;
+        int item_count = argc;
+        if (argc == 1 && args[0].kind == VAL_ARRAY) {
+            items = args[0].array->elems;
+            item_count = (int)args[0].array->len;
+        }
+        size_t total = 1;
+        for (int i = 0; i < item_count; i++) {
+            total += regexp_union_piece_length(items[i]);
+            if (i + 1 < item_count) total++;
+        }
+        char *pattern = arena_alloc(ev->arena, total);
+        char *cursor = pattern;
+        for (int i = 0; i < item_count; i++) {
+            if (i > 0) *cursor++ = '|';
+            cursor = append_regexp_union_piece(cursor, items[i]);
+        }
+        *cursor = '\0';
+
+        Regex *compiled = NULL;
+        RegexError err = {0};
+        if (regex_compile(ev->arena, pattern, 0, &compiled, &err) != REGEX_OK) {
+            *out = eval_raise_class(ev, site, "RegexpError", "invalid regexp: %s", err.message);
+            return 1;
+        }
+        Value obj = val_object(ev->arena, recv);
+        obj.obj->native = compiled;
+        val_object_set_ivar(ev->arena, obj, "source", val_string(ev->arena, pattern));
+        *out = obj;
+        return 1;
+    }
     if (strcmp(name, "new") == 0) {
         if (strcmp(recv.klass->name, "Regexp") == 0) {
             Value obj;
@@ -1594,6 +1962,25 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             *out = obj;
             return 1;
         }
+        Value struct_members = val_nil();
+        if (class_is_a_named_class(ev, recv.klass, "Struct") &&
+            recv.klass->class_env &&
+            env_get(recv.klass->class_env, "__struct_members__", &struct_members) &&
+            struct_members.kind == VAL_ARRAY) {
+            if (argc > (int)struct_members.array->len) {
+                *out = eval_raise_class(ev, site, "ArgumentError", "struct size differs");
+                return 1;
+            }
+            Value obj = val_object(ev->arena, recv);
+            for (size_t i = 0; i < struct_members.array->len; i++) {
+                Value member = struct_members.array->elems[i];
+                if (member.kind != VAL_STRING) continue;
+                Value val = i < (size_t)argc ? args[i] : val_nil();
+                val_object_set_ivar(ev->arena, obj, member.sval, val);
+            }
+            *out = obj;
+            return 1;
+        }
         Value obj = val_object(ev->arena, recv);
         RubyClass *klass = recv.klass;
         while (klass) {
@@ -1626,6 +2013,16 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = obj;
         return 1;
     }
+    if (strcmp(name, "instance") == 0 && argc == 0 &&
+        class_includes_module_name(recv.klass, "Singleton")) {
+        Value existing = val_nil();
+        if (env_get(recv.klass->class_env, "__singleton_instance__", &existing))
+            { *out = existing; return 1; }
+        Value obj = val_object(ev->arena, recv);
+        env_define(ev->arena, recv.klass->class_env, "__singleton_instance__", obj);
+        *out = obj;
+        return 1;
+    }
     /* ---- Class reflection ---- */
 
     if (strcmp(name, "superclass") == 0) {
@@ -1635,6 +2032,42 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
 
     if (strcmp(name, "name") == 0) {
         *out = val_string(ev->arena, recv.klass->name);
+        return 1;
+    }
+
+    if (strcmp(name, "constants") == 0) {
+        Value arr = val_array_new();
+        if (strcmp(recv.klass->name, "Module") == 0) {
+            for (EnvEntry *entry = ev->top_env ? ev->top_env->vars : NULL; entry; entry = entry->next) {
+                if (!entry->name || !entry->name[0]) continue;
+                if (!(entry->name[0] >= 'A' && entry->name[0] <= 'Z')) continue;
+                if (strstr(entry->name, "::")) continue;
+                if (entry->val.kind == VAL_METHOD) continue;
+                val_array_push(&arr, val_symbol(entry->name));
+            }
+            *out = arr;
+            return 1;
+        }
+        for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+            for (EnvEntry *entry = k->class_env ? k->class_env->vars : NULL; entry; entry = entry->next) {
+                if (!entry->name || !entry->name[0]) continue;
+                if (!(entry->name[0] >= 'A' && entry->name[0] <= 'Z')) continue;
+                if (strstr(entry->name, "::")) continue;
+                if (entry->val.kind == VAL_METHOD) continue;
+                int seen = 0;
+                for (size_t i = 0; i < arr.array->len; i++) {
+                    Value existing = arr.array->elems[i];
+                    if (existing.kind == VAL_SYMBOL && strcmp(existing.sval, entry->name) == 0) {
+                        seen = 1;
+                        break;
+                    }
+                }
+                if (!seen)
+                    val_array_push(&arr, val_symbol(entry->name));
+            }
+            if (k->is_module) break;
+        }
+        *out = arr;
         return 1;
     }
 
@@ -1711,7 +2144,11 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
         if (!mname) { *out = eval_raise_class(ev, site, "TypeError", "expected Symbol or String"); return 1; }
         Value method; RubyClass *owner = NULL;
-        if (!ruby_class_find_instance_method(recv.klass, mname, &method, &owner)) { *out = val_false(); return 1; }
+        if (!singleton_class_method_lookup(ev, env, recv, mname, &method) &&
+            !ruby_class_find_instance_method(recv.klass, mname, &method, &owner)) {
+            *out = val_false();
+            return 1;
+        }
         MethodVisibility vis = method.method.visibility;
         int match = 0;
         if (strcmp(name, "method_defined?") == 0) match = (vis == METHOD_PUBLIC || vis == METHOD_PROTECTED);
@@ -1727,7 +2164,8 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
         if (!mname) { *out = eval_raise_class(ev, site, "TypeError", "expected Symbol or String"); return 1; }
         Value method_val; RubyClass *owner = NULL;
-        if (!ruby_class_find_instance_method(recv.klass, mname, &method_val, &owner)) {
+        if (!ruby_class_find_instance_method(recv.klass, mname, &method_val, &owner) &&
+            !primitive_unbound_method_name(mname)) {
             *out = eval_raise_class(ev, site, "NameError", "undefined method '%s' for class '%s'", mname, recv.klass->name);
             return 1;
         }
@@ -1779,6 +2217,59 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     /* Method and UnboundMethod objects */
     if (recv.obj->klass.kind == VAL_CLASS) {
         const char *kname = recv.obj->klass.klass->name;
+
+        if (strcmp(kname, "Binding") == 0) {
+            NativeBinding *binding = (NativeBinding *)recv.obj->native;
+            if (strcmp(name, "local_variable_set") == 0) {
+                if (argc != 2) {
+                    *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+                    return 1;
+                }
+                const char *var = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+                if (!var) {
+                    *out = eval_raise_class(ev, site, "TypeError",
+                                            "local_variable_set requires a Symbol or String");
+                    return 1;
+                }
+                if (binding && binding->env) {
+                    if (!env_update(binding->env, var, args[1]))
+                        env_set(ev->arena, binding->env, var, args[1]);
+                }
+                *out = args[1];
+                return 1;
+            }
+            if (strcmp(name, "local_variable_get") == 0) {
+                if (argc != 1) {
+                    *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+                    return 1;
+                }
+                const char *var = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+                Value value;
+                if (!var) {
+                    *out = eval_raise_class(ev, site, "TypeError",
+                                            "local_variable_get requires a Symbol or String");
+                    return 1;
+                }
+                if (!binding || !binding->env || !env_get(binding->env, var, &value)) {
+                    *out = eval_raise_class(ev, site, "NameError",
+                                            "local variable '%s' is not defined for Binding", var);
+                    return 1;
+                }
+                *out = value;
+                return 1;
+            }
+            if (strcmp(name, "source_location") == 0) {
+                if (argc != 0) {
+                    *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+                    return 1;
+                }
+                Value loc = val_array_new();
+                val_array_push(&loc, binding && binding->file ? val_string(ev->arena, binding->file) : val_nil());
+                val_array_push(&loc, val_int(binding ? binding->line : 1));
+                *out = loc;
+                return 1;
+            }
+        }
 
         if (strcmp(kname, "Time") == 0) {
             NativeTime *nt = (NativeTime *)recv.obj->native;
@@ -1900,7 +2391,8 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
 
         if (strcmp(kname, "Method") == 0) {
-            if (strcmp(name, "call") == 0 || strcmp(name, "[]") == 0) {
+            if (strcmp(name, "call") == 0 || strcmp(name, "[]") == 0 ||
+                strcmp(name, "bind_call") == 0) {
                 Value receiver, method_name_v;
                 if (!val_object_get_ivar(recv, "__receiver__", &receiver) ||
                     !val_object_get_ivar(recv, "__method_name__", &method_name_v)) {
@@ -1938,6 +2430,20 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     *out = val_int(proc_arity(method_val.method.def_node->def.params, 1));
                 else
                     *out = val_int(-1);
+                return 1;
+            }
+            if (strcmp(name, "bind_call") == 0) {
+                if (argc < 1) {
+                    *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+                    return 1;
+                }
+                Value method_name_v;
+                if (!val_object_get_ivar(recv, "__method_name__", &method_name_v)) {
+                    *out = val_nil();
+                    return 1;
+                }
+                *out = dispatch_method(ev, env, args[0], method_name_v.sval, args + 1, argc - 1,
+                                       blk, site, 0, -1);
                 return 1;
             }
             if (strcmp(name, "bind") == 0) {
@@ -2220,12 +2726,101 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             else *out = val_int(fileno(stream));
             return 1;
         }
+        if (strcmp(name, "to_i") == 0 || strcmp(name, "to_int") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            if (fd_num >= 0) *out = val_int(fd_num);
+            else *out = val_int(fileno(stream));
+            return 1;
+        }
         if (strcmp(name, "isatty") == 0 || strcmp(name, "tty?") == 0) {
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
                 return 1;
             }
-            *out = val_false();
+            *out = val_bool(isatty(fileno(stream)));
+            return 1;
+        }
+        if (strcmp(name, "winsize") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = stream_winsize(ev, stream);
+            return 1;
+        }
+        if (strcmp(name, "external_encoding") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            if (!val_object_get_ivar(recv, "external_encoding", out))
+                *out = val_nil();
+            return 1;
+        }
+        if (strcmp(name, "internal_encoding") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            if (!val_object_get_ivar(recv, "internal_encoding", out))
+                *out = val_nil();
+            return 1;
+        }
+        if (strcmp(name, "wait_readable") == 0) {
+            if (argc > 1) {
+                *out = eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 0..1)", argc);
+                return 1;
+            }
+            *out = recv;
+            return 1;
+        }
+        if (strcmp(name, "ungetc") == 0) {
+            if (argc != 1) {
+                *out = wrong_arg_count(ev, site, argc, 1);
+                return 1;
+            }
+            int ch = EOF;
+            if (args[0].kind == VAL_INT) ch = (unsigned char)args[0].ival;
+            else if (args[0].kind == VAL_STRING && args[0].sval && args[0].sval[0] != '\0')
+                ch = (unsigned char)args[0].sval[0];
+            else {
+                *out = eval_raise_class(ev, site, "TypeError", "IO#ungetc requires an Integer or String");
+                return 1;
+            }
+            if (ungetc(ch, stream) == EOF) {
+                *out = eval_raise_class(ev, site, "IOError", "ungetc failed");
+                return 1;
+            }
+            *out = val_nil();
+            return 1;
+        }
+        if (strcmp(name, "raw") == 0 || strcmp(name, "cooked") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            if (!blk) {
+                *out = recv;
+                return 1;
+            }
+            Value result = call_block(ev, env, *blk, NULL, 0, site);
+            if (ev->errored || val_is_signal(result)) {
+                *out = result;
+                return 1;
+            }
+            *out = result;
+            return 1;
+        }
+        if (strcmp(name, "raw!") == 0 || strcmp(name, "cooked!") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            *out = recv;
             return 1;
         }
         if (strcmp(name, "gets") == 0) {

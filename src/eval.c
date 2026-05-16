@@ -9,23 +9,60 @@
 
 extern char **environ;
 
+static Env **value_singleton_env_slot(Value recv) {
+    switch (recv.kind) {
+        case VAL_OBJECT: return &recv.obj->singleton_env;
+        case VAL_ARRAY:  return &recv.array->singleton_env;
+        case VAL_HASH:   return &recv.hash->singleton_env;
+        default:         return NULL;
+    }
+}
+
 static void assign_lvar(Eval *ev, Env *env, const char *name, Value val) {
     if (!env_update(env, name, val))
         env_set(ev->arena, env, name, val);
 }
 
-static Value lookup_const_path(Eval *ev, const char *name) {
+static Value lookup_const_head(Eval *ev, Env *env, const char *name) {
+    Value v;
+    Value current_class;
+    if (env && env_get(env, "__class__", &current_class) && current_class.kind == VAL_CLASS) {
+        Value scope = current_class;
+        while (scope.kind == VAL_CLASS) {
+            if (scope.klass->class_env && env_get(scope.klass->class_env, name, &v))
+                return v;
+            const char *scope_name = scope.klass->name;
+            const char *last = scope_name ? strstr(scope_name, "::") : NULL;
+            const char *scan = last;
+            const char *final = NULL;
+            while (scan) {
+                final = scan;
+                scan = strstr(scan + 2, "::");
+            }
+            if (!final)
+                break;
+            size_t parent_len = (size_t)(final - scope_name);
+            char *parent_name = arena_alloc(ev->arena, parent_len + 1);
+            memcpy(parent_name, scope_name, parent_len);
+            parent_name[parent_len] = '\0';
+            scope = lookup_const_head(ev, NULL, parent_name);
+            if (scope.kind != VAL_CLASS)
+                break;
+        }
+    }
+    if (env_get(ev->top_env, name, &v))
+        return v;
+    return val_nil();
+}
+
+static Value lookup_const_path(Eval *ev, Env *env, const char *name) {
     const char *cursor = name;
     if (cursor[0] == ':' && cursor[1] == ':')
         cursor += 2;
 
     const char *sep = strstr(cursor, "::");
-    if (!sep) {
-        Value v;
-        if (env_get(ev->top_env, cursor, &v))
-            return v;
-        return val_nil();
-    }
+    if (!sep)
+        return lookup_const_head(ev, env, cursor);
 
     size_t head_len = (size_t)(sep - cursor);
     char head[256];
@@ -34,8 +71,8 @@ static Value lookup_const_path(Eval *ev, const char *name) {
     memcpy(head, cursor, head_len);
     head[head_len] = '\0';
 
-    Value current;
-    if (!env_get(ev->top_env, head, &current))
+    Value current = lookup_const_head(ev, env, head);
+    if (current.kind == VAL_NIL)
         return val_nil();
 
     cursor = sep + 2;
@@ -76,6 +113,17 @@ static void split_const_path(Arena *arena, const char *full_name, const char **p
     memcpy(parent, cursor, parent_len);
     parent[parent_len] = '\0';
     *parent_out = parent;
+}
+
+static const char *qualify_const_name(Arena *arena, const char *prefix, const char *leaf) {
+    if (!prefix || !prefix[0]) return leaf;
+    size_t plen = strlen(prefix);
+    size_t llen = strlen(leaf);
+    char *full = arena_alloc(arena, plen + 2 + llen + 1);
+    memcpy(full, prefix, plen);
+    memcpy(full + plen, "::", 2);
+    memcpy(full + plen + 2, leaf, llen + 1);
+    return full;
 }
 
 static int validate_special_global_assignment(Eval *ev, Node *target, Value val) {
@@ -163,7 +211,25 @@ static void assign_target(Eval *ev, Env *env, Node *target, Value val) {
         if (!validate_special_global_assignment(ev, target, val)) return;
         global_set(ev->arena, &ev->globals, target->sval, val);
     } else if (target->kind == NODE_CONST) {
-        env_set(ev->arena, ev->top_env, target->sval, val);
+        const char *parent_name = NULL;
+        const char *leaf_name = NULL;
+        split_const_path(ev->arena, target->sval, &parent_name, &leaf_name);
+        if (parent_name) {
+            Value parent = lookup_const_path(ev, env, parent_name);
+            if (parent.kind == VAL_CLASS && parent.klass->class_env) {
+                env_define(ev->arena, parent.klass->class_env, leaf_name, val);
+                env_define(ev->arena, ev->top_env, target->sval, val);
+                return;
+            }
+        }
+        Value self = val_nil();
+        if (env_get(env, "self", &self) && self.kind == VAL_CLASS && self.klass->class_env == env) {
+            env_define(ev->arena, self.klass->class_env, target->sval, val);
+            const char *qualified = qualify_const_name(ev->arena, self.klass->name, target->sval);
+            env_define(ev->arena, ev->top_env, qualified, val);
+        } else {
+            env_define(ev->arena, ev->top_env, target->sval, val);
+        }
     }
 }
 
@@ -215,7 +281,8 @@ static int defined_simple_value(Eval *ev, Env *env, Node *node, Value *out) {
         case NODE_GVAR:
             return global_get(&ev->globals, node->sval, out);
         case NODE_CONST:
-            return env_get(ev->top_env, node->sval, out);
+            *out = lookup_const_path(ev, env, node->sval);
+            return out->kind != VAL_NIL;
         default:
             return 0;
     }
@@ -255,7 +322,7 @@ static const char *defined_expr(Eval *ev, Env *env, Node *node) {
             return defined_simple_value(ev, env, node, &v) ? "global-variable" : NULL;
         }
         case NODE_CONST: {
-            Value v = lookup_const_path(ev, node->sval);
+            Value v = lookup_const_path(ev, env, node->sval);
             return v.kind != VAL_NIL ? "constant" : NULL;
         }
         case NODE_SELF:
@@ -360,7 +427,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             return v;
         }
         case NODE_CONST: {
-            Value v = lookup_const_path(ev, node->sval);
+            Value v = lookup_const_path(ev, env, node->sval);
             if (v.kind == VAL_NIL)
                 return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", node->sval);
             return v;
@@ -486,13 +553,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
 /* Bind the loop variable into the enclosing env (for leaks scope like MRI). */
 #define FOR_BIND(item_val) do { \
     Value _fv = (item_val); \
-    if (for_target && for_target->kind == NODE_LVAR) { \
-        env_set(ev->arena, env, for_target->sval, _fv); \
-    } else if (for_target && for_target->kind == NODE_IVAR) { \
-        Value _self = val_nil(); \
-        if (env_get(env, "self", &_self) && _self.kind == VAL_OBJECT) \
-            val_object_set_ivar(ev->arena, _self, for_target->sval, _fv); \
-    } \
+    assign_target(ev, env, for_target, _fv); \
 } while (0)
 
 /* Run the body once; handle control-flow signals. */
@@ -696,13 +757,21 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             if (node->def.recv) {
                 Value recv = eval_node(ev, env, node->def.recv);
                 CHECK(recv);
-                if (recv.kind != VAL_CLASS)
-                    return eval_raise_class(ev, node, "TypeError", "can only define singleton methods on a class");
-                size_t nlen = strlen(node->def.name);
-                char *key = arena_alloc(ev->arena, nlen + 6);
-                memcpy(key, "self.", 5);
-                memcpy(key + 5, node->def.name, nlen + 1);
-                env_define(ev->arena, recv.klass->class_env, key, val_method(node, ev->top_env, METHOD_PUBLIC));
+                if (recv.kind == VAL_CLASS) {
+                    size_t nlen = strlen(node->def.name);
+                    char *key = arena_alloc(ev->arena, nlen + 6);
+                    memcpy(key, "self.", 5);
+                    memcpy(key + 5, node->def.name, nlen + 1);
+                    env_define(ev->arena, recv.klass->class_env, key, val_method(node, ev->top_env, METHOD_PUBLIC));
+                } else {
+                    Env **slot = value_singleton_env_slot(recv);
+                    if (!slot)
+                        return eval_raise_class(ev, node, "TypeError",
+                                                "can only define singleton methods on heap objects");
+                    if (!*slot) *slot = env_new(ev->arena, NULL, 1);
+                    env_define(ev->arena, *slot, node->def.name,
+                               val_method(node, ev->top_env, METHOD_PUBLIC));
+                }
             } else {
                 Value singleton_target = val_nil();
                 if (env_get(env, "__singleton_target__", &singleton_target)) {
@@ -713,14 +782,16 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                         memcpy(key + 5, node->def.name, nlen + 1);
                         env_define(ev->arena, singleton_target.klass->class_env, key,
                                    val_method(node, ev->top_env, current_method_visibility(env)));
-                    } else if (singleton_target.kind == VAL_OBJECT) {
-                        if (!singleton_target.obj->singleton_env)
-                            singleton_target.obj->singleton_env = env_new(ev->arena, NULL, 1);
-                        env_define(ev->arena, singleton_target.obj->singleton_env, node->def.name,
-                                   val_method(node, ev->top_env, current_method_visibility(env)));
                     } else {
-                        env_define(ev->arena, env, node->def.name,
-                                   val_method(node, ev->top_env, current_method_visibility(env)));
+                        Env **slot = value_singleton_env_slot(singleton_target);
+                        if (slot) {
+                            if (!*slot) *slot = env_new(ev->arena, NULL, 1);
+                            env_define(ev->arena, *slot, node->def.name,
+                                       val_method(node, ev->top_env, current_method_visibility(env)));
+                        } else {
+                            env_define(ev->arena, env, node->def.name,
+                                       val_method(node, ev->top_env, current_method_visibility(env)));
+                        }
                     }
                 } else {
                     env_define(ev->arena, env, node->def.name,
@@ -734,9 +805,44 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             int found = 0;
 
             Value self = val_nil();
-            if (env_get(env, "self", &self) && self.kind == VAL_CLASS && self.klass->class_env == env) {
-                found = ruby_class_find_instance_method(self.klass, node->alias_stmt.old_name, &method, NULL);
-                if (found) env_define(ev->arena, self.klass->class_env, node->alias_stmt.new_name, method);
+            if (env_get(env, "self", &self) && self.kind == VAL_CLASS && self.klass->class_env) {
+                Value singleton_target = val_nil();
+                int in_singleton_class = env_get(env, "__singleton_target__", &singleton_target) &&
+                                         singleton_target.kind == VAL_CLASS &&
+                                         singleton_target.klass == self.klass;
+                if (in_singleton_class) {
+                    size_t old_len = strlen(node->alias_stmt.old_name);
+                    char *old_key = arena_alloc(ev->arena, old_len + 6);
+                    memcpy(old_key, "self.", 5);
+                    memcpy(old_key + 5, node->alias_stmt.old_name, old_len + 1);
+                    found = env_get(self.klass->class_env, old_key, &method) && method.kind == VAL_METHOD;
+                    if (found) {
+                        size_t new_len = strlen(node->alias_stmt.new_name);
+                        char *new_key = arena_alloc(ev->arena, new_len + 6);
+                        memcpy(new_key, "self.", 5);
+                        memcpy(new_key + 5, node->alias_stmt.new_name, new_len + 1);
+                        env_define(ev->arena, self.klass->class_env, new_key, method);
+                    } else if (val_responds_to(ev, self, node->alias_stmt.old_name, 1)) {
+                        size_t new_len = strlen(node->alias_stmt.new_name);
+                        char *new_key = arena_alloc(ev->arena, new_len + 6);
+                        memcpy(new_key, "self.", 5);
+                        memcpy(new_key + 5, node->alias_stmt.new_name, new_len + 1);
+                        env_define(ev->arena, self.klass->class_env, new_key, val_symbol(node->alias_stmt.old_name));
+                        found = 1;
+                    }
+                } else {
+                    found = ruby_class_find_instance_method(self.klass, node->alias_stmt.old_name, &method, NULL);
+                    if (found) {
+                        env_define(ev->arena, self.klass->class_env, node->alias_stmt.new_name, method);
+                    } else {
+                        Value probe = val_object(ev->arena, self);
+                        if (val_responds_to(ev, probe, node->alias_stmt.old_name, 1)) {
+                            env_define(ev->arena, self.klass->class_env, node->alias_stmt.new_name,
+                                       val_symbol(node->alias_stmt.old_name));
+                            found = 1;
+                        }
+                    }
+                }
             } else {
                 found = env_get(env, node->alias_stmt.old_name, &method) && method.kind == VAL_METHOD;
                 if (found) env_define(ev->arena, env, node->alias_stmt.new_name, method);
@@ -753,16 +859,25 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             const char *leaf_name = NULL;
             split_const_path(ev->arena, node->klass.name, &parent_name, &leaf_name);
             Env *target_env = ev->top_env;
+            const char *full_name = node->klass.name;
             if (parent_name) {
-                Value parent = lookup_const_path(ev, parent_name);
+                Value parent = lookup_const_path(ev, env, parent_name);
                 if (parent.kind != VAL_CLASS)
                     return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", parent_name);
                 target_env = parent.klass->class_env;
+            } else {
+                Value current_self = val_nil();
+                if (env_get(env, "self", &current_self) && current_self.kind == VAL_CLASS &&
+                    current_self.klass->class_env == env) {
+                    target_env = current_self.klass->class_env;
+                    full_name = qualify_const_name(ev->arena, current_self.klass->name, leaf_name);
+                }
             }
 
             Value existing;
             int reopen = env_get(target_env, leaf_name, &existing) &&
-                         existing.kind == VAL_CLASS;
+                         existing.kind == VAL_CLASS &&
+                         !existing.klass->is_module;
 
             Value klass;
             if (reopen) {
@@ -782,21 +897,21 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                         object_val.kind == VAL_CLASS)
                         superclass = object_val;
                 }
-                klass = val_class(ev->arena, node->klass.name, superclass);
+                klass = val_class(ev->arena, full_name, superclass);
                 klass.klass->class_env = env_new(ev->arena, target_env, 1);
+                env_define(ev->arena, target_env, leaf_name, klass);
+                env_define(ev->arena, ev->top_env, full_name, klass);
             }
 
             env_set(ev->arena, klass.klass->class_env, "self", klass);
+            env_set(ev->arena, klass.klass->class_env, "__class__", klass);
+            env_set(ev->arena, klass.klass->class_env, "__singleton_target__", val_nil());
             set_current_method_visibility(ev->arena, klass.klass->class_env, METHOD_PUBLIC);
             if (node->klass.body) {
                 Value body_result = eval_node(ev, klass.klass->class_env, node->klass.body);
                 if (val_is_signal(body_result)) return body_result;
             }
 
-            if (!reopen) {
-                env_define(ev->arena, target_env, leaf_name, klass);
-                env_define(ev->arena, ev->top_env, node->klass.name, klass);
-            }
             return klass;
         }
 
@@ -816,13 +931,16 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             }
 
             env_set(ev->arena, target_env, "self", recv);
+            if (recv.kind == VAL_CLASS)
+                env_set(ev->arena, target_env, "__class__", recv);
             env_set(ev->arena, target_env, "__singleton_target__", recv);
             set_current_method_visibility(ev->arena, target_env, METHOD_PUBLIC);
+            Value body_result = recv;
             if (node->sclass.body) {
-                Value body_result = eval_node(ev, target_env, node->sclass.body);
+                body_result = eval_node(ev, target_env, node->sclass.body);
                 if (val_is_signal(body_result)) return body_result;
             }
-            return recv;
+            return body_result;
         }
 
         case NODE_MODULE: {
@@ -830,45 +948,60 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             const char *leaf_name = NULL;
             split_const_path(ev->arena, node->klass.name, &parent_name, &leaf_name);
             Env *target_env = ev->top_env;
+            const char *full_name = node->klass.name;
             if (parent_name) {
-                Value parent = lookup_const_path(ev, parent_name);
+                Value parent = lookup_const_path(ev, env, parent_name);
                 if (parent.kind != VAL_CLASS)
                     return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", parent_name);
                 target_env = parent.klass->class_env;
+            } else {
+                Value current_self = val_nil();
+                if (env_get(env, "self", &current_self) && current_self.kind == VAL_CLASS &&
+                    current_self.klass->class_env == env) {
+                    target_env = current_self.klass->class_env;
+                    full_name = qualify_const_name(ev->arena, current_self.klass->name, leaf_name);
+                }
             }
 
             Value existing;
             int reopen = env_get(target_env, leaf_name, &existing) &&
-                         existing.kind == VAL_CLASS;
+                         existing.kind == VAL_CLASS &&
+                         existing.klass->is_module;
 
             Value mod;
             if (reopen) {
                 mod = existing;
             } else {
-                mod = val_class(ev->arena, node->klass.name, val_nil());
+                mod = val_class(ev->arena, full_name, val_nil());
                 mod.klass->class_env = env_new(ev->arena, target_env, 1);
                 mod.klass->is_module = 1;
+                env_define(ev->arena, target_env, leaf_name, mod);
+                env_define(ev->arena, ev->top_env, full_name, mod);
             }
 
             env_set(ev->arena, mod.klass->class_env, "self", mod);
+            env_set(ev->arena, mod.klass->class_env, "__class__", mod);
+            env_set(ev->arena, mod.klass->class_env, "__singleton_target__", val_nil());
             set_current_method_visibility(ev->arena, mod.klass->class_env, METHOD_PUBLIC);
             if (node->klass.body) {
                 Value body_result = eval_node(ev, mod.klass->class_env, node->klass.body);
                 if (val_is_signal(body_result)) return body_result;
             }
 
-            if (!reopen) {
-                env_define(ev->arena, target_env, leaf_name, mod);
-                env_define(ev->arena, ev->top_env, node->klass.name, mod);
-            }
             return mod;
         }
 
         case NODE_RANGE: {
-            Value begin = eval_node(ev, env, node->range.begin);
-            CHECK(begin);
-            Value end = eval_node(ev, env, node->range.end);
-            CHECK(end);
+            Value begin = val_nil();
+            Value end = val_nil();
+            if (node->range.begin) {
+                begin = eval_node(ev, env, node->range.begin);
+                CHECK(begin);
+            }
+            if (node->range.end) {
+                end = eval_node(ev, env, node->range.end);
+                CHECK(end);
+            }
             return val_range(ev->arena, begin, end, node->range.exclusive);
         }
 
@@ -951,8 +1084,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     static const char *builtins[] = {
         "Object", "BasicObject", "Numeric",
         "Integer", "Float", "String", "Symbol",
-        "Array", "Hash", "Range", "NilClass", "TrueClass", "FalseClass", "IO", "File", "Dir", "Time",
-        "Class", "Module", "Method", "UnboundMethod", "Proc", "Regexp", "MatchData", "Comparable", "Enumerable",
+        "Array", "Hash", "Range", "NilClass", "TrueClass", "FalseClass", "IO", "File", "Dir", "Time", "Binding", "Struct", "Pathname",
+        "Class", "Module", "Method", "UnboundMethod", "Proc", "Regexp", "MatchData", "Comparable", "Enumerable", "Kernel",
         "Thread", "Process",
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NameError", "NoMethodError", "RegexpError",
@@ -963,7 +1096,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     for (int i = 0; builtins[i]; i++) {
         Value klass = val_class(arena, builtins[i], val_nil());
         klass.klass->class_env = env_new(arena, ev->top_env, 1);
-        if (strcmp(builtins[i], "Comparable") == 0 || strcmp(builtins[i], "Enumerable") == 0)
+        if (strcmp(builtins[i], "Comparable") == 0 || strcmp(builtins[i], "Enumerable") == 0 ||
+            strcmp(builtins[i], "Kernel") == 0)
             klass.klass->is_module = 1;
         if (strcmp(builtins[i], "Thread") == 0 || strcmp(builtins[i], "Process") == 0)
             klass.klass->is_module = 1;
@@ -984,6 +1118,21 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     env_define(arena, ev->top_env, "RUBY_ENGINE", val_string(arena, "stoned"));
     env_define(arena, ev->top_env, "RUBY_VERSION", val_string(arena, "4.0.0"));
     env_define(arena, ev->top_env, "RUBY_PLATFORM", val_string(arena, "x86_64-linux"));
+    env_define(arena, ev->top_env, "RUBY_DESCRIPTION", val_string(arena, "stoned 4.0.0"));
+    env_define(arena, ev->top_env, "RUBY_ENGINE_VERSION", val_string(arena, "4.0.0"));
+    env_define(arena, ev->top_env, "RUBY_PATCHLEVEL", val_int(-1));
+    env_define(arena, ev->top_env, "RUBY_REVISION", val_string(arena, "0"));
+    env_define(arena, ev->top_env, "RUBY_RELEASE_DATE", val_string(arena, "2026-01-01"));
+    env_define(arena, ev->top_env, "RUBY_COPYRIGHT", val_string(arena, "stoned - Copyright (C) 2026"));
+
+    {
+        Value marshal_mod = val_class(arena, "Marshal", val_nil());
+        marshal_mod.klass->class_env = env_new(arena, ev->top_env, 1);
+        marshal_mod.klass->is_module = 1;
+        env_define(arena, marshal_mod.klass->class_env, "MAJOR_VERSION", val_int(4));
+        env_define(arena, marshal_mod.klass->class_env, "MINOR_VERSION", val_int(8));
+        env_define(arena, ev->top_env, "Marshal", marshal_mod);
+    }
 
     {
         Value env_hash = val_hash_new(arena);
@@ -998,6 +1147,69 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
             val_hash_set(env_hash.hash, val_string(arena, key), val_string(arena, eq + 1));
         }
         env_define(arena, ev->top_env, "ENV", env_hash);
+    }
+
+    {
+        Value singleton_mod = val_class(arena, "Singleton", val_nil());
+        singleton_mod.klass->class_env = env_new(arena, ev->top_env, 1);
+        singleton_mod.klass->is_module = 1;
+        env_define(arena, ev->top_env, "Singleton", singleton_mod);
+    }
+
+    {
+        Value prism_mod = val_class(arena, "Prism", val_nil());
+        prism_mod.klass->class_env = env_new(arena, ev->top_env, 1);
+        prism_mod.klass->is_module = 1;
+        env_define(arena, ev->top_env, "Prism", prism_mod);
+
+        static const char *prism_classes[] = {
+            "Visitor",
+            "CallNode",
+            "MatchWriteNode",
+            "EmbeddedStatementsNode",
+            "EmbeddedVariableNode",
+            "StringNode",
+            NULL
+        };
+        for (int i = 0; prism_classes[i]; i++) {
+            const char *name = prism_classes[i];
+            const char *full = qualify_const_name(arena, "Prism", name);
+            Value klass = val_class(arena, full, val_nil());
+            klass.klass->class_env = env_new(arena, prism_mod.klass->class_env, 1);
+            env_define(arena, prism_mod.klass->class_env, name, klass);
+            env_define(arena, ev->top_env, full, klass);
+        }
+    }
+
+    {
+        Value reline_mod = val_class(arena, "Reline", val_nil());
+        reline_mod.klass->class_env = env_new(arena, ev->top_env, 1);
+        reline_mod.klass->is_module = 1;
+        env_define(arena, ev->top_env, "Reline", reline_mod);
+        env_define(arena, reline_mod.klass->class_env, "VERSION", val_string(arena, "0.0.0"));
+        env_define(arena, reline_mod.klass->class_env, "HISTORY", val_array_new());
+        env_define(arena, reline_mod.klass->class_env, "DEFAULT_DIALOG_CONTEXT", val_nil());
+
+        static const char *reline_modules[] = { "Unicode", "IOGate", NULL };
+        for (int i = 0; reline_modules[i]; i++) {
+            const char *name = reline_modules[i];
+            const char *full = qualify_const_name(arena, "Reline", name);
+            Value mod = val_class(arena, full, val_nil());
+            mod.klass->class_env = env_new(arena, reline_mod.klass->class_env, 1);
+            mod.klass->is_module = 1;
+            env_define(arena, reline_mod.klass->class_env, name, mod);
+            env_define(arena, ev->top_env, full, mod);
+        }
+
+        static const char *reline_classes[] = { "Config", "CursorPos", "DialogRenderInfo", NULL };
+        for (int i = 0; reline_classes[i]; i++) {
+            const char *name = reline_classes[i];
+            const char *full = qualify_const_name(arena, "Reline", name);
+            Value klass = val_class(arena, full, val_nil());
+            klass.klass->class_env = env_new(arena, reline_mod.klass->class_env, 1);
+            env_define(arena, reline_mod.klass->class_env, name, klass);
+            env_define(arena, ev->top_env, full, klass);
+        }
     }
 
     Value exception, standard_error, runtime_error, argument_error, type_error, name_error, no_method_error, regexp_error;

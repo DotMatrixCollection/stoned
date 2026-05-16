@@ -31,6 +31,12 @@ typedef struct {
     long    nsec;
 } NativeTime;
 
+typedef struct {
+    struct Env *env;
+    const char *file;
+    int64_t     line;
+} NativeBinding;
+
 static inline NativeFile *alloc_native_file(Arena *a, FILE *fp, int owns_fp) {
     NativeFile *nf = arena_alloc(a, sizeof(NativeFile));
     nf->fp = fp;
@@ -43,6 +49,15 @@ static inline NativeTime *alloc_native_time(Arena *a, int64_t sec, long nsec) {
     nt->sec = sec;
     nt->nsec = nsec;
     return nt;
+}
+
+static inline NativeBinding *alloc_native_binding(Arena *a, struct Env *env,
+                                                  const char *file, int64_t line) {
+    NativeBinding *nb = arena_alloc(a, sizeof(NativeBinding));
+    nb->env = env;
+    nb->file = file;
+    nb->line = line;
+    return nb;
 }
 
 Value eval_error(Eval *ev, Node *n, const char *fmt, ...);

@@ -1300,6 +1300,19 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
     (void)env;
     const char *resolved = NULL;
 
+    if (strcmp(path, "singleton") == 0 || strcmp(path, "singleton.rb") == 0)
+        return val_true();
+    if (strcmp(path, "prism") == 0 || strcmp(path, "prism.rb") == 0)
+        return val_true();
+    if (strcmp(path, "reline") == 0 || strcmp(path, "reline.rb") == 0)
+        return val_true();
+    if (strcmp(path, "pathname") == 0 || strcmp(path, "pathname.rb") == 0)
+        return val_true();
+    if (strcmp(path, "io/console") == 0 || strcmp(path, "io/console.rb") == 0)
+        return val_true();
+    if (strcmp(path, "io/console/size") == 0 || strcmp(path, "io/console/size.rb") == 0)
+        return val_true();
+
     if (ev->current_file)
         resolved = resolve_require_path(ev->arena, ev->current_file, path, 0);
     if (resolved) {
