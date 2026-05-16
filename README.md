@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `347` tests are passing, and birb's REPL now fully evaluates expressions and echoes results — `1+1` returns `2`, `puts 2+2` prints `4`. Key session-6 additions: `String#<<` mutation propagation, `class<<self` visibility scope restoration, `NODE_LVAR` nil-for-unassigned (Ruby semantics), Prism/PP/Reline stubs, `MatchData` named captures, and many more runtime fixes. It is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `352` tests are passing, and birb's REPL now fully evaluates expressions and echoes results — `1+1` returns `2`, `puts 2+2` prints `4`. Key session-6 additions: `String#<<` mutation propagation, `class<<self` visibility scope restoration, `NODE_LVAR` nil-for-unassigned (Ruby semantics), Prism/PP/Reline stubs, `MatchData` named captures, and many more runtime fixes. It is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -52,7 +52,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `350 passed, 0 failed, 350 total`. Session 7 additions: `Float::INFINITY`, `Enumerator::Lazy`, `Array#chunk/chunk_while`, Symbol methods, `Integer#clamp(range)`, Class comparison operators, `Kernel.instance_method`, StringIO shim, `execute_as_command?` fix enabling IRB commands, subscript compound assignment (`h[k]+=1`), numeric underscore separators (`1_000_000`), `Array#[]=`, `String#chomp(sep)`, `String/Range#to_a` for string ranges, and many more.
+Current coverage in the tree: `352 passed, 0 failed, 352 total`. Session 7 additions: `Float::INFINITY`, `Enumerator::Lazy`, `Array#chunk/chunk_while`, Symbol methods, `Integer#clamp(range)`, Class comparison operators, `Kernel.instance_method`, StringIO shim, `execute_as_command?` fix enabling IRB commands, subscript compound assignment (`h[k]+=1`), numeric underscore separators (`1_000_000`), `Array#[]=`, `String#chomp(sep)`, `String/Range#to_a` for string ranges, and many more.
 
 What is working today:
 
