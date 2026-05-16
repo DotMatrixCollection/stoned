@@ -177,6 +177,27 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         *out = recv; return 1;
     }
+    if (strcmp(name, "dig") == 0) {
+        if (argc < 1 || args[0].kind != VAL_INT) { *out = val_nil(); return 1; }
+        int64_t idx = args[0].ival;
+        if (idx < 0) idx += (int64_t)recv.array->len;
+        if (idx < 0 || (size_t)idx >= recv.array->len) { *out = val_nil(); return 1; }
+        Value current = recv.array->elems[idx];
+        for (int i = 1; i < argc; i++) {
+            if (current.kind == VAL_ARRAY) {
+                if (args[i].kind != VAL_INT) { *out = val_nil(); return 1; }
+                int64_t ci = args[i].ival;
+                if (ci < 0) ci += (int64_t)current.array->len;
+                if (ci < 0 || (size_t)ci >= current.array->len) { *out = val_nil(); return 1; }
+                current = current.array->elems[ci];
+            } else if (current.kind == VAL_HASH) {
+                Value next;
+                if (!val_hash_get(current.hash, args[i], &next)) { *out = val_nil(); return 1; }
+                current = next;
+            } else { *out = val_nil(); return 1; }
+        }
+        *out = current; return 1;
+    }
     if (strcmp(name, "[]=") == 0) {
         if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
         if (args[0].kind == VAL_RANGE) {
@@ -1181,6 +1202,25 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             for (size_t j = 0; j < other->len; j++) val_hash_set(h, other->keys[j], other->vals[j]);
         }
         *out = recv; return 1;
+    }
+    if (strcmp(name, "dig") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        Value current;
+        if (!val_hash_get(h, args[0], &current)) { *out = val_nil(); return 1; }
+        for (int i = 1; i < argc; i++) {
+            if (current.kind == VAL_HASH) {
+                Value next;
+                if (!val_hash_get(current.hash, args[i], &next)) { *out = val_nil(); return 1; }
+                current = next;
+            } else if (current.kind == VAL_ARRAY) {
+                if (args[i].kind != VAL_INT) { *out = val_nil(); return 1; }
+                int64_t idx = args[i].ival;
+                if (idx < 0) idx += (int64_t)current.array->len;
+                if (idx < 0 || (size_t)idx >= current.array->len) { *out = val_nil(); return 1; }
+                current = current.array->elems[idx];
+            } else { *out = val_nil(); return 1; }
+        }
+        *out = current; return 1;
     }
     if (strcmp(name, "find") == 0 || strcmp(name, "detect") == 0) {
         if (!blk) { *out = val_nil(); return 1; }
