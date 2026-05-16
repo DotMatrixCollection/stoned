@@ -790,7 +790,22 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = result; return 1;
     }
     if (strcmp(name, "sample") == 0) {
-        if (recv.array->len == 0) { *out = val_nil(); return 1; }
+        if (recv.array->len == 0) { *out = argc > 0 ? val_array_new() : val_nil(); return 1; }
+        if (argc > 0 && args[0].kind == VAL_INT) {
+            int64_t n = args[0].ival;
+            if (n < 0) { *out = eval_raise_class(ev, site, "ArgumentError", "negative sample number"); return 1; }
+            if ((size_t)n > recv.array->len) n = (int64_t)recv.array->len;
+            /* Simple Fisher-Yates on a copy */
+            Value tmp = val_array_new();
+            for (size_t i = 0; i < recv.array->len; i++) val_array_push(&tmp, recv.array->elems[i]);
+            Value result = val_array_new();
+            for (int64_t i = 0; i < n; i++) {
+                size_t j = i + (size_t)rand() % (tmp.array->len - (size_t)i);
+                Value t = tmp.array->elems[i]; tmp.array->elems[i] = tmp.array->elems[j]; tmp.array->elems[j] = t;
+                val_array_push(&result, tmp.array->elems[i]);
+            }
+            *out = result; return 1;
+        }
         size_t idx = (size_t)rand() % recv.array->len;
         *out = recv.array->elems[idx]; return 1;
     }

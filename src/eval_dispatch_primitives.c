@@ -854,11 +854,19 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "chomp") == 0) {
         size_t len = strlen(s);
-        if (len > 0 && s[len - 1] == '\n') {
-            len--;
-            if (len > 0 && s[len - 1] == '\r') len--;
-        } else if (len > 0 && s[len - 1] == '\r') {
-            len--;
+        if (argc > 0 && args[0].kind == VAL_STRING) {
+            /* chomp with explicit separator */
+            const char *sep = args[0].sval;
+            size_t seplen = strlen(sep);
+            if (seplen > 0 && len >= seplen && strcmp(s + len - seplen, sep) == 0)
+                len -= seplen;
+        } else {
+            if (len > 0 && s[len - 1] == '\n') {
+                len--;
+                if (len > 0 && s[len - 1] == '\r') len--;
+            } else if (len > 0 && s[len - 1] == '\r') {
+                len--;
+            }
         }
         *out = val_string_n(ev->arena, s, len);
         return 1;
