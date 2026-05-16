@@ -217,6 +217,10 @@ Recent Stage 5 progress already landed:
 - `def Foo::bar` syntax: lowercase IDENT now accepted as the final method-name segment after `::`
 - Predicate/bang identifiers (`method?`, `method!`) always dispatch as method calls, never fall through to `NODE_LVAR`
 - **birb session-5**: `IRB.start` now reaches the readline/prompt-generation code deep in the REPL loop
+- `String#gsub`/`#sub` with block now sets `$1`..$9` from capture groups before calling the block (fixes `format_prompt` pattern)
+- `String#[]` with Regexp argument: performs regex_search and returns matched substring; `String#[regex, n]` returns nth capture group
+- `String#[]` with String argument: substring match
+- **birb complete**: `IRB.start` runs the full REPL loop through prompt generation and exits 0 on EOF
 
 Exit gate:
 
