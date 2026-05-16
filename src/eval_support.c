@@ -1461,6 +1461,24 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         return val_true();
     if (strcmp(path, "yaml") == 0 || strcmp(path, "yaml.rb") == 0)
         return val_true();
+    if (strcmp(path, "set") == 0 || strcmp(path, "set.rb") == 0)
+        return val_true();
+    if (strcmp(path, "uri") == 0 || strcmp(path, "uri.rb") == 0)
+        return val_true();
+    if (strcmp(path, "date") == 0 || strcmp(path, "date.rb") == 0)
+        return val_true();
+    if (strcmp(path, "logger") == 0 || strcmp(path, "logger.rb") == 0)
+        return val_true();
+    if (strcmp(path, "digest") == 0 || strcmp(path, "digest.rb") == 0)
+        return val_true();
+    if (strcmp(path, "base64") == 0 || strcmp(path, "base64.rb") == 0)
+        return val_true();
+    if (strcmp(path, "observer") == 0 || strcmp(path, "observer.rb") == 0)
+        return val_true();
+    if (strcmp(path, "forwardable") == 0 || strcmp(path, "forwardable.rb") == 0)
+        return val_true();
+    if (strcmp(path, "ostruct") == 0 || strcmp(path, "ostruct.rb") == 0)
+        return val_true();
     if (strcmp(path, "tmpdir") == 0 || strcmp(path, "tmpdir.rb") == 0)
         return val_true();
     if (strcmp(path, "tempfile") == 0 || strcmp(path, "tempfile.rb") == 0)
