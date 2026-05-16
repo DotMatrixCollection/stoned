@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `315` tests are passing, and recent work fixed heredoc rest-of-line tokens, multiline paren arguments, leading-dot method chaining, class/module constant scoping, backtick commands, `__FILE__`/`__LINE__`, Encoding/StringIO/Open3 stubs, and alias-to-Kernel-function forwarding. irb.rb from the birb project now loads cleanly, but it is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `323` tests are passing, and recent work added class variables, catch/throw, predicate-method dispatch, class<<self scope restoration, MatchData named captures, and a large set of birb load-chain fixes that push birb's IRB deep into the readline/prompt-generation code, but it is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -52,7 +52,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `303 passed, 0 failed, 303 total`.
+Current coverage in the tree: `323 passed, 0 failed, 323 total`.
 
 What is working today:
 

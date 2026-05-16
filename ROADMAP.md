@@ -201,6 +201,22 @@ Recent Stage 5 progress already landed:
 - `Shellwords.split`, `StringIO` class stub, `Open3` module stub, `Encoding` class with UTF_8/ASCII_8BIT/EUC_JP/… constants and `Encoding.find`
 - `open3`, `tmpdir`, `tempfile` require stubs
 - **birb milestone**: `irb.rb` (the full IRB entry point) now loads cleanly — exit 0, no parse or runtime errors
+- `MatchData#[]` accepts symbol/string keys for named capture groups; names extracted from regexp source at match time
+- `$:` global alias for `$LOAD_PATH`; `$"` alias for `$LOADED_FEATURES`
+- `and`/`or` keywords now short-circuit correctly (same code path as `&&`/`||`)
+- Class variables `@@x`: `NODE_CVAR` read/write; compound assignment `@@x += 1` handled via `assign_target` fallback
+- `class << self` now saves and restores `__singleton_target__` so instance methods defined after the block go to the instance method env, not the singleton env
+- `Thread.current` returns a singleton main-thread stub
+- `Kernel.method` dispatch: calls on the Kernel module forward to `builtin_kernel`
+- Module constant-lookup fix: when a class method `self.X` exists, `Module.X(args)` calls the method rather than returning the constant
+- `NoMethodError` messages now show the real receiver class name (was always "Object")
+- `catch`/`throw`: implemented via `VAL_THROW` signal with `throw_sig.{tag,value}` struct fields
+- `trap`, `at_exit`, `sleep`, `catch`, `throw` added to `builtin_kernel` and `kernel_names` dispatch list
+- `Array#reverse_each`; `PP` class stub; `pp` and `color_printer` require stubs
+- Block `def_file` captured at creation time, restored in `call_block` so `require_relative` inside procs resolves relative to the block's defining file
+- `def Foo::bar` syntax: lowercase IDENT now accepted as the final method-name segment after `::`
+- Predicate/bang identifiers (`method?`, `method!`) always dispatch as method calls, never fall through to `NODE_LVAR`
+- **birb session-5**: `IRB.start` now reaches the readline/prompt-generation code deep in the REPL loop
 
 Exit gate:
 
