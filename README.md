@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `303` tests are passing, and recent work added io/console compatibility, Binding.eval, lexer additions (octal, %r{}, char literals), parser fixes (partial ranges, for-destructure, def Const::, hashrocket args), singleton methods on Array/Hash, Reline/Prism/Singleton stubs, alias fixes, and Regexp.union, but it is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `315` tests are passing, and recent work fixed heredoc rest-of-line tokens, multiline paren arguments, leading-dot method chaining, class/module constant scoping, backtick commands, `__FILE__`/`__LINE__`, Encoding/StringIO/Open3 stubs, and alias-to-Kernel-function forwarding. irb.rb from the birb project now loads cleanly, but it is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 

@@ -187,6 +187,20 @@ Recent Stage 5 progress already landed:
 - Singleton methods on Array and Hash objects; `attr_reader`/`attr_writer` in singleton env; singleton class expression (`class << obj`)
 - `alias` now resolves builtin methods by probe dispatch, not env-only lookup; nested class body no longer inherits singleton-class def-target from an enclosing `class << self`
 - `Regexp.union` with strings and arrays of strings/regexps; `Regexp#inspect` for union results
+- `parse_args` now skips terminators at entry and after last arg, so `)` on its own line in a paren call works correctly
+- Heredoc rest-of-line (`hd_pending`): tokens on the same line as `<<~HEREDOC` (e.g. the closing `)`) are buffered and emitted after `INTERP_END` instead of being silently discarded
+- Heredoc inner string fix (`hd_imode_depth`): `"..."` inside `#{}` inside a heredoc body no longer incorrectly triggers the heredoc content scanner
+- `.[]()` / `&.[]()` parsed as explicit method-name calls after dot
+- Stabby lambda accepts unparenthesized multi-param: `-> x, y { x + y }`
+- Method destructured params `def f((a, b))` now registers nested locals so `/` after a destructured var is division, not regexp
+- `Complex()` and `Rational()` added to parser's kernel-const-call list
+- Leading-dot newline continuation: a line starting with `.method` chains onto the previous expression
+- `NODE_CLASS` / `NODE_MODULE` reopen check now scans `target_env->vars` directly (not `env_get` chain), fixing the bug where `class Foo < Base` inside `module Inner` reopened `Outer::Foo` instead of creating `Inner::Foo`
+- `alias` inside a module now synthesizes a forwarding `def` for known Kernel functions (load, require, puts, …) instead of raising `NameError`
+- `__FILE__` and `__LINE__` keywords implemented via `builtin_kernel`; backtick command strings `` `cmd` `` execute via `popen`
+- `Shellwords.split`, `StringIO` class stub, `Open3` module stub, `Encoding` class with UTF_8/ASCII_8BIT/EUC_JP/… constants and `Encoding.find`
+- `open3`, `tmpdir`, `tempfile` require stubs
+- **birb milestone**: `irb.rb` (the full IRB entry point) now loads cleanly — exit 0, no parse or runtime errors
 
 Exit gate:
 
