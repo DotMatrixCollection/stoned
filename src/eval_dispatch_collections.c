@@ -1095,6 +1095,25 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         }
         return 1;
     }
+    if (strcmp(name, "group_by") == 0) {
+        if (!blk) { *out = recv; return 1; }
+        Value result = val_hash_new(ev->arena);
+        for (size_t i = 0; i < h->len; i++) {
+            Value pair[2] = { h->keys[i], h->vals[i] };
+            Value key = call_block(ev, env, *blk, pair, 2, site);
+            if (val_is_signal(key)) { *out = key; return 1; }
+            Value group = val_nil();
+            if (!val_hash_get(result.hash, key, &group)) {
+                group = val_array_new();
+            }
+            Value kv_pair = val_array_new();
+            val_array_push(&kv_pair, h->keys[i]);
+            val_array_push(&kv_pair, h->vals[i]);
+            val_array_push(&group, kv_pair);
+            val_hash_set(result.hash, key, group);
+        }
+        *out = result; return 1;
+    }
     if (strcmp(name, "min_by") == 0 || strcmp(name, "max_by") == 0 || strcmp(name, "sort_by") == 0) {
         Value as_arr = val_array_new();
         for (size_t i = 0; i < h->len; i++) {
