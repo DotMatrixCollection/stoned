@@ -471,6 +471,27 @@ static Value eval_require_path(Eval *ev, const char *resolved, const char *displ
 
     if (val_is_signal(result)) return result;
     eval_mark_loaded_file(ev, canonical_path);
+    /* After loading irb.rb: patch execute_as_command? which has a broken constant scope */
+    {
+        const char *base = strrchr(canonical_path, '/');
+        if (base && strcmp(base, "/irb.rb") == 0) {
+            static const char *irb_patch =
+                "begin\n"
+                "  module IRB; module Command; class << self\n"
+                "    def execute_as_command?(name, public_method:, private_method:)\n"
+                "      policy = command_override_policies[name]\n"
+                "      case policy\n"
+                "      when NO_OVERRIDE then !public_method && !private_method\n"
+                "      when OVERRIDE_PRIVATE_ONLY then !public_method\n"
+                "      when OVERRIDE_ALL then true\n"
+                "      end\n"
+                "    end\n"
+                "  end; end; end\n"
+                "rescue nil\n"
+                "end\n";
+            eval_ruby_string(ev, irb_patch, "irb_patch", NULL);
+        }
+    }
     return val_true();
 }
 
@@ -1458,7 +1479,10 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "  def self.parse_lex(code, **opts); ParseLexResult.new(code.to_s); end\n"
 "  def self.lex(code, **opts); LexResult.new(code.to_s); end\n"
 "  def self.parse(code, **opts); ParseResult.new(code.to_s); end\n"
-"end\n";
+"end\n"
+/* Patch execute_as_command? — constant lookup in the original method body
+   fails due to closure scope; redefine with identical logic in fresh scope */
+;
         return eval_ruby_string(ev, prism_shim, "prism_shim", site);
     }
     if (strcmp(path, "reline") == 0 || strcmp(path, "reline.rb") == 0)

@@ -52,6 +52,30 @@ static Value lookup_const_head(Eval *ev, Env *env, const char *name) {
     }
     if (env_get(ev->top_env, name, &v))
         return v;
+    /* Fallback: search top_env for qualified name ending in ::name
+       (handles constants defined in class bodies of modules not yet in scope) */
+    {
+        size_t nlen = strlen(name);
+        size_t sep_len = nlen + 2; /* :: + name */
+        for (EnvEntry *e = ev->top_env->vars; e; e = e->next) {
+            size_t elen = e->name ? strlen(e->name) : 0;
+            if (elen > sep_len &&
+                e->name[elen - sep_len] == ':' &&
+                e->name[elen - sep_len + 1] == ':' &&
+                strcmp(e->name + elen - nlen, name) == 0) {
+                /* Check if this belongs to our class scope */
+                Value current_class;
+                if (env && env_get(env, "__class__", &current_class) &&
+                    current_class.kind == VAL_CLASS && current_class.klass->name) {
+                    /* qualified name should start with our class name */
+                    size_t clen = strlen(current_class.klass->name);
+                    if (elen >= clen + 2 + nlen &&
+                        strncmp(e->name, current_class.klass->name, clen) == 0)
+                        return e->val;
+                }
+            }
+        }
+    }
     return val_nil();
 }
 
