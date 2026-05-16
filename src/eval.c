@@ -840,9 +840,67 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                             env_define(ev->arena, self.klass->class_env, node->alias_stmt.new_name,
                                        val_symbol(node->alias_stmt.old_name));
                             found = 1;
+                        } else {
+                            /* Kernel/top-level function: only alias if top_env has a binding
+                               or it's a known dispatchable name; refuse otherwise */
+                            static const char *kernel_fns[] = {
+                                "load", "require", "require_relative",
+                                "puts", "print", "p", "pp", "warn",
+                                "exit", "abort", "raise", "fail",
+                                "lambda", "proc", "loop", "rand",
+                                "format", "sprintf", "system",
+                                "Integer", "Float", "String", "Array",
+                                "__method__", "__dir__", "__callee__",
+                                "gets", "sleep", "at_exit",
+                                NULL
+                            };
+                            int is_kernel = 0;
+                            for (int ki = 0; kernel_fns[ki]; ki++) {
+                                if (strcmp(node->alias_stmt.old_name, kernel_fns[ki]) == 0) {
+                                    is_kernel = 1;
+                                    break;
+                                }
+                            }
+                            if (is_kernel) { /* Create a forwarding call node */
+                            Arena *a = ev->arena;
+                            Node *call_node = arena_alloc(a, sizeof(Node));
+                            memset(call_node, 0, sizeof(Node));
+                            call_node->kind = NODE_CALL;
+                            call_node->call.method = node->alias_stmt.old_name;
+                            call_node->call.recv = NULL;
+
+                            Node *rest_param = arena_alloc(a, sizeof(Node));
+                            memset(rest_param, 0, sizeof(Node));
+                            rest_param->kind = NODE_PARAM;
+                            rest_param->param.name = "__fwd_args__";
+                            rest_param->param.splat = 1;
+
+                            Node *splat_arg = arena_alloc(a, sizeof(Node));
+                            memset(splat_arg, 0, sizeof(Node));
+                            splat_arg->kind = NODE_UNOP;
+                            splat_arg->unop.op = "*";
+                            Node *arg_ref = arena_alloc(a, sizeof(Node));
+                            memset(arg_ref, 0, sizeof(Node));
+                            arg_ref->kind = NODE_LVAR;
+                            arg_ref->sval = "__fwd_args__";
+                            splat_arg->unop.operand = arg_ref;
+
+                            call_node->call.args = nodelist_append(a, NULL, splat_arg);
+
+                            Node *def_node = arena_alloc(a, sizeof(Node));
+                            memset(def_node, 0, sizeof(Node));
+                            def_node->kind = NODE_DEF;
+                            def_node->def.name = node->alias_stmt.new_name;
+                            def_node->def.params = nodelist_append(a, NULL, rest_param);
+                            def_node->def.body = call_node;
+
+                            Value fwd_method = val_method(def_node, env, METHOD_PUBLIC);
+                            env_define(ev->arena, self.klass->class_env, node->alias_stmt.new_name, fwd_method);
+                            found = 1;
                         }
                     }
                 }
+            }
             } else {
                 found = env_get(env, node->alias_stmt.old_name, &method) && method.kind == VAL_METHOD;
                 if (found) env_define(ev->arena, env, node->alias_stmt.new_name, method);
@@ -874,10 +932,15 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 }
             }
 
-            Value existing;
-            int reopen = env_get(target_env, leaf_name, &existing) &&
-                         existing.kind == VAL_CLASS &&
-                         !existing.klass->is_module;
+            Value existing = val_nil();
+            int reopen = 0;
+            for (EnvEntry *e = target_env->vars; e; e = e->next) {
+                if (strcmp(e->name, leaf_name) == 0) {
+                    existing = e->val;
+                    reopen = existing.kind == VAL_CLASS && !existing.klass->is_module;
+                    break;
+                }
+            }
 
             Value klass;
             if (reopen) {
@@ -963,10 +1026,15 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 }
             }
 
-            Value existing;
-            int reopen = env_get(target_env, leaf_name, &existing) &&
-                         existing.kind == VAL_CLASS &&
-                         existing.klass->is_module;
+            Value existing = val_nil();
+            int reopen = 0;
+            for (EnvEntry *e = target_env->vars; e; e = e->next) {
+                if (strcmp(e->name, leaf_name) == 0) {
+                    existing = e->val;
+                    reopen = existing.kind == VAL_CLASS && existing.klass->is_module;
+                    break;
+                }
+            }
 
             Value mod;
             if (reopen) {
@@ -1210,6 +1278,41 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
             env_define(arena, reline_mod.klass->class_env, name, klass);
             env_define(arena, ev->top_env, full, klass);
         }
+    }
+
+    {
+        Value sw_mod = val_class(arena, "Shellwords", val_nil());
+        sw_mod.klass->class_env = env_new(arena, ev->top_env, 1);
+        sw_mod.klass->is_module = 1;
+        env_define(arena, ev->top_env, "Shellwords", sw_mod);
+    }
+    {
+        Value sio_class = val_class(arena, "StringIO", val_nil());
+        sio_class.klass->class_env = env_new(arena, ev->top_env, 1);
+        env_define(arena, ev->top_env, "StringIO", sio_class);
+    }
+    {
+        Value open3_mod = val_class(arena, "Open3", val_nil());
+        open3_mod.klass->class_env = env_new(arena, ev->top_env, 1);
+        open3_mod.klass->is_module = 1;
+        env_define(arena, ev->top_env, "Open3", open3_mod);
+    }
+    {
+        Value enc_class = val_class(arena, "Encoding", val_nil());
+        enc_class.klass->class_env = env_new(arena, ev->top_env, 1);
+        /* Common encoding constants — each is an Encoding object stub */
+        static const char *enc_names[] = {
+            "UTF_8", "US_ASCII", "ASCII_8BIT", "BINARY",
+            "EUC_JP", "Windows_31J", "ISO_8859_1",
+            "UTF_16BE", "UTF_16LE", "UTF_32BE", "UTF_32LE",
+            NULL
+        };
+        for (int i = 0; enc_names[i]; i++) {
+            Value obj = val_object(arena, enc_class);
+            val_object_set_ivar(arena, obj, "name", val_string(arena, enc_names[i]));
+            env_define(arena, enc_class.klass->class_env, enc_names[i], obj);
+        }
+        env_define(arena, ev->top_env, "Encoding", enc_class);
     }
 
     Value exception, standard_error, runtime_error, argument_error, type_error, name_error, no_method_error, regexp_error;

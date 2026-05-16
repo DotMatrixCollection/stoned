@@ -1021,6 +1021,46 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = klass;
         return 1;
     }
+    if (strcmp(recv.klass->name, "Encoding") == 0 && strcmp(name, "find") == 0) {
+        if (argc < 1 || args[0].kind != VAL_STRING) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "Encoding.find requires a String");
+            return 1;
+        }
+        const char *enc_name = args[0].sval;
+        Value enc_obj = val_nil();
+        env_get(recv.klass->class_env, enc_name, &enc_obj);
+        if (enc_obj.kind == VAL_NIL) {
+            /* Return UTF-8 as a safe default for unknown encodings */
+            env_get(recv.klass->class_env, "UTF_8", &enc_obj);
+        }
+        *out = enc_obj;
+        return 1;
+    }
+    if (strcmp(recv.klass->name, "Shellwords") == 0 && strcmp(name, "split") == 0) {
+        if (argc != 1 || args[0].kind != VAL_STRING) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "Shellwords.split requires a String");
+            return 1;
+        }
+        const char *s = args[0].sval;
+        Value arr = val_array_new();
+        while (*s) {
+            while (*s == ' ' || *s == '\t') s++;
+            if (!*s) break;
+            char buf[4096]; size_t blen = 0;
+            char quote = 0;
+            if (*s == '"' || *s == '\'') { quote = *s++; }
+            while (*s && (quote ? (*s != quote) : (*s != ' ' && *s != '\t'))) {
+                if (!quote && *s == '\\' && s[1]) { s++; }
+                if (blen < sizeof(buf) - 1) buf[blen++] = *s;
+                s++;
+            }
+            if (quote && *s == quote) s++;
+            buf[blen] = '\0';
+            val_array_push(&arr, val_string(ev->arena, buf));
+        }
+        *out = arr;
+        return 1;
+    }
     if (strcmp(recv.klass->name, "Pathname") == 0 && strcmp(name, "new") == 0) {
         if (argc != 1 || (args[0].kind != VAL_STRING && args[0].kind != VAL_SYMBOL)) {
             *out = eval_raise_class(ev, site, "TypeError", "Pathname.new requires a String");

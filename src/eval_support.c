@@ -1312,6 +1312,16 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         return val_true();
     if (strcmp(path, "io/console/size") == 0 || strcmp(path, "io/console/size.rb") == 0)
         return val_true();
+    if (strcmp(path, "shellwords") == 0 || strcmp(path, "shellwords.rb") == 0)
+        return val_true();
+    if (strcmp(path, "stringio") == 0 || strcmp(path, "stringio.rb") == 0)
+        return val_true();
+    if (strcmp(path, "open3") == 0 || strcmp(path, "open3.rb") == 0)
+        return val_true();
+    if (strcmp(path, "tmpdir") == 0 || strcmp(path, "tmpdir.rb") == 0)
+        return val_true();
+    if (strcmp(path, "tempfile") == 0 || strcmp(path, "tempfile.rb") == 0)
+        return val_true();
 
     if (ev->current_file)
         resolved = resolve_require_path(ev->arena, ev->current_file, path, 0);

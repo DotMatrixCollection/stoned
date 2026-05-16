@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include "eval_internal.h"
 #include "parser.h"
 #include "sema.h"
@@ -10,6 +11,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 #define CHECK(v) do { if (ev->errored || val_is_signal(v)) return (v); } while(0)
 
@@ -702,6 +704,13 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     Value stderr_obj = val_nil();
     int have_stderr = global_get(&ev->globals, "stderr", &stderr_obj);
 
+    if (strcmp(name, "__FILE__") == 0) {
+        return ev->current_file ? val_string(ev->arena, ev->current_file) : val_string(ev->arena, "(eval)");
+    }
+    if (strcmp(name, "__LINE__") == 0) {
+        return val_int(site ? site->span.line : 0);
+    }
+
     if (strcmp(name, "__method__") == 0) {
         if (argc != 0)
             return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
@@ -825,6 +834,27 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         Value arr = val_array_new();
         for (int i = 0; i < argc; i++) val_array_push(&arr, args[i]);
         return arr;
+    }
+
+    if (strcmp(name, "`") == 0) {
+        if (argc == 1 && args[0].kind == VAL_STRING) {
+            const char *cmd = args[0].sval;
+            FILE *fp = popen(cmd, "r");
+            if (!fp) return val_string(ev->arena, "");
+            char buf[4096]; size_t total = 0;
+            char *out = arena_alloc(ev->arena, 1);
+            out[0] = '\0';
+            while (fgets(buf, sizeof(buf), fp)) {
+                size_t n = strlen(buf);
+                char *next = arena_alloc(ev->arena, total + n + 1);
+                memcpy(next, out, total);
+                memcpy(next + total, buf, n + 1);
+                out = next; total += n;
+            }
+            pclose(fp);
+            return val_string(ev->arena, out);
+        }
+        return val_string(ev->arena, "");
     }
 
     if (strcmp(name, "puts") == 0) {
@@ -1927,7 +1957,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload",
             "deprecate_constant", "private_constant", "public_constant",
-            "__dir__", "__method__", "binding", "eval", NULL
+            "__dir__", "__method__", "__FILE__", "__LINE__", "__callee__", "binding", "eval", "`", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
             if (strcmp(name, kernel_names[i]) == 0)
