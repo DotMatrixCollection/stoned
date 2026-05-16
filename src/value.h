@@ -225,6 +225,21 @@ static inline int val_equal(Value a, Value b) {
             return a.range->exclusive == b.range->exclusive &&
                    val_equal(a.range->begin_val, b.range->begin_val) &&
                    val_equal(a.range->end_val, b.range->end_val);
+        case VAL_ARRAY:
+            if (a.array == b.array) return 1;
+            if (!a.array || !b.array || a.array->len != b.array->len) return 0;
+            for (size_t i = 0; i < a.array->len; i++)
+                if (!val_equal(a.array->elems[i], b.array->elems[i])) return 0;
+            return 1;
+        case VAL_HASH:
+            if (a.hash == b.hash) return 1;
+            if (!a.hash || !b.hash || a.hash->len != b.hash->len) return 0;
+            for (size_t i = 0; i < a.hash->len; i++) {
+                Value v;
+                if (!val_hash_get(b.hash, a.hash->keys[i], &v)) return 0;
+                if (!val_equal(a.hash->vals[i], v)) return 0;
+            }
+            return 1;
         default: return 0;
     }
 }

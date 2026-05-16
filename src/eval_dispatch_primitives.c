@@ -1516,5 +1516,7 @@ int dispatch_bool(Eval *ev, Value recv, const char *name, Node *site, Value *out
     }
     if (strcmp(name, "!") == 0) { *out = val_bool(!recv.bval); return 1; }
     if (strcmp(name, "nil?") == 0) { *out = val_false(); return 1; }
+    if (strcmp(name, "freeze") == 0 || strcmp(name, "frozen?") == 0) { *out = recv; return 1; }
+    if (strcmp(name, "dup") == 0) { *out = recv; return 1; }
     return 0;
 }

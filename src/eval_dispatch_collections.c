@@ -65,7 +65,21 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                    Value *blk, Node *site, Value *out) {
     (void)env;
     if (recv.kind != VAL_ARRAY) return 0;
-    if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0 || strcmp(name, "count") == 0) { *out = val_int((int64_t)recv.array->len); return 1; }
+    if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0) { *out = val_int((int64_t)recv.array->len); return 1; }
+    if (strcmp(name, "count") == 0) {
+        if (argc == 0 && !blk) { *out = val_int((int64_t)recv.array->len); return 1; }
+        int64_t cnt = 0;
+        for (size_t i = 0; i < recv.array->len; i++) {
+            if (blk) {
+                Value r = call_block(ev, env, *blk, &recv.array->elems[i], 1, site);
+                if (val_is_signal(r)) { *out = r; return 1; }
+                if (val_truthy(r)) cnt++;
+            } else {
+                if (val_equal(recv.array->elems[i], args[0])) cnt++;
+            }
+        }
+        *out = val_int(cnt); return 1;
+    }
     if (strcmp(name, "empty?") == 0) { *out = val_bool(recv.array->len == 0); return 1; }
     if (strcmp(name, "first") == 0) {
         if (argc >= 1 && args[0].kind == VAL_INT) {
@@ -242,6 +256,16 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = recv;
         return 1;
     }
+    if (strcmp(name, "each_with_object") == 0) {
+        if (!blk || argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "each_with_object requires block and init"); return 1; }
+        Value acc = args[0];
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value bargs[2] = { recv.array->elems[i], acc };
+            Value r = call_block(ev, env, *blk, bargs, 2, site);
+            if (val_is_signal(r)) { *out = r; return 1; }
+        }
+        *out = acc; return 1;
+    }
     if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
         if (!blk) { *out = recv; return 1; } /* no-block: return self for chaining (.with_index etc.) */
         Value result = val_array_new();
@@ -416,7 +440,9 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (strcmp(name, "sum") == 0) {
         Value acc = argc > 0 ? args[0] : val_int(0);
         for (size_t i = 0; i < recv.array->len; i++) {
-            Value cur = recv.array->elems[i];
+            Value cur = blk ? call_block(ev, env, *blk, &recv.array->elems[i], 1, site)
+                            : recv.array->elems[i];
+            if (val_is_signal(cur)) { *out = cur; return 1; }
             if (acc.kind == VAL_INT && cur.kind == VAL_INT) acc.ival += cur.ival;
             else {
                 double a = acc.kind == VAL_FLOAT ? acc.fval : (double)acc.ival;
@@ -1083,6 +1109,19 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         }
         return 1;
     }
+    if (strcmp(name, "each_with_object") == 0) {
+        if (!blk || argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "each_with_object requires block and init"); return 1; }
+        Value acc = args[0];
+        for (size_t i = 0; i < h->len; i++) {
+            Value pair = val_array_new();
+            val_array_push(&pair, h->keys[i]);
+            val_array_push(&pair, h->vals[i]);
+            Value block_args[2] = { pair, acc };
+            Value r = call_block(ev, env, *blk, block_args, 2, site);
+            if (val_is_signal(r)) { *out = r; return 1; }
+        }
+        *out = acc; return 1;
+    }
     if (strcmp(name, "reduce") == 0 || strcmp(name, "inject") == 0) {
         if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#reduce requires a block"); return 1; }
         if (h->len == 0) { *out = argc > 0 ? args[0] : val_nil(); return 1; }
@@ -1458,6 +1497,36 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
 
+    if ((strcmp(name, "find") == 0 || strcmp(name, "detect") == 0) && blk) {
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = val_nil(); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
+            Value v = val_int(i);
+            Value res = call_block(ev, env, *blk, &v, 1, site);
+            if (val_is_signal(res)) { *out = res; return 1; }
+            if (val_truthy(res)) { *out = v; return 1; }
+        }
+        *out = val_nil(); return 1;
+    }
+    if ((strcmp(name, "find_index") == 0 || strcmp(name, "index") == 0)) {
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = val_nil(); return 1; }
+        int64_t lo = r->begin_val.ival, hi = r->end_val.ival, idx = 0;
+        for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++, idx++) {
+            Value v = val_int(i);
+            int match = 0;
+            if (blk) {
+                Value res = call_block(ev, env, *blk, &v, 1, site);
+                if (val_is_signal(res)) { *out = res; return 1; }
+                match = val_truthy(res);
+            } else if (argc > 0) {
+                match = val_equal(v, args[0]);
+            }
+            if (match) { *out = val_int(idx); return 1; }
+        }
+        *out = val_nil(); return 1;
+    }
     if (strcmp(name, "sum") == 0) {
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range#sum requires Integer range"); return 1; }

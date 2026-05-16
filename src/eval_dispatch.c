@@ -1733,6 +1733,23 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (recv.kind == VAL_NIL && dispatch_nil(ev, recv, name, site, &out)) return out;
     if (dispatch_bool(ev, recv, name, site, &out)) return out;
 
+    /* Boolean comparison methods that need args */
+    if (recv.kind == VAL_BOOL) {
+        if (strcmp(name, "==") == 0 || strcmp(name, "equal?") == 0) {
+            return val_bool(argc > 0 && args[0].kind == VAL_BOOL && args[0].bval == recv.bval);
+        }
+        if (strcmp(name, "<=>") == 0) {
+            if (argc > 0 && args[0].kind == VAL_BOOL) {
+                int a = recv.bval ? 1 : 0, b = args[0].bval ? 1 : 0;
+                return val_int(a < b ? -1 : a > b ? 1 : 0);
+            }
+            return val_nil();
+        }
+        if (strcmp(name, "&") == 0) return val_bool(recv.bval && argc > 0 && val_truthy(args[0]));
+        if (strcmp(name, "|") == 0) return val_bool(recv.bval || (argc > 0 && val_truthy(args[0])));
+        if (strcmp(name, "^") == 0) return val_bool(recv.bval ^ (argc > 0 && val_truthy(args[0])));
+    }
+
     if (recv.kind != VAL_OBJECT && recv.kind != VAL_CLASS) {
         Value klass = val_class_of(ev, recv);
         if (klass.kind == VAL_CLASS) {
