@@ -792,6 +792,11 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         else *out = val_string(ev->arena, val_to_s(ev->arena, args[0]));
         return 1;
     }
+    if (strcmp(name, "clear") == 0) {
+        *out = val_string(ev->arena, "");
+        return 1;
+    }
+    if (strcmp(name, "setbyte") == 0) { *out = recv; return 1; }
     if (strcmp(name, "inspect") == 0) {
         size_t len = strlen(s);
         char *buf = arena_alloc(ev->arena, len * 2 + 3);
@@ -1489,6 +1494,15 @@ int dispatch_nil(Eval *ev, Value recv, const char *name, Node *site, Value *out)
     if (strcmp(name, "freeze") == 0 || strcmp(name, "frozen?") == 0 || strcmp(name, "dup") == 0)
         { *out = recv; return 1; }
     if (strcmp(name, "!") == 0) { *out = val_true(); return 1; }
+    if (strcmp(name, "match?") == 0 || strcmp(name, "match") == 0 || strcmp(name, "=~") == 0)
+        { *out = val_nil(); return 1; }
+    if (strcmp(name, "byteslice") == 0 || strcmp(name, "[]") == 0)
+        { *out = val_nil(); return 1; }
+    if (strcmp(name, "empty?") == 0) { *out = val_true(); return 1; }
+    if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0) { *out = val_int(0); return 1; }
+    if (strcmp(name, "chomp") == 0 || strcmp(name, "strip") == 0 || strcmp(name, "chop") == 0)
+        { *out = val_string(ev->arena, ""); return 1; }
+    if (strcmp(name, "lines") == 0) { *out = val_array_new(); return 1; }
     *out = eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for nil", name);
     return 1;
 }

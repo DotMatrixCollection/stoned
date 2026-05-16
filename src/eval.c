@@ -423,8 +423,8 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
 
         case NODE_LVAR: {
             Value v;
-            if (!env_get(env, node->sval, &v))
-                return eval_raise_class(ev, node, "NameError", "undefined local variable '%s'", node->sval);
+            /* If marked as local by parser but not yet assigned, Ruby returns nil (not NameError) */
+            if (!env_get(env, node->sval, &v)) return val_nil();
             return v;
         }
         case NODE_IVAR: {
@@ -1036,6 +1036,8 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 env_set(ev->arena, target_env, "__class__", recv);
             Value prev_singleton_target = val_nil();
             env_get(target_env, "__singleton_target__", &prev_singleton_target);
+            Value prev_visibility = val_nil();
+            env_get(target_env, "__visibility__", &prev_visibility);
             env_set(ev->arena, target_env, "__singleton_target__", recv);
             set_current_method_visibility(ev->arena, target_env, METHOD_PUBLIC);
             Value body_result = recv;
@@ -1043,8 +1045,12 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 body_result = eval_node(ev, target_env, node->sclass.body);
                 if (val_is_signal(body_result)) return body_result;
             }
-            /* Restore singleton target so subsequent defs in the outer class body go to instance methods */
+            /* Restore singleton target and visibility so subsequent defs go to instance methods */
             env_set(ev->arena, target_env, "__singleton_target__", prev_singleton_target);
+            if (prev_visibility.kind == VAL_SYMBOL)
+                env_set(ev->arena, target_env, "__visibility__", prev_visibility);
+            else
+                set_current_method_visibility(ev->arena, target_env, METHOD_PUBLIC);
             return body_result;
         }
 
@@ -1447,6 +1453,10 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
             global_set(arena, &ev->globals, fds[i], obj);
             env_define(arena, ev->top_env, consts[i], obj);
         }
+        /* $> and $stdout are aliases */
+        Value stdout_val;
+        if (global_get(&ev->globals, "stdout", &stdout_val))
+            global_set(arena, &ev->globals, ">", stdout_val);
     }
     env_define(arena, ev->top_env, "SEEK_SET", val_int(0));
     env_define(arena, ev->top_env, "SEEK_CUR", val_int(1));

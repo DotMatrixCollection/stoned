@@ -365,6 +365,22 @@ static const char *canonical_existing_path(Arena *a, const char *path) {
     return copy;
 }
 
+static Value eval_ruby_string(Eval *ev, const char *src, const char *display_name, Node *site) {
+    size_t src_len = strlen(src);
+    Parser parser;
+    parser_init(&parser, src, src_len, ev->arena);
+    Node *tree = parse_program(&parser);
+    if (parser.error_count)
+        return eval_raise_class(ev, site, "LoadError", "parse error in %s: %s",
+                                display_name, parser.errors[0].message);
+    Sema sema;
+    sema_init(&sema, ev->arena);
+    sema_run(&sema, tree);
+    Value result = eval_node(ev, ev->top_env, tree);
+    if (val_is_signal(result)) return result;
+    return val_true();
+}
+
 static Value eval_require_path(Eval *ev, const char *resolved, const char *display_path, Node *site) {
     if (!display_path) display_path = resolved;
     const char *canonical_path = canonical_existing_path(ev->arena, resolved);
@@ -1307,8 +1323,64 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 
     if (strcmp(path, "singleton") == 0 || strcmp(path, "singleton.rb") == 0)
         return val_true();
-    if (strcmp(path, "prism") == 0 || strcmp(path, "prism.rb") == 0)
-        return val_true();
+    if (strcmp(path, "prism") == 0 || strcmp(path, "prism.rb") == 0) {
+        static const char *prism_shim =
+"module Prism\n"
+"  class Source\n"
+"    def initialize(src); @source = src.to_s; end\n"
+"    def source; @source.empty? ? \" \" : @source; end\n"
+"    def lines; source.lines; end\n"
+"  end\n"
+"  class Location\n"
+"    attr_accessor :start_line, :end_line, :start_column, :end_column, :start_offset, :end_offset\n"
+"    def initialize(sl=1,el=1,sc=0,ec=0,so=0,eo=0)\n"
+"      @start_line=sl; @end_line=el; @start_column=sc; @end_column=ec\n"
+"      @start_offset=so; @end_offset=eo\n"
+"    end\n"
+"  end\n"
+"  class Token\n"
+"    attr_accessor :type, :location, :value\n"
+"    def initialize(type, location, value=nil)\n"
+"      @type=type; @location=location; @value=value\n"
+"    end\n"
+"  end\n"
+"  class StubNode\n"
+"    def accept(v); end\n"
+"    def statements; self; end\n"
+"    def body; []; end\n"
+"    def last; nil; end\n"
+"  end\n"
+"  class ParseLexResult\n"
+"    attr_reader :value, :source\n"
+"    def initialize(code)\n"
+"      @source = Source.new(code)\n"
+"      @value = [StubNode.new, []]\n"
+"    end\n"
+"    def success?; true; end\n"
+"    def errors; []; end\n"
+"    def warnings; []; end\n"
+"  end\n"
+"  class ParseResult\n"
+"    attr_reader :source\n"
+"    def initialize(code)\n"
+"      @source = Source.new(code)\n"
+"      @node = StubNode.new\n"
+"    end\n"
+"    def value; @node; end\n"
+"    def success?; true; end\n"
+"    def errors; []; end\n"
+"    def warnings; []; end\n"
+"  end\n"
+"  class Visitor\n"
+"    def visit(node); node&.accept(self); end\n"
+"    def method_missing(name, *args); nil; end\n"
+"  end\n"
+"  def self.parse_lex(code, **opts); ParseLexResult.new(code.to_s); end\n"
+"  def self.lex(code, **opts); ParseLexResult.new(code.to_s); end\n"
+"  def self.parse(code, **opts); ParseResult.new(code.to_s); end\n"
+"end\n";
+        return eval_ruby_string(ev, prism_shim, "prism_shim", site);
+    }
     if (strcmp(path, "reline") == 0 || strcmp(path, "reline.rb") == 0)
         return val_true();
     if (strcmp(path, "pathname") == 0 || strcmp(path, "pathname.rb") == 0)
@@ -1323,8 +1395,25 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         return val_true();
     if (strcmp(path, "open3") == 0 || strcmp(path, "open3.rb") == 0)
         return val_true();
-    if (strcmp(path, "pp") == 0 || strcmp(path, "pp.rb") == 0)
-        return val_true();
+    if (strcmp(path, "pp") == 0 || strcmp(path, "pp.rb") == 0) {
+        static const char *pp_shim =
+"class PP\n"
+"  def initialize(out = $stdout, width = 79, colorize: false)\n"
+"    @out = out; @width = width\n"
+"  end\n"
+"  def guard_inspect_key; yield; end\n"
+"  def pp(obj)\n"
+"    @out << obj.inspect if @out.respond_to?(:<<)\n"
+"  end\n"
+"  def flush; end\n"
+"  def self.pp(obj, out = $stdout, width = 79)\n"
+"    out << obj.inspect\n"
+"    out << \"\\n\"\n"
+"    obj\n"
+"  end\n"
+"end\n";
+        return eval_ruby_string(ev, pp_shim, "pp_shim", site);
+    }
     if (strcmp(path, "color_printer") == 0 || strcmp(path, "color_printer.rb") == 0)
         return val_true();
     if (strcmp(path, "json") == 0 || strcmp(path, "json.rb") == 0)

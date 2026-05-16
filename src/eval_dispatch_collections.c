@@ -95,6 +95,15 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         for (int i = 0; i < argc; i++) val_array_push(&recv, args[i]);
         *out = recv; return 1;
     }
+    if (strcmp(name, "concat") == 0) {
+        for (int i = 0; i < argc; i++) {
+            if (args[i].kind == VAL_ARRAY) {
+                for (size_t j = 0; j < args[i].array->len; j++)
+                    val_array_push(&recv, args[i].array->elems[j]);
+            }
+        }
+        *out = recv; return 1;
+    }
     if (strcmp(name, "pop") == 0) {
         if (argc > 0 && args[0].kind == VAL_INT) {
             int64_t n = args[0].ival;

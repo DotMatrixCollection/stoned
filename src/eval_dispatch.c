@@ -1700,6 +1700,25 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             return val_int(proc_arity(recv.block.block_node->block.params, recv.block.is_lambda));
         if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0)
             return val_string(ev->arena, recv.block.is_lambda ? "#<Proc:lambda>" : "#<Proc>");
+        if (strcmp(name, "parameters") == 0) {
+            /* Return parameter info from the block's params */
+            Value arr = val_array_new();
+            NodeList *params = recv.block.block_node ? recv.block.block_node->block.params : NULL;
+            for (NodeList *pl = params; pl; pl = pl->next) {
+                if (!pl->node || pl->node->kind != NODE_PARAM) continue;
+                Value pair = val_array_new();
+                const char *ptype = pl->node->param.splat ? "rest" :
+                                    pl->node->param.block_param ? "block" :
+                                    pl->node->param.keyword_splat ? "keyrest" :
+                                    pl->node->param.keyword_param ? "key" :
+                                    pl->node->param.default_val ? "opt" : "req";
+                val_array_push(&pair, val_symbol(ptype));
+                if (pl->node->param.name)
+                    val_array_push(&pair, val_symbol(pl->node->param.name));
+                val_array_push(&arr, pair);
+            }
+            return arr;
+        }
     }
 
     if (strcmp(name, "inspect") == 0 && recv.kind != VAL_OBJECT && recv.kind != VAL_CLASS)
@@ -1852,8 +1871,23 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
     }
 
     Value op_result = dispatch_method(ev, env, left, op, &right, 1, NULL, node, 0, 1);
-    if (!ev->errored && !val_is_signal(op_result))
+    if (!ev->errored && !val_is_signal(op_result)) {
+        /* For mutating operators (<<, concat) on strings, update the receiver variable */
+        if (op_result.kind == VAL_STRING &&
+            (strcmp(op, "<<") == 0 || strcmp(op, "concat") == 0) &&
+            node->binop.left) {
+            Node *ln = node->binop.left;
+            if (ln->kind == NODE_LVAR)
+                env_set(ev->arena, env, ln->sval, op_result);
+            else if (ln->kind == NODE_IVAR) {
+                Value self;
+                if (env_get(env, "self", &self) && self.kind == VAL_OBJECT)
+                    val_object_set_ivar(ev->arena, self, ln->sval, op_result);
+            } else if (ln->kind == NODE_GVAR)
+                global_set(ev->arena, &ev->globals, ln->sval, op_result);
+        }
         return op_result;
+    }
     if (ev->errored) {
         ev->errored = 0;
         return eval_raise_class(ev, node, "NoMethodError", "undefined operator '%s' for %s", op, val_kind_name(left.kind));
@@ -2182,5 +2216,26 @@ call_method:
         }
     }
 
-    return dispatch_method(ev, env, recv, node->call.method, args, argc, blk, node, 0, 1);
+    Value result = dispatch_method(ev, env, recv, node->call.method, args, argc, blk, node, 0, 1);
+
+    /* For mutating string methods (<<, concat, replace) on LVAR/IVAR/GVAR receivers,
+       update the binding so the caller sees the mutated value. */
+    if (!val_is_signal(result) && result.kind == VAL_STRING &&
+        (strcmp(node->call.method, "<<") == 0 ||
+         strcmp(node->call.method, "concat") == 0 ||
+         strcmp(node->call.method, "replace") == 0 ||
+         strcmp(node->call.method, "force_encoding") == 0) &&
+        node->call.recv) {
+        Node *recv_node = node->call.recv;
+        if (recv_node->kind == NODE_LVAR)
+            env_set(ev->arena, env, recv_node->sval, result);
+        else if (recv_node->kind == NODE_IVAR) {
+            Value self;
+            if (env_get(env, "self", &self) && self.kind == VAL_OBJECT)
+                val_object_set_ivar(ev->arena, self, recv_node->sval, result);
+        } else if (recv_node->kind == NODE_GVAR)
+            global_set(ev->arena, &ev->globals, recv_node->sval, result);
+    }
+
+    return result;
 }

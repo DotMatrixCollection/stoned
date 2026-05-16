@@ -1149,6 +1149,63 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = args[0];
         return 1;
     }
+    if (strcmp(recv.klass->name, "Reline") == 0 ||
+        strcmp(recv.klass->name, "Reline::Unicode") == 0) {
+        if (strcmp(name, "get_screen_size") == 0) {
+            Value arr = val_array_new();
+            val_array_push(&arr, val_int(24));
+            val_array_push(&arr, val_int(80));
+            *out = arr; return 1;
+        }
+        if (strcmp(name, "calculate_width") == 0) {
+            /* Return display width (ASCII assumption: byte length) */
+            if (argc < 1 || args[0].kind != VAL_STRING) { *out = val_int(0); return 1; }
+            *out = val_int((int64_t)strlen(args[0].sval)); return 1;
+        }
+        if (strcmp(name, "split_by_width") == 0) {
+            /* Return [[line_without_newline, ""], false] */
+            if (argc < 1 || args[0].kind != VAL_STRING) {
+                Value r = val_array_new();
+                Value inner = val_array_new();
+                val_array_push(&inner, val_string(ev->arena, ""));
+                val_array_push(&r, inner); val_array_push(&r, val_false());
+                *out = r; return 1;
+            }
+            const char *line = args[0].sval;
+            int64_t width = (argc >= 2 && args[1].kind == VAL_INT) ? args[1].ival : 80;
+            /* Simple split: if line is short enough, return as single chunk */
+            size_t llen = strlen(line);
+            Value lines_arr = val_array_new();
+            if ((int64_t)llen <= width) {
+                /* Trim trailing newline for display */
+                size_t dlen = llen;
+                while (dlen > 0 && (line[dlen-1] == '\n' || line[dlen-1] == '\r')) dlen--;
+                char *trimmed = arena_alloc(ev->arena, dlen + 1);
+                memcpy(trimmed, line, dlen); trimmed[dlen] = '\0';
+                val_array_push(&lines_arr, val_string(ev->arena, trimmed));
+                val_array_push(&lines_arr, val_string(ev->arena, ""));
+            } else {
+                /* Split into chunks of `width` */
+                size_t pos = 0;
+                while (pos < llen) {
+                    size_t take = (llen - pos) < (size_t)width ? (llen - pos) : (size_t)width;
+                    char *chunk = arena_alloc(ev->arena, take + 1);
+                    memcpy(chunk, line + pos, take); chunk[take] = '\0';
+                    val_array_push(&lines_arr, val_string(ev->arena, chunk));
+                    pos += take;
+                }
+                val_array_push(&lines_arr, val_string(ev->arena, ""));
+            }
+            Value result = val_array_new();
+            val_array_push(&result, lines_arr);
+            val_array_push(&result, val_false());
+            *out = result; return 1;
+        }
+        if (strcmp(name, "ambiguous_width") == 0) { *out = val_int(1); return 1; }
+        if (strcmp(name, "get_last_line") == 0 || strcmp(name, "clear_screen") == 0)
+            { *out = val_nil(); return 1; }
+        *out = val_nil(); return 1;
+    }
     if (strcmp(recv.klass->name, "Thread") == 0) {
         if (strcmp(name, "current") == 0) {
             /* Return a singleton Thread object representing the main thread */
@@ -2167,7 +2224,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
 
-    if (strcmp(name, "name") == 0) {
+    if (strcmp(name, "name") == 0 || strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0) {
         *out = val_string(ev->arena, recv.klass->name);
         return 1;
     }
@@ -2393,6 +2450,27 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     return 1;
                 }
                 *out = value;
+                return 1;
+            }
+            if (strcmp(name, "local_variables") == 0) {
+                Value arr = val_array_new();
+                Env *scan = binding ? binding->env : NULL;
+                while (scan) {
+                    for (EnvEntry *e = scan->vars; e; e = e->next) {
+                        const char *n2 = e->name;
+                        size_t nlen = strlen(n2);
+                        if (nlen == 0 || n2[0] == '_' && n2[1] == '_') continue;
+                        if (n2[0] != '@' && n2[0] != '$' && n2[0] != ':' &&
+                            strcmp(n2, "self") != 0 && strcmp(n2, "true") != 0 &&
+                            strcmp(n2, "false") != 0 && strcmp(n2, "nil") != 0 &&
+                            n2[0] >= 'a' && n2[0] <= 'z') {
+                            val_array_push(&arr, val_symbol(n2));
+                        }
+                    }
+                    if (scan->is_def) break;
+                    scan = scan->parent;
+                }
+                *out = arr;
                 return 1;
             }
             if (strcmp(name, "source_location") == 0) {
