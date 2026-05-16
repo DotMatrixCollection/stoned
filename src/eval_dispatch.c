@@ -530,7 +530,10 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
 Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass *owner,
                         const char *name, Value *args, int argc, Value *blk, Node *site) {
     (void)env;
-    NodeList *params = method.method.def_node->def.params;
+    /* NODE_BLOCK (from define_singleton_method) uses block.params/body; NODE_DEF uses def.params/body */
+    int is_block_node = (method.method.def_node->kind == NODE_BLOCK);
+    NodeList *params = is_block_node ? method.method.def_node->block.params
+                                     : method.method.def_node->def.params;
     int required = count_required_params(params);
     int has_splat = has_splat_param(params);
     int total = count_total_params(params);
@@ -558,7 +561,9 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     if (ev->active_def_count < EVAL_MAX_DEPTH)
         ev->active_defs[ev->active_def_count++] = method_env;
     eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, name);
-    Value result = eval_node(ev, method_env, method.method.def_node->def.body);
+    Node *body = is_block_node ? method.method.def_node->block.body
+                               : method.method.def_node->def.body;
+    Value result = eval_node(ev, method_env, body);
     eval_pop_frame(ev);
     if (ev->active_def_count > 0) ev->active_def_count--;
     ev->call_depth--;

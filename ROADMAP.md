@@ -289,6 +289,7 @@ Latest compatibility probe:
 
 - 2026-05-13: probing `birb` with `birb/lib` on `$LOAD_PATH` now gets past `class << self`, safe navigation `&.`, ternary parsing after predicate methods, and block-body `rescue`; the next parser targets in `birb/lib/irb.rb` are remaining implicit-body rescue nesting, interpolation edge cases, and other uncovered expression forms later in the file
 - 2026-05-16: `receiver.method :sym, val` command-call with symbol args now works — lexer colon case extended to allow symbols in `LEX_EXPR_END+had_space` state (covers post-dot-method position); `require "irb"` now loads clean with no parse errors
+- 2026-05-16: `define_singleton_method` block now actually executes — `call_method_value` was reading `NODE_BLOCK` fields through the `def` union member (wrong offsets); fixed by dispatching on `node->kind` to use `block.params`/`block.body` vs `def.params`/`def.body`
 
 ## Stage gap survey (2026-04-22)
 
