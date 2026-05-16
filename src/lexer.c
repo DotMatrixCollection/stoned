@@ -1110,7 +1110,8 @@ static Token scan(Lexer *l) {
             {
                 char pc = peek_ch(l);
                 if ((l->state == LEX_EXPR_BEG ||
-                     (l->state == LEX_EXPR_ARG && l->had_space)) &&
+                     (l->state == LEX_EXPR_ARG && l->had_space) ||
+                     (l->state == LEX_EXPR_END && l->had_space)) &&
                     (isalpha(pc) || pc == '_' || pc == '"' || pc == '\'' ||
                      pc == '@' || pc == '$' ||
                      pc == '+' || pc == '-' || pc == '*' || pc == '/' || pc == '%' ||
