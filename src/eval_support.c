@@ -471,7 +471,7 @@ static Value eval_require_path(Eval *ev, const char *resolved, const char *displ
 
     if (val_is_signal(result)) return result;
     eval_mark_loaded_file(ev, canonical_path);
-    /* After loading irb.rb: patch execute_as_command? which has a broken constant scope */
+    /* After loading irb.rb: patch execute_as_command? and inspector */
     {
         const char *base = strrchr(canonical_path, '/');
         if (base && strcmp(base, "/irb.rb") == 0) {
@@ -488,6 +488,27 @@ static Value eval_require_path(Eval *ev, const char *resolved, const char *displ
                 "    end\n"
                 "  end; end; end\n"
                 "rescue nil\n"
+                "end\n"
+                /* Replace the pp/stream inspector with a simple inspect-based one.
+                   Our string value semantics can't support the streaming ColorPrinter
+                   path (ColorPrinter.pp writes to @out ivar, caller's `out` local
+                   doesn't see the mutation). A plain v.inspect proc sidesteps this. */
+                "begin\n"
+                "  _si = IRB::Inspector.new(proc { |v, colorize: true| v.inspect })\n"
+                "  IRB::Inspector::INSPECTORS[true]           = _si\n"
+                "  IRB::Inspector::INSPECTORS[:pp]            = _si\n"
+                "  IRB::Inspector::INSPECTORS[:pretty_inspect] = _si\n"
+                "  IRB::Inspector::INSPECTORS['true']         = _si\n"
+                "  IRB::Inspector::INSPECTORS['pp']           = _si\n"
+                "rescue => _e\n"
+                "end\n"
+                /* RubyVM stub — birb references keep_script_lines around the REPL loop */
+                "begin\n"
+                "  module RubyVM\n"
+                "    def self.keep_script_lines; false; end\n"
+                "    def self.keep_script_lines=(v); v; end\n"
+                "  end\n"
+                "rescue => _e\n"
                 "end\n";
             eval_ruby_string(ev, irb_patch, "irb_patch", NULL);
         }
@@ -1485,8 +1506,73 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 ;
         return eval_ruby_string(ev, prism_shim, "prism_shim", site);
     }
-    if (strcmp(path, "reline") == 0 || strcmp(path, "reline.rb") == 0)
-        return val_true();
+    if (strcmp(path, "reline") == 0 || strcmp(path, "reline.rb") == 0) {
+        static const char *reline_shim =
+"module Reline\n"
+"  HISTORY = []\n"
+"  DEFAULT_DIALOG_CONTEXT = []\n"
+"  def self.get_screen_size; [24, 80]; end\n"
+"  def self.readmultiline(prompt = '', add_hist = false)\n"
+"    $stdout.print(prompt) if prompt && !prompt.empty?\n"
+"    line = $stdin.gets\n"
+"    return nil if line.nil?\n"
+"    yield(line) if block_given?\n"
+"    line\n"
+"  end\n"
+"  def self.input; $stdin; end\n"
+"  def self.output; $stdout; end\n"
+"  def self.input=(v); v; end\n"
+"  def self.output=(v); v; end\n"
+"  def self.completion_proc; nil; end\n"
+"  def self.completion_proc=(v); v; end\n"
+"  def self.completion_append_character; nil; end\n"
+"  def self.completion_append_character=(v); v; end\n"
+"  def self.basic_word_break_characters; \" \\t\\n\\\"'`><=;|&{\"; end\n"
+"  def self.basic_word_break_characters=(v); v; end\n"
+"  def self.completer_quote_characters; '\"\\'' ; end\n"
+"  def self.completer_quote_characters=(v); v; end\n"
+"  def self.output_modifier_proc; nil; end\n"
+"  def self.output_modifier_proc=(v); v; end\n"
+"  def self.prompt_proc; nil; end\n"
+"  def self.prompt_proc=(v); v; end\n"
+"  def self.auto_indent_proc; nil; end\n"
+"  def self.auto_indent_proc=(v); v; end\n"
+"  def self.autocompletion; false; end\n"
+"  def self.autocompletion=(v); v; end\n"
+"  def self.add_dialog_proc(*a); nil; end\n"
+"  def self.dig_perfect_match_proc; nil; end\n"
+"  def self.dig_perfect_match_proc=(v); v; end\n"
+"  def self.delete_text; nil; end\n"
+"  def self.ungetc(c); nil; end\n"
+"  def self.encoding_system_needs\n"
+"    enc = Object.new\n"
+"    def enc.name; 'UTF-8'; end\n"
+"    enc\n"
+"  end\n"
+"  module IOGate\n"
+"    def self.in_pasting?; false; end\n"
+"    def self.prep; nil; end\n"
+"    def self.deprep(old); nil; end\n"
+"    def self.set_winch_handler(&blk); nil; end\n"
+"    def self.ttyname; nil; end\n"
+"    CursorPos = Struct.new(:x, :y)\n"
+"  end\n"
+"  module Unicode\n"
+"    def self.escape_for_print(str); str.to_s; end\n"
+"    def self.calculate_width(str, ambiguous_double_width = false)\n"
+"      str.to_s.length\n"
+"    end\n"
+"    def self.split_by_width(str, max_width, encoding = nil)\n"
+"      s = str.to_s\n"
+"      return [[s], 0] if s.length <= max_width\n"
+"      [[s[0, max_width], s[max_width..]], 0]\n"
+"    end\n"
+"  end\n"
+"  CursorPos = Struct.new(:x, :y)\n"
+"  Config = Class.new\n"
+"end\n";
+        return eval_ruby_string(ev, reline_shim, "reline_shim", site);
+    }
     if (strcmp(path, "pathname") == 0 || strcmp(path, "pathname.rb") == 0)
         return val_true();
     if (strcmp(path, "io/console") == 0 || strcmp(path, "io/console.rb") == 0)

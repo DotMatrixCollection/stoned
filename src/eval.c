@@ -725,8 +725,20 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     if (rescue_clause->rescue_clause.exception_classes) {
                         int matched = 0;
                         for (NodeList *cl = rescue_clause->rescue_clause.exception_classes; cl; cl = cl->next) {
+                            /* Save exception state: evaluating the class name may itself raise
+                               (e.g. undefined constant Interrupt → NameError), which would
+                               overwrite the exception we're trying to rescue. */
+                            Value saved_exc = ev->current_exception;
+                            const char *saved_eclass = ev->exception_class;
+                            int saved_errored = ev->errored;
                             Value rescue_class = eval_node(ev, env, cl->node);
-                            CHECK(rescue_class);
+                            if (val_is_signal(rescue_class)) {
+                                /* Restore original exception and skip this unresolvable class */
+                                ev->current_exception = saved_exc;
+                                ev->exception_class = saved_eclass;
+                                ev->errored = saved_errored;
+                                continue;
+                            }
                             if (exception_is_a(ev, rescue_class)) { matched = 1; break; }
                         }
                         if (!matched) continue;
@@ -1248,7 +1260,9 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     }
     global_set(arena, &ev->globals, "LOAD_PATH", load_path);
     global_set(arena, &ev->globals, ":", load_path);   /* $: alias for $LOAD_PATH */
-    global_set(arena, &ev->globals, "\"", val_array_new()); /* $" alias for $LOADED_FEATURES */
+    Value loaded_features = val_array_new();
+    global_set(arena, &ev->globals, "\"", loaded_features);           /* $" alias */
+    global_set(arena, &ev->globals, "LOADED_FEATURES", loaded_features); /* $LOADED_FEATURES */
 
     static const char *builtins[] = {
         "Object", "BasicObject", "Numeric",
@@ -1260,6 +1274,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         "ArgumentError", "TypeError", "NameError", "NoMethodError", "RegexpError",
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError", "StopIteration", "EOFError",
         "SystemStackError", "IOError", "EncodingError", "FrozenError", "SystemCallError",
+        "SignalException", "Interrupt", "SyntaxError", "ScriptError", "NotImplementedError",
         NULL
     };
     for (int i = 0; builtins[i]; i++) {
@@ -1304,6 +1319,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
             {"NotImplementedError","StandardError"},
             {"EncodingError","StandardError"},{"FrozenError","RuntimeError"},
             {"LoadError","StandardError"},    {"SyntaxError","StandardError"},
+            {"ScriptError","StandardError"},  {"NotImplementedError","ScriptError"},
+            {"SignalException","Exception"},  {"Interrupt","SignalException"},
             {"BasicObject","Object"},
             {NULL, NULL}
         };
@@ -1450,17 +1467,26 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     {
         Value enc_class = val_class(arena, "Encoding", val_nil());
         enc_class.klass->class_env = env_new(arena, ev->top_env, 1);
-        /* Common encoding constants — each is an Encoding object stub */
-        static const char *enc_names[] = {
-            "UTF_8", "US_ASCII", "ASCII_8BIT", "BINARY",
-            "EUC_JP", "Windows_31J", "ISO_8859_1",
-            "UTF_16BE", "UTF_16LE", "UTF_32BE", "UTF_32LE",
-            NULL
+        /* Common encoding constants — const_key is the Ruby constant name (underscored),
+           canonical_name is what .name/.to_s returns (Ruby standard dash form). */
+        static const struct { const char *const_key; const char *canonical_name; } enc_table[] = {
+            {"UTF_8",       "UTF-8"},
+            {"US_ASCII",    "US-ASCII"},
+            {"ASCII_8BIT",  "ASCII-8BIT"},
+            {"BINARY",      "ASCII-8BIT"},
+            {"EUC_JP",      "EUC-JP"},
+            {"Windows_31J", "Windows-31J"},
+            {"ISO_8859_1",  "ISO-8859-1"},
+            {"UTF_16BE",    "UTF-16BE"},
+            {"UTF_16LE",    "UTF-16LE"},
+            {"UTF_32BE",    "UTF-32BE"},
+            {"UTF_32LE",    "UTF-32LE"},
+            {NULL, NULL}
         };
-        for (int i = 0; enc_names[i]; i++) {
+        for (int i = 0; enc_table[i].const_key; i++) {
             Value obj = val_object(arena, enc_class);
-            val_object_set_ivar(arena, obj, "name", val_string(arena, enc_names[i]));
-            env_define(arena, enc_class.klass->class_env, enc_names[i], obj);
+            val_object_set_ivar(arena, obj, "name", val_string(arena, enc_table[i].canonical_name));
+            env_define(arena, enc_class.klass->class_env, enc_table[i].const_key, obj);
         }
         env_define(arena, ev->top_env, "Encoding", enc_class);
     }

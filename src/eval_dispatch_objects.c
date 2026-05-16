@@ -3823,6 +3823,29 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
     }
+    if (value_is_a_named_class(ev, recv, "Encoding")) {
+        Value enc_name_val;
+        const char *enc_name = (val_object_get_ivar(recv, "name", &enc_name_val) && enc_name_val.kind == VAL_STRING)
+                               ? enc_name_val.sval : "UTF-8";
+        if (strcmp(name, "name") == 0 || strcmp(name, "to_s") == 0) {
+            *out = val_string(ev->arena, enc_name); return 1;
+        }
+        if (strcmp(name, "inspect") == 0) {
+            size_t len = strlen(enc_name) + 16;
+            char *buf = arena_alloc(ev->arena, len);
+            snprintf(buf, len, "#<Encoding:%s>", enc_name);
+            *out = val_string(ev->arena, buf); return 1;
+        }
+        if (strcmp(name, "==") == 0 || strcmp(name, "eql?") == 0) {
+            if (argc < 1) { *out = val_false(); return 1; }
+            if (!value_is_a_named_class(ev, args[0], "Encoding")) { *out = val_false(); return 1; }
+            Value other_name;
+            const char *other = (val_object_get_ivar(args[0], "name", &other_name) && other_name.kind == VAL_STRING)
+                                ? other_name.sval : "";
+            *out = val_bool(strcmp(enc_name, other) == 0); return 1;
+        }
+        return 0;
+    }
     if (value_is_a_named_class(ev, recv, "Exception")) {
         if (strcmp(name, "message") == 0 || strcmp(name, "to_s") == 0) {
             *out = val_string(ev->arena, exception_value_message(ev, recv));
@@ -3857,6 +3880,39 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             Value line, col;
             if (val_object_get_ivar(recv, "line", &line)) val_object_set_ivar(ev->arena, copy, "line", line);
             if (val_object_get_ivar(recv, "col", &col)) val_object_set_ivar(ev->arena, copy, "col", col);
+            *out = copy;
+            return 1;
+        }
+        if (strcmp(name, "full_message") == 0) {
+            const char *klass = exception_value_class_name(recv);
+            const char *msg = exception_value_message(ev, recv);
+            Value bt = exception_value_backtrace(recv);
+            /* Build "ClassName: message\n\tframe\n\tframe\n..." */
+            size_t len = strlen(klass) + 2 + strlen(msg) + 2;
+            if (bt.kind == VAL_ARRAY) {
+                for (size_t i = 0; i < bt.array->len; i++)
+                    if (bt.array->elems[i].kind == VAL_STRING)
+                        len += 2 + strlen(bt.array->elems[i].sval) + 1;
+            }
+            char *buf = arena_alloc(ev->arena, len + 4);
+            int pos = snprintf(buf, len + 4, "%s: %s\n", klass, msg);
+            if (bt.kind == VAL_ARRAY) {
+                for (size_t i = 0; i < bt.array->len; i++) {
+                    if (bt.array->elems[i].kind == VAL_STRING)
+                        pos += snprintf(buf + pos, len + 4 - (size_t)pos, "\t%s\n", bt.array->elems[i].sval);
+                }
+            }
+            *out = val_string(ev->arena, buf);
+            return 1;
+        }
+        if (strcmp(name, "clone") == 0 || strcmp(name, "dup") == 0) {
+            /* Shallow clone — same class, same message, same backtrace */
+            Value klass;
+            klass.kind = VAL_CLASS;
+            klass.klass = recv.obj->klass.klass;
+            const char *msg = exception_value_message(ev, recv);
+            Value copy = build_exception_object(ev, klass, msg);
+            exception_set_backtrace(ev, copy, exception_value_backtrace(recv));
             *out = copy;
             return 1;
         }

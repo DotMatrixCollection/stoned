@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 static void append_utf8_pad(char *buf, size_t *pos, const char *pad, size_t count) {
     size_t pad_chars = utf8_char_count(pad);
@@ -511,6 +512,21 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "encoding") == 0) { *out = val_string(ev->arena, "UTF-8"); return 1; }
     if (strcmp(name, "valid_encoding?") == 0) { *out = val_true(); return 1; }
+    if (strcmp(name, "scrub") == 0) {
+        /* All our strings are valid UTF-8; block form replaces invalid bytes (no-op here) */
+        *out = recv; return 1;
+    }
+    if (strcmp(name, "casecmp") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        if (args[0].kind != VAL_STRING) { *out = val_nil(); return 1; }
+        int r = strcasecmp(s, args[0].sval);
+        *out = val_int(r < 0 ? -1 : r > 0 ? 1 : 0); return 1;
+    }
+    if (strcmp(name, "casecmp?") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        if (args[0].kind != VAL_STRING) { *out = val_nil(); return 1; }
+        *out = val_bool(strcasecmp(s, args[0].sval) == 0); return 1;
+    }
     if (strcmp(name, "ascii_only?") == 0) {
         const char *p = s;
         while (*p) { if ((unsigned char)*p > 127) { *out = val_false(); return 1; } p++; }

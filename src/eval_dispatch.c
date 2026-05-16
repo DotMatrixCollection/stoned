@@ -1451,6 +1451,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS &&
         (strcmp(name, "inspect") == 0 || strcmp(name, "to_s") == 0) &&
         !value_is_a_named_class(ev, recv, "Exception") &&
+        !value_is_a_named_class(ev, recv, "Encoding") &&
         strcmp(recv.obj->klass.klass->name, "Regexp") != 0 &&
         strcmp(recv.obj->klass.klass->name, "MatchData") != 0 &&
         strcmp(recv.obj->klass.klass->name, "Time") != 0) {
