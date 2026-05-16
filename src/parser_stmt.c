@@ -355,9 +355,15 @@ Node *parse_stmt(Parser *p) {
 
         if (match(p, TOK_LPAREN)) {
             n->def.params = parse_params(p);
-            for (NodeList *pl = n->def.params; pl; pl = pl->next)
-                if (pl->node && pl->node->kind == NODE_PARAM && pl->node->param.name)
+            for (NodeList *pl = n->def.params; pl; pl = pl->next) {
+                if (!pl->node) continue;
+                if (pl->node->kind == NODE_PARAM && pl->node->param.name)
                     lexer_mark_local(&p->lexer, pl->node->param.name);
+                else if (pl->node->kind == NODE_ARRAY)
+                    for (NodeList *el = pl->node->array.elements; el; el = el->next)
+                        if (el->node && el->node->kind == NODE_PARAM && el->node->param.name)
+                            lexer_mark_local(&p->lexer, el->node->param.name);
+            }
             expect(p, TOK_RPAREN, "expected ')'");
         }
 

@@ -13,9 +13,13 @@ static void mark_assign_targets(Parser *p, Node *target) {
 }
 
 static void mark_params_locals(Parser *p, NodeList *params) {
-    for (NodeList *pl = params; pl; pl = pl->next)
-        if (pl->node && pl->node->kind == NODE_PARAM && pl->node->param.name)
+    for (NodeList *pl = params; pl; pl = pl->next) {
+        if (!pl->node) continue;
+        if (pl->node->kind == NODE_PARAM && pl->node->param.name)
             lexer_mark_local(&p->lexer, pl->node->param.name);
+        else if (pl->node->kind == NODE_ARRAY)
+            mark_params_locals(p, pl->node->array.elements);
+    }
 }
 
 typedef struct { int lbp; int rbp; } BP;
@@ -100,7 +104,8 @@ static Node *parse_jump_value(Parser *p, Node *first, Span s) {
 
 static int kernel_const_call_name(const char *name) {
     return strcmp(name, "Integer") == 0 || strcmp(name, "Float") == 0 ||
-           strcmp(name, "String") == 0 || strcmp(name, "Array") == 0;
+           strcmp(name, "String") == 0 || strcmp(name, "Array") == 0 ||
+           strcmp(name, "Complex") == 0 || strcmp(name, "Rational") == 0;
 }
 
 static Token peek_next_token(Parser *p) {
@@ -396,6 +401,17 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
         Token op = peek(p);
         if (p->stop_at_param_pipe && op.kind == TOK_PIPE) break;
 
+        /* Leading-dot continuation: newline followed by . or &. continues the chain */
+        if (op.kind == TOK_NEWLINE) {
+            Parser lookahead = *p;
+            advance(&lookahead);
+            Token nxt = peek(&lookahead);
+            if (nxt.kind == TOK_DOT || nxt.kind == TOK_ANDDOT) {
+                advance(p); /* consume the newline */
+                op = peek(p);
+            }
+        }
+
         if (op.kind == TOK_QUESTION) {
             BP bp = infix_bp(TOK_QUESTION);
             if (bp.lbp < min_bp) break;
@@ -516,6 +532,19 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
             if ((op.kind == TOK_DOT || op.kind == TOK_ANDDOT) &&
                 name_tok.kind == TOK_LPAREN && token_adjacent(op, name_tok)) {
                 method_name = "call";
+            } else if (name_tok.kind == TOK_LBRACKET) {
+                /* obj.[] / obj.[]= — bracket method as explicit method name */
+                if (!check(p, TOK_RBRACKET)) {
+                    error(p, "expected ']' to close '[]' method name", peek(p).line, peek(p).col);
+                    break;
+                }
+                Token rb = advance(p); /* consume ] */
+                if (check(p, TOK_EQ) && token_adjacent(rb, peek(p))) {
+                    advance(p);
+                    method_name = "[]=";
+                } else {
+                    method_name = "[]";
+                }
             } else if (name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) {
                 method_name = name_tok.sval;
             } else {
@@ -639,6 +668,7 @@ NodeList *parse_args(Parser *p) {
     NodeList *args = NULL;
     int saved_allow_commas = p->allow_command_arg_commas;
     p->allow_command_arg_commas = 0;
+    skip_terminators(p);
     while (!check(p, TOK_RPAREN) && !check(p, TOK_EOF)) {
         if (check(p, TOK_AMP)) {
             Span ss = tok_span(peek(p));
@@ -646,6 +676,7 @@ NodeList *parse_args(Parser *p) {
             Node *bp = node_new(p->arena, NODE_BLOCK_PASS, ss);
             bp->block_pass.expr = parse_expr(p, 0);
             args = nodelist_append(p->arena, args, bp);
+            skip_terminators(p);
             break; /* & must be last arg */
         }
         if (check(p, TOK_STAR)) {
@@ -661,7 +692,10 @@ NodeList *parse_args(Parser *p) {
             arg = attach_pending_do_block(p, arg, 0);
             if (arg) args = nodelist_append(p->arena, args, arg);
         }
-        if (!match(p, TOK_COMMA)) break;
+        if (!match(p, TOK_COMMA)) {
+            skip_terminators(p);
+            break;
+        }
         skip_terminators(p);
     }
     p->allow_command_arg_commas = saved_allow_commas;
@@ -705,6 +739,13 @@ static Node *parse_lambda_literal(Parser *p, Span s) {
     if (match(p, TOK_LPAREN)) {
         block->block.params = parse_params(p);
         expect(p, TOK_RPAREN, "expected ')'");
+    } else {
+        /* unparenthesized params: -> x, y { } */
+        Token pt = peek(p);
+        if (pt.kind == TOK_IDENT || pt.kind == TOK_STAR || pt.kind == TOK_AMP ||
+            pt.kind == TOK_STAR2 || pt.kind == TOK_IVAR) {
+            block->block.params = parse_params(p);
+        }
     }
 
     Token t = peek(p);
@@ -819,7 +860,21 @@ Node *parse_primary(Parser *p) {
     switch (t.kind) {
         case TOK_INT: { advance(p); Node *n = node_new(p->arena, NODE_INT, s); n->ival = t.ival; return n; }
         case TOK_FLOAT: { advance(p); Node *n = node_new(p->arena, NODE_FLOAT, s); n->fval = t.fval; return n; }
-        case TOK_STRING: { advance(p); Node *n = node_new(p->arena, NODE_STRING, s); n->sval = t.sval; return n; }
+        case TOK_STRING: {
+            advance(p);
+            Node *str = node_new(p->arena, NODE_STRING, s);
+            str->sval = t.sval;
+            if (t.ival == 1) {
+                /* backtick command: wrap in Kernel.` call */
+                Node *call = node_new(p->arena, NODE_CALL, s);
+                call->call.recv = NULL;
+                call->call.method = "`";
+                NodeList *args = nodelist_append(p->arena, NULL, str);
+                call->call.args = args;
+                return call;
+            }
+            return str;
+        }
         case TOK_REGEXP: {
             advance(p);
             Node *n = node_new(p->arena, NODE_REGEXP, s);

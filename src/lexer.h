@@ -188,6 +188,18 @@ typedef struct {
     uint32_t    hd_body_line_start;   /* l->line_start at body start */
     int         hd_min_indent;        /* chars to strip at BOL (squiggly) */
     int         hd_at_bol;            /* pending indent-strip at beginning of line */
+    int         hd_imode_depth;       /* imode_depth at heredoc body start */
+
+    /* rest-of-line buffer: tokens after <<HEREDOC on the same source line
+       are deferred and emitted after the body's INTERP_END / TOK_STRING */
+    int         hd_pending;               /* 1 while draining rest-of-line */
+    size_t      hd_rol_start;             /* first char of rest-of-line */
+    size_t      hd_rol_end;               /* exclusive end (before \n) */
+    uint32_t    hd_rol_line;
+    uint32_t    hd_rol_line_start;
+    size_t      hd_final_resume;          /* destination after rol is exhausted */
+    uint32_t    hd_final_resume_line;
+    uint32_t    hd_final_resume_line_start;
 
     /* one-token lookahead buffer */
     Token       peeked;

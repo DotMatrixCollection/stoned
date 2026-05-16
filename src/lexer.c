@@ -609,9 +609,20 @@ static Token scan_heredoc_content(Lexer *l) {
     if (l->pos >= l->hd_body_end) {
         imode_pop(l);
         l->hd_active = 0;
-        l->pos        = l->hd_resume;
-        l->line       = l->hd_resume_line;
-        l->line_start = l->hd_resume_line_start;
+        if (l->hd_rol_start < l->hd_rol_end) {
+            /* Emit rest-of-line tokens after INTERP_END before jumping to resume */
+            l->hd_pending                = 1;
+            l->hd_final_resume           = l->hd_resume;
+            l->hd_final_resume_line      = l->hd_resume_line;
+            l->hd_final_resume_line_start = l->hd_resume_line_start;
+            l->pos        = l->hd_rol_start;
+            l->line       = l->hd_rol_line;
+            l->line_start = l->hd_rol_line_start;
+        } else {
+            l->pos        = l->hd_resume;
+            l->line       = l->hd_resume_line;
+            l->line_start = l->hd_resume_line_start;
+        }
         Token t; memset(&t, 0, sizeof(t));
         t.kind = TOK_INTERP_END; t.line = sline; t.col = scol;
         return t;
@@ -698,8 +709,12 @@ static Token scan_heredoc(Lexer *l, size_t start, uint32_t sline, uint32_t scol)
 
     if (quote && peek_ch(l) == quote) advance(l);
 
-    /* Consume rest of current line (rest-of-line after <<...IDENT is discarded) */
+    /* Save rest-of-line so its tokens are emitted after the heredoc body */
+    l->hd_rol_start      = l->pos;
+    l->hd_rol_line       = l->line;
+    l->hd_rol_line_start = l->line_start;
     while (!at_end(l) && peek_ch(l) != '\n') advance(l);
+    l->hd_rol_end = l->pos;
     if (!at_end(l)) advance(l); /* consume the \n */
 
     /* l->pos is now at the first body line */
@@ -770,8 +785,19 @@ static Token scan_heredoc(Lexer *l, size_t start, uint32_t sline, uint32_t scol)
             memcpy(body, raw, raw_len);
             body[raw_len] = '\0';
         }
-        l->pos = resume_pos;
-        /* l->line and l->line_start already reflect resume_pos from the forward scan */
+        /* l->line and l->line_start now reflect resume_pos from the forward scan */
+        if (l->hd_rol_start < l->hd_rol_end) {
+            /* Emit rest-of-line tokens after this string token */
+            l->hd_pending                = 1;
+            l->hd_final_resume           = resume_pos;
+            l->hd_final_resume_line      = l->line;
+            l->hd_final_resume_line_start = l->line_start;
+            l->pos        = l->hd_rol_start;
+            l->line       = l->hd_rol_line;
+            l->line_start = l->hd_rol_line_start;
+        } else {
+            l->pos = resume_pos;
+        }
         Token t = make_tok(l, TOK_STRING, start, sline, scol);
         t.sval = body;
         return t;
@@ -792,6 +818,7 @@ static Token scan_heredoc(Lexer *l, size_t start, uint32_t sline, uint32_t scol)
     l->line_start = body_line_start;
 
     imode_push(l, LMODE_INTERP_STR);
+    l->hd_imode_depth = l->imode_depth; /* record depth so inner "..." don't trigger hd_active */
     Token t = make_tok(l, TOK_INTERP_BEG, start, sline, scol);
     return t;
 }
@@ -860,12 +887,23 @@ static Token scan_regexp(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
 static Token scan(Lexer *l) {
     /* String content mode — don't skip whitespace, it's significant */
     if (imode_top(l) == LMODE_INTERP_STR) {
-        if (l->hd_active) return scan_heredoc_content(l);
+        if (l->hd_active && l->imode_depth == l->hd_imode_depth)
+            return scan_heredoc_content(l);
         return scan_interp_str_content(l);
     }
 
     l->had_space = 0;
     skip_whitespace(l);
+
+    /* If a heredoc consumed rest-of-line content, drain it now before resuming */
+    if (l->hd_pending && l->pos >= l->hd_rol_end) {
+        l->hd_pending = 0;
+        l->pos        = l->hd_final_resume;
+        l->line       = l->hd_final_resume_line;
+        l->line_start = l->hd_final_resume_line_start;
+        l->had_space  = 0;
+        skip_whitespace(l);
+    }
 
     if (at_end(l)) {
         Token t; memset(&t, 0, sizeof(t));
@@ -1096,6 +1134,17 @@ static Token scan(Lexer *l) {
             /* Push interpolation string mode; content scanned on next call */
             imode_push(l, LMODE_INTERP_STR);
             Token t = make_tok(l, TOK_INTERP_BEG, start, sline, scol);
+            return t;
+        }
+        case '`': {
+            /* Backtick command string: scan until closing ` */
+            size_t content_start = l->pos;
+            while (!at_end(l) && peek_ch(l) != '`' && peek_ch(l) != '\n') advance(l);
+            Token t = make_tok(l, TOK_STRING, start, sline, scol);
+            t.sval = intern(l, l->src + content_start, l->pos - content_start);
+            t.ival = 1; /* backtick flag */
+            if (!at_end(l) && peek_ch(l) == '`') advance(l);
+            l->state = LEX_EXPR_END;
             return t;
         }
 
