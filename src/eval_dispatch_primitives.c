@@ -950,8 +950,10 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = arr;
         return 1;
     }
-    if (strcmp(name, "+") == 0 || strcmp(name, "<<") == 0) {
+    if (strcmp(name, "+") == 0 || strcmp(name, "<<") == 0 || strcmp(name, "concat") == 0) {
         if (argc < 1) { *out = recv; return 1; }
+        if (strcmp(name, "<<") == 0 && recv.frozen)
+            { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String"); return 1; }
         if (strcmp(name, "+") == 0 && args[0].kind != VAL_STRING)
             { *out = eval_raise_class(ev, site, "TypeError", "String#+ requires a String"); return 1; }
         const char *rhs = val_to_s(ev->arena, args[0]);
