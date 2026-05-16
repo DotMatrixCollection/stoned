@@ -29,6 +29,7 @@ typedef enum {
     VAL_BREAK,
     VAL_NEXT,
     VAL_RETRY,
+    VAL_THROW,   /* catch/throw: sval=tag, jump.wrapped=value */
 } ValueKind;
 
 typedef enum {
@@ -72,12 +73,18 @@ typedef struct Value {
             struct Env  *closure;
             int          is_lambda;
             int          is_proc_object;
+            const char  *def_file;   /* ev->current_file at block definition time */
         } block;
 
         struct {
             struct Value *wrapped;
             struct Env   *target_env;
         } jump; /* VAL_RETURN target env; VAL_BREAK/VAL_NEXT ignore target_env */
+
+        struct {
+            const char   *tag;       /* catch/throw symbol/string tag */
+            struct Value *value;     /* thrown value */
+        } throw_sig; /* VAL_THROW */
     };
 } Value;
 
@@ -187,7 +194,8 @@ static inline int val_truthy(Value v) {
 }
 static inline int val_is_signal(Value v) {
     return v.kind == VAL_EXCEPTION || v.kind == VAL_RETURN ||
-           v.kind == VAL_BREAK || v.kind == VAL_NEXT || v.kind == VAL_RETRY;
+           v.kind == VAL_BREAK || v.kind == VAL_NEXT || v.kind == VAL_RETRY ||
+           v.kind == VAL_THROW;
 }
 static inline Value val_hash_val(RubyHash *h) {
     Value v; v.kind = VAL_HASH; v.hash = h; return v;

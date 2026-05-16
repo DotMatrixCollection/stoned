@@ -798,6 +798,51 @@ static Value md_group_str(Arena *a, const char *s, long beg_i, long end_i,
     return val_nil();
 }
 
+/* Extract named capture group names from a regexp pattern in order.
+   Returns a VAL_ARRAY of strings (or nil for unnamed groups). */
+static Value extract_named_groups(Arena *a, const char *pattern, size_t ncaps) {
+    Value arr = val_array_new();
+    if (!pattern || ncaps == 0) return arr;
+
+    /* Pre-fill with nil */
+    for (size_t i = 0; i < ncaps; i++)
+        val_array_push(&arr, val_nil());
+
+    /* Walk the pattern scanning for (?<name> or (?'name' */
+    size_t cap_idx = 0;
+    for (const char *p = pattern; *p; p++) {
+        if (*p == '\\') { p++; continue; }
+        if (*p == '[') {
+            p++;
+            while (*p && !(*p == ']' && *(p-1) != '\\')) p++;
+            continue;
+        }
+        if (*p == '(' && *(p+1) == '?') {
+            const char *q = p + 2;
+            char close = 0;
+            if (*q == '<' && *(q+1) != '=' && *(q+1) != '!') { q++; close = '>'; }
+            else if (*q == '\'') { q++; close = '\''; }
+            else { /* non-capturing or other — skip, don't count */ continue; }
+
+            const char *name_start = q;
+            while (*q && *q != close) q++;
+            if (*q == close && q > name_start) {
+                if (cap_idx < ncaps) {
+                    char *name = arena_alloc(a, (size_t)(q - name_start) + 1);
+                    memcpy(name, name_start, (size_t)(q - name_start));
+                    name[q - name_start] = '\0';
+                    arr.array->elems[cap_idx] = val_string(a, name);
+                }
+                cap_idx++;
+                p = q;
+            }
+            continue;
+        }
+        if (*p == '(') cap_idx++;
+    }
+    return arr;
+}
+
 static Value build_match_data(Eval *ev, Value regexp, Value string, RegexMatch match) {
     Value md_class;
     Value obj;
@@ -819,6 +864,14 @@ static Value build_match_data(Eval *ev, Value regexp, Value string, RegexMatch m
         }
         val_object_set_ivar(ev->arena, obj, "__cap_beg__", beg_arr);
         val_object_set_ivar(ev->arena, obj, "__cap_end__", end_arr);
+
+        /* Named capture group names, in group order */
+        Value source;
+        const char *pat = NULL;
+        if (val_object_get_ivar(regexp, "source", &source) && source.kind == VAL_STRING)
+            pat = source.sval;
+        Value names = extract_named_groups(ev->arena, pat, match.capture_count);
+        val_object_set_ivar(ev->arena, obj, "__cap_names__", names);
     }
     return obj;
 }
@@ -977,6 +1030,15 @@ static int primitive_unbound_method_name(const char *name) {
 int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     if (recv.kind != VAL_CLASS) return 0;
+
+    /* Kernel.method forwards to top-level builtin_kernel */
+    if (strcmp(recv.klass->name, "Kernel") == 0) {
+        extern Value builtin_kernel(Eval *ev, Env *env, const char *name,
+                                    Value *args, int argc, Value *blk, Node *site);
+        *out = builtin_kernel(ev, env, name, args, argc, blk, site);
+        return 1;
+    }
+
     if (strcmp(recv.klass->name, "Struct") == 0 && strcmp(name, "new") == 0) {
         static int struct_counter = 0;
         char anon_name[64];
@@ -1087,6 +1149,33 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = args[0];
         return 1;
     }
+    if (strcmp(recv.klass->name, "Thread") == 0) {
+        if (strcmp(name, "current") == 0) {
+            /* Return a singleton Thread object representing the main thread */
+            Value thread_obj = val_nil();
+            if (!global_get(&ev->globals, "__main_thread__", &thread_obj) ||
+                thread_obj.kind != VAL_OBJECT) {
+                thread_obj = val_object(ev->arena, recv);
+                val_object_set_ivar(ev->arena, thread_obj, "name", val_string(ev->arena, "main"));
+                global_set(ev->arena, &ev->globals, "__main_thread__", thread_obj);
+            }
+            *out = thread_obj;
+            return 1;
+        }
+        if (strcmp(name, "main") == 0) {
+            Value thread_obj = val_nil();
+            if (!global_get(&ev->globals, "__main_thread__", &thread_obj) ||
+                thread_obj.kind != VAL_OBJECT) {
+                thread_obj = val_object(ev->arena, recv);
+                val_object_set_ivar(ev->arena, thread_obj, "name", val_string(ev->arena, "main"));
+                global_set(ev->arena, &ev->globals, "__main_thread__", thread_obj);
+            }
+            *out = thread_obj;
+            return 1;
+        }
+        *out = val_nil();
+        return 1;
+    }
     if (strcmp(recv.klass->name, "Process") == 0 && strcmp(name, "pid") == 0) {
         if (argc != 0) {
             *out = wrong_arg_count(ev, site, argc, 0);
@@ -1166,8 +1255,16 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (recv.klass->is_module && recv.klass->class_env) {
         Value const_val;
         if (env_get(recv.klass->class_env, name, &const_val) && const_val.kind != VAL_METHOD) {
-            *out = const_val;
-            return 1;
+            /* Only return the constant if there's no class method with this name */
+            size_t nlen = strlen(name);
+            char *class_key = arena_alloc(ev->arena, nlen + 6);
+            memcpy(class_key, "self.", 5);
+            memcpy(class_key + 5, name, nlen + 1);
+            Value cm;
+            if (!env_get(recv.klass->class_env, class_key, &cm) || cm.kind != VAL_METHOD) {
+                *out = const_val;
+                return 1;
+            }
         }
     }
     if (strcmp(name, "new") == 0 && strcmp(recv.klass->name, "IO") == 0) {
@@ -2563,14 +2660,33 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             if (strcmp(name, "[]") == 0) {
                 if (argc < 1) {
                     *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
-                } else if (args[0].kind != VAL_INT) {
-                    *out = eval_raise_class(ev, site, "TypeError", "MatchData#[] index must be an Integer");
-                } else {
+                    return 1;
+                }
+                if (args[0].kind == VAL_INT) {
                     int64_t idx = args[0].ival;
                     if (idx < 0) idx += ncaps + 1;
                     if (idx < 0 || idx > ncaps) *out = val_nil();
                     else *out = MD_GROUP_STR(idx);
+                    return 1;
                 }
+                /* Named capture: symbol or string key */
+                if (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) {
+                    const char *key = args[0].sval;
+                    Value names_v;
+                    if (val_object_get_ivar(recv, "__cap_names__", &names_v) &&
+                        names_v.kind == VAL_ARRAY) {
+                        for (size_t ni = 0; ni < names_v.array->len; ni++) {
+                            Value nm = names_v.array->elems[ni];
+                            if (nm.kind == VAL_STRING && strcmp(nm.sval, key) == 0) {
+                                *out = MD_GROUP_STR((int64_t)(ni + 1));
+                                return 1;
+                            }
+                        }
+                    }
+                    *out = val_nil();
+                    return 1;
+                }
+                *out = eval_raise_class(ev, site, "TypeError", "MatchData#[] index must be an Integer or Symbol");
                 return 1;
             }
             if (strcmp(name, "begin") == 0) {

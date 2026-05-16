@@ -210,6 +210,23 @@ static void assign_target(Eval *ev, Env *env, Node *target, Value val) {
     } else if (target->kind == NODE_GVAR) {
         if (!validate_special_global_assignment(ev, target, val)) return;
         global_set(ev->arena, &ev->globals, target->sval, val);
+    } else if (target->kind == NODE_CVAR) {
+        Value self = val_nil();
+        env_get(env, "self", &self);
+        RubyClass *klass = NULL;
+        if (self.kind == VAL_CLASS) klass = self.klass;
+        else if (self.kind == VAL_OBJECT && self.obj->klass.kind == VAL_CLASS)
+            klass = self.obj->klass.klass;
+        /* Write to the class that already owns this cvar, else current class */
+        RubyClass *owner = klass;
+        for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+            Value existing;
+            if (k->class_env && env_get(k->class_env, target->sval, &existing)) { owner = k; break; }
+        }
+        if (owner && owner->class_env)
+            env_define(ev->arena, owner->class_env, target->sval, val);
+        else
+            global_set(ev->arena, &ev->globals, target->sval, val);
     } else if (target->kind == NODE_CONST) {
         const char *parent_name = NULL;
         const char *leaf_name = NULL;
@@ -426,6 +443,22 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             if (!global_get(&ev->globals, node->sval, &v)) return val_nil();
             return v;
         }
+        case NODE_CVAR: {
+            /* Find class scope: self may be a class or an instance */
+            Value self = val_nil();
+            env_get(env, "self", &self);
+            RubyClass *klass = NULL;
+            if (self.kind == VAL_CLASS) klass = self.klass;
+            else if (self.kind == VAL_OBJECT && self.obj->klass.kind == VAL_CLASS)
+                klass = self.obj->klass.klass;
+            while (klass) {
+                Value v;
+                if (klass->class_env && env_get(klass->class_env, node->sval, &v))
+                    return v;
+                klass = klass->superclass.kind == VAL_CLASS ? klass->superclass.klass : NULL;
+            }
+            return val_nil();
+        }
         case NODE_CONST: {
             Value v = lookup_const_path(ev, env, node->sval);
             if (v.kind == VAL_NIL)
@@ -475,6 +508,11 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     val_object_set_ivar(ev->arena, self, target->sval, val);
                 else
                     global_set(ev->arena, &ev->globals, target->sval, val);
+            } else if (target->kind == NODE_GVAR) {
+                global_set(ev->arena, &ev->globals, target->sval, val);
+            } else {
+                /* handles NODE_CVAR and other targets via assign_target */
+                assign_target(ev, env, target, val);
             }
             return val;
         }
@@ -996,6 +1034,8 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             env_set(ev->arena, target_env, "self", recv);
             if (recv.kind == VAL_CLASS)
                 env_set(ev->arena, target_env, "__class__", recv);
+            Value prev_singleton_target = val_nil();
+            env_get(target_env, "__singleton_target__", &prev_singleton_target);
             env_set(ev->arena, target_env, "__singleton_target__", recv);
             set_current_method_visibility(ev->arena, target_env, METHOD_PUBLIC);
             Value body_result = recv;
@@ -1003,6 +1043,8 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 body_result = eval_node(ev, target_env, node->sclass.body);
                 if (val_is_signal(body_result)) return body_result;
             }
+            /* Restore singleton target so subsequent defs in the outer class body go to instance methods */
+            env_set(ev->arena, target_env, "__singleton_target__", prev_singleton_target);
             return body_result;
         }
 
@@ -1148,6 +1190,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         }
     }
     global_set(arena, &ev->globals, "LOAD_PATH", load_path);
+    global_set(arena, &ev->globals, ":", load_path);   /* $: alias for $LOAD_PATH */
+    global_set(arena, &ev->globals, "\"", val_array_new()); /* $" alias for $LOADED_FEATURES */
 
     static const char *builtins[] = {
         "Object", "BasicObject", "Numeric",
@@ -1296,6 +1340,11 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         open3_mod.klass->class_env = env_new(arena, ev->top_env, 1);
         open3_mod.klass->is_module = 1;
         env_define(arena, ev->top_env, "Open3", open3_mod);
+    }
+    {
+        Value pp_class = val_class(arena, "PP", val_nil());
+        pp_class.klass->class_env = env_new(arena, ev->top_env, 1);
+        env_define(arena, ev->top_env, "PP", pp_class);
     }
     {
         Value enc_class = val_class(arena, "Encoding", val_nil());

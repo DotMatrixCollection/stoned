@@ -158,6 +158,22 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         for (size_t i = recv.array->len; i > 0; i--) val_array_push(&arr, recv.array->elems[i - 1]);
         *out = arr; return 1;
     }
+    if (strcmp(name, "reverse_each") == 0) {
+        if (!blk) {
+            /* Return an enumerator-like (just return self reversed for now) */
+            Value arr = val_array_new();
+            for (size_t i = recv.array->len; i > 0; i--) val_array_push(&arr, recv.array->elems[i - 1]);
+            *out = arr; return 1;
+        }
+        for (size_t i = recv.array->len; i > 0; i--) {
+            Value elem = recv.array->elems[i - 1];
+            Value r = call_block(ev, env, *blk, &elem, 1, site);
+            if (r.kind == VAL_BREAK) { *out = *r.jump.wrapped; return 1; }
+            if (r.kind == VAL_THROW) { *out = r; return 1; }
+            if (val_is_signal(r)) { *out = r; return 1; }
+        }
+        *out = recv; return 1;
+    }
     if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0) { *out = val_string(ev->arena, val_to_s(ev->arena, recv)); return 1; }
     if (strcmp(name, "join") == 0) {
         const char *sep = argc > 0 ? val_to_s(ev->arena, args[0]) : "";

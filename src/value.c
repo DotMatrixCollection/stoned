@@ -164,6 +164,7 @@ Value val_block(struct Node *blk, struct Env *closure) {
     v.block.closure    = closure;
     v.block.is_lambda  = 0;
     v.block.is_proc_object = 0;
+    v.block.def_file   = NULL;
     return v;
 }
 

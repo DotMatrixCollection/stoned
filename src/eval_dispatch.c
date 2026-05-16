@@ -634,7 +634,7 @@ static Value dispatch_method_missing(Eval *ev, Env *env, Value recv, const char 
             }
         }
     }
-    return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", name, val_kind_name(recv.kind));
+    return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", name, prim_class_name(recv));
 }
 
 static const char *dispatch_to_s(Eval *ev, Env *env, Value v, Node *site) {
@@ -697,7 +697,7 @@ static const char *dispatch_inspect(Eval *ev, Env *env, Value v, Node *site) {
     return val_inspect(ev->arena, v);
 }
 
-static Value builtin_kernel(Eval *ev, Env *env, const char *name,
+Value builtin_kernel(Eval *ev, Env *env, const char *name,
                             Value *args, int argc, Value *blk, Node *site) {
     Value stdout_obj = val_nil();
     int have_stdout = global_get(&ev->globals, "stdout", &stdout_obj);
@@ -836,6 +836,41 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
         return arr;
     }
 
+    if (strcmp(name, "catch") == 0) {
+        const char *tag = (argc > 0 && (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING))
+                          ? args[0].sval : NULL;
+        if (!blk) return val_nil();
+        Value result = call_block(ev, env, *blk, args, argc, site);
+        if (result.kind == VAL_THROW) {
+            if (!tag || !result.throw_sig.tag || strcmp(tag, result.throw_sig.tag) == 0) {
+                return result.throw_sig.value ? *result.throw_sig.value : val_nil();
+            }
+        }
+        if (val_is_signal(result) && result.kind != VAL_THROW) return result;
+        return result;
+    }
+    if (strcmp(name, "throw") == 0) {
+        const char *tag = (argc > 0 && (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING))
+                          ? args[0].sval : NULL;
+        Value inner = (argc > 1) ? args[1] : val_nil();
+        Value *valptr = arena_alloc(ev->arena, sizeof(Value));
+        *valptr = inner;
+        Value signal; memset(&signal, 0, sizeof(signal));
+        signal.kind = VAL_THROW;
+        signal.throw_sig.tag = tag;
+        signal.throw_sig.value = valptr;
+        return signal;
+    }
+    if (strcmp(name, "trap") == 0) {
+        return val_string(ev->arena, "DEFAULT");
+    }
+    if (strcmp(name, "at_exit") == 0) {
+        return val_nil();
+    }
+    if (strcmp(name, "sleep") == 0) {
+        return val_int(argc > 0 && args[0].kind == VAL_INT ? args[0].ival :
+                       argc > 0 && args[0].kind == VAL_FLOAT ? (int64_t)args[0].fval : 0);
+    }
     if (strcmp(name, "`") == 0) {
         if (argc == 1 && args[0].kind == VAL_STRING) {
             const char *cmd = args[0].sval;
@@ -1006,11 +1041,15 @@ static Value builtin_kernel(Eval *ev, Env *env, const char *name,
     }
     if (strcmp(name, "proc") == 0) {
         if (!blk) return eval_raise_class(ev, site, "ArgumentError", "proc requires a block");
-        return val_proc(blk->block.block_node, blk->block.closure);
+        Value p = val_proc(blk->block.block_node, blk->block.closure);
+        p.block.def_file = ev->current_file;
+        return p;
     }
     if (strcmp(name, "lambda") == 0) {
         if (!blk) return eval_raise_class(ev, site, "ArgumentError", "lambda requires a block");
-        return val_lambda(blk->block.block_node, blk->block.closure);
+        Value l = val_lambda(blk->block.block_node, blk->block.closure);
+        l.block.def_file = ev->current_file;
+        return l;
     }
     if (strcmp(name, "loop") == 0) {
         if (!blk) return eval_raise_class(ev, site, "LocalJumpError", "no block given (loop)");
@@ -1700,19 +1739,19 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
 
     if (strcmp(name, "method_missing") != 0)
         return dispatch_method_missing(ev, env, recv, name, args, argc, blk, site);
-    return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", name, val_kind_name(recv.kind));
+    return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", name, prim_class_name(recv));
 }
 
 Value eval_binop(Eval *ev, Env *env, Node *node) {
     const char *op = node->binop.op;
 
-    if (strcmp(op, "&&") == 0) {
+    if (strcmp(op, "&&") == 0 || strcmp(op, "and") == 0) {
         Value left = eval_node(ev, env, node->binop.left);
         CHECK(left);
         if (!val_truthy(left)) return left;
         return eval_node(ev, env, node->binop.right);
     }
-    if (strcmp(op, "||") == 0) {
+    if (strcmp(op, "||") == 0 || strcmp(op, "or") == 0) {
         Value left = eval_node(ev, env, node->binop.left);
         CHECK(left);
         if (val_truthy(left)) return left;
@@ -1909,6 +1948,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
     Value *blk = NULL;
     if (node->call.block) {
         blk_val = val_block(node->call.block, env);
+        blk_val.block.def_file = ev->current_file;
         blk = &blk_val;
     } else if (block_pass_node) {
         Value bp = eval_node(ev, env, block_pass_node->block_pass.expr);
@@ -1957,7 +1997,8 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload",
             "deprecate_constant", "private_constant", "public_constant",
-            "__dir__", "__method__", "__FILE__", "__LINE__", "__callee__", "binding", "eval", "`", NULL
+            "__dir__", "__method__", "__FILE__", "__LINE__", "__callee__", "binding", "eval", "`",
+            "trap", "at_exit", "sleep", "catch", "throw", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
             if (strcmp(name, kernel_names[i]) == 0)

@@ -1047,6 +1047,15 @@ Node *parse_primary(Parser *p) {
                 n->call.recv = NULL; n->call.method = t.sval; n->call.args = args; n->call.block = block;
                 return n;
             }
+            /* Identifiers ending in ? or ! are always method calls, never local vars */
+            {
+                size_t ilen = strlen(t.sval);
+                if (ilen > 0 && (t.sval[ilen - 1] == '?' || t.sval[ilen - 1] == '!')) {
+                    Node *mc = node_new(p->arena, NODE_CALL, s);
+                    mc->call.recv = NULL; mc->call.method = t.sval; mc->call.args = NULL;
+                    return mc;
+                }
+            }
             Node *n = node_new(p->arena, NODE_LVAR, s);
             n->sval = t.sval;
             return n;

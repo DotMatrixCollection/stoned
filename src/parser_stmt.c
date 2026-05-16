@@ -284,8 +284,13 @@ Node *parse_stmt(Parser *p) {
             parts[nparts++] = name_tok.sval;
             while (match(p, TOK_COLON2) && nparts < 64) {
                 Token part = advance(p);
+                if (part.kind == TOK_IDENT) {
+                    /* def Foo::bar — bar is the method name (lowercase ident) */
+                    parts[nparts++] = part.sval;
+                    break;
+                }
                 if (part.kind != TOK_CONST) {
-                    error(p, "expected constant name after '::'", part.line, part.col);
+                    error(p, "expected constant or method name after '::'", part.line, part.col);
                     return NULL;
                 }
                 parts[nparts++] = part.sval;

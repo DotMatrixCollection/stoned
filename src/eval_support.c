@@ -1133,6 +1133,10 @@ Value call_block(Eval *ev, Env *caller_env, Value blk, Value *args, int argc, No
     if (blk.kind != VAL_BLOCK)
         return eval_raise_class(ev, call_site, "LocalJumpError", "no block given");
 
+    /* Restore the defining file so require_relative works correctly inside blocks */
+    const char *saved_file = ev->current_file;
+    if (blk.block.def_file) ev->current_file = blk.block.def_file;
+
     Node *bn      = blk.block.block_node;
     Env *closure  = blk.block.closure;
     Env *frame    = env_new(ev->arena, closure, 0);
@@ -1166,6 +1170,7 @@ Value call_block(Eval *ev, Env *caller_env, Value blk, Value *args, int argc, No
                     call_site ? call_site->span.col : 0, "block");
     Value result = eval_node(ev, frame, bn->block.body);
     eval_pop_frame(ev);
+    ev->current_file = saved_file;  /* restore after block execution */
     if (result.kind == VAL_RETURN) {
         if (blk.block.is_lambda) return *result.jump.wrapped;
         if (blk.block.is_proc_object && !eval_def_target_active(ev, result.jump.target_env))
@@ -1317,6 +1322,16 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
     if (strcmp(path, "stringio") == 0 || strcmp(path, "stringio.rb") == 0)
         return val_true();
     if (strcmp(path, "open3") == 0 || strcmp(path, "open3.rb") == 0)
+        return val_true();
+    if (strcmp(path, "pp") == 0 || strcmp(path, "pp.rb") == 0)
+        return val_true();
+    if (strcmp(path, "color_printer") == 0 || strcmp(path, "color_printer.rb") == 0)
+        return val_true();
+    if (strcmp(path, "json") == 0 || strcmp(path, "json.rb") == 0)
+        return val_true();
+    if (strcmp(path, "cgi") == 0 || strcmp(path, "cgi.rb") == 0)
+        return val_true();
+    if (strcmp(path, "yaml") == 0 || strcmp(path, "yaml.rb") == 0)
         return val_true();
     if (strcmp(path, "tmpdir") == 0 || strcmp(path, "tmpdir.rb") == 0)
         return val_true();
