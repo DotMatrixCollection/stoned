@@ -2582,6 +2582,77 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     if (recv.kind != VAL_OBJECT) return 0;
 
+    /* Struct instance methods: to_a, to_h, members, ==, inspect */
+    if (recv.obj->klass.kind == VAL_CLASS &&
+        class_is_a_named_class(ev, recv.obj->klass.klass, "Struct") &&
+        recv.obj->klass.klass->class_env) {
+        Value sm = val_nil();
+        env_get(recv.obj->klass.klass->class_env, "__struct_members__", &sm);
+        if (sm.kind == VAL_ARRAY) {
+            if (strcmp(name, "to_a") == 0 || strcmp(name, "deconstruct") == 0) {
+                Value arr = val_array_new();
+                for (size_t i = 0; i < sm.array->len; i++) {
+                    if (sm.array->elems[i].kind != VAL_STRING) continue;
+                    Value v = val_nil();
+                    val_object_get_ivar(recv, sm.array->elems[i].sval, &v);
+                    val_array_push(&arr, v);
+                }
+                *out = arr; return 1;
+            }
+            if (strcmp(name, "to_h") == 0) {
+                Value h = val_hash_new(ev->arena);
+                for (size_t i = 0; i < sm.array->len; i++) {
+                    if (sm.array->elems[i].kind != VAL_STRING) continue;
+                    Value v = val_nil();
+                    val_object_get_ivar(recv, sm.array->elems[i].sval, &v);
+                    val_hash_set(h.hash, val_symbol(sm.array->elems[i].sval), v);
+                }
+                *out = h; return 1;
+            }
+            if (strcmp(name, "members") == 0) {
+                Value arr = val_array_new();
+                for (size_t i = 0; i < sm.array->len; i++) {
+                    if (sm.array->elems[i].kind == VAL_STRING)
+                        val_array_push(&arr, val_symbol(sm.array->elems[i].sval));
+                }
+                *out = arr; return 1;
+            }
+            if (strcmp(name, "inspect") == 0 || strcmp(name, "to_s") == 0) {
+                /* Check for Ruby-defined override first */
+                Value rb_method; RubyClass *owner = NULL;
+                if (ruby_class_find_instance_method(recv.obj->klass.klass, name, &rb_method, &owner)) {
+                    /* call the Ruby-defined method */
+                    *out = call_method_value(ev, env, recv, rb_method, owner, name, args, argc, blk, site);
+                    return 1;
+                }
+                char buf[2048]; size_t bi = 0;
+                const char *kn = recv.obj->klass.klass->name;
+                bi += snprintf(buf+bi, sizeof(buf)-bi, "#<struct %s", kn);
+                for (size_t i = 0; i < sm.array->len; i++) {
+                    if (sm.array->elems[i].kind != VAL_STRING) continue;
+                    Value v = val_nil();
+                    val_object_get_ivar(recv, sm.array->elems[i].sval, &v);
+                    bi += snprintf(buf+bi, sizeof(buf)-bi, " %s=%s",
+                                   sm.array->elems[i].sval, val_inspect(ev->arena, v));
+                }
+                bi += snprintf(buf+bi, sizeof(buf)-bi, ">");
+                *out = val_string(ev->arena, buf); return 1;
+            }
+            if (strcmp(name, "==") == 0) {
+                if (argc < 1 || args[0].kind != VAL_OBJECT) { *out = val_false(); return 1; }
+                if (args[0].obj->klass.klass != recv.obj->klass.klass) { *out = val_false(); return 1; }
+                for (size_t i = 0; i < sm.array->len; i++) {
+                    if (sm.array->elems[i].kind != VAL_STRING) continue;
+                    Value v1 = val_nil(), v2 = val_nil();
+                    val_object_get_ivar(recv, sm.array->elems[i].sval, &v1);
+                    val_object_get_ivar(args[0], sm.array->elems[i].sval, &v2);
+                    if (!val_equal(v1, v2)) { *out = val_false(); return 1; }
+                }
+                *out = val_true(); return 1;
+            }
+        }
+    }
+
     /* Method and UnboundMethod objects */
     if (recv.obj->klass.kind == VAL_CLASS) {
         const char *kname = recv.obj->klass.klass->name;
