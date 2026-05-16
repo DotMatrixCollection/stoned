@@ -1790,6 +1790,34 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (dispatch_integer(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (dispatch_float(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (dispatch_string(ev, env, recv, name, args, argc, blk, site, &out)) return out;
+    /* Symbol methods — delegate string-like operations, return symbol for case/upcase/downcase */
+    if (recv.kind == VAL_SYMBOL) {
+        if (strcmp(name, "upcase") == 0 || strcmp(name, "downcase") == 0 ||
+            strcmp(name, "capitalize") == 0 || strcmp(name, "swapcase") == 0) {
+            Value as_str = val_string(ev->arena, recv.sval);
+            Value r = dispatch_method(ev, env, as_str, name, args, argc, blk, site, 0, 1);
+            if (!val_is_signal(r) && r.kind == VAL_STRING)
+                return val_symbol(r.sval);
+            return r;
+        }
+        if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0 ||
+            strcmp(name, "empty?") == 0 || strcmp(name, "match") == 0 ||
+            strcmp(name, "match?") == 0 || strcmp(name, "start_with?") == 0 ||
+            strcmp(name, "end_with?") == 0 || strcmp(name, "include?") == 0 ||
+            strcmp(name, "encoding") == 0 || strcmp(name, "bytes") == 0 ||
+            strcmp(name, "chars") == 0 || strcmp(name, "succ") == 0 ||
+            strcmp(name, "next") == 0 || strcmp(name, "[]") == 0) {
+            Value as_str = val_string(ev->arena, recv.sval);
+            return dispatch_method(ev, env, as_str, name, args, argc, blk, site, 0, 1);
+        }
+        if (strcmp(name, "<=>") == 0 || strcmp(name, "==") == 0) {
+            if (argc < 1) return val_nil();
+            if (args[0].kind != VAL_SYMBOL) return strcmp(name, "<=>") == 0 ? val_nil() : val_false();
+            int cmp = strcmp(recv.sval, args[0].sval);
+            if (strcmp(name, "<=>") == 0) return val_int(cmp < 0 ? -1 : cmp > 0 ? 1 : 0);
+            return val_bool(cmp == 0);
+        }
+    }
     if (recv.kind == VAL_ARRAY && dispatch_array(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (recv.kind == VAL_HASH && dispatch_hash(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (recv.kind == VAL_RANGE && dispatch_range(ev, env, recv, name, args, argc, blk, site, &out)) return out;

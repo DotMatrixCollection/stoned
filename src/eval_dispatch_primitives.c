@@ -274,6 +274,15 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         return 1;
     }
     if (strcmp(name, "clamp") == 0) {
+        if (argc == 1 && args[0].kind == VAL_RANGE) {
+            RubyRange *r = args[0].range;
+            int64_t lo = r->begin_val.kind == VAL_INT ? r->begin_val.ival :
+                         r->begin_val.kind == VAL_NIL ? INT64_MIN : (int64_t)r->begin_val.fval;
+            int64_t hi = r->end_val.kind == VAL_INT ? r->end_val.ival :
+                         r->end_val.kind == VAL_NIL ? INT64_MAX : (int64_t)r->end_val.fval;
+            if (r->exclusive && r->end_val.kind == VAL_INT) hi--;
+            *out = val_int(n < lo ? lo : n > hi ? hi : n); return 1;
+        }
         if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
         int64_t lo = args[0].kind == VAL_INT ? args[0].ival : (int64_t)args[0].fval;
         int64_t hi = args[1].kind == VAL_INT ? args[1].ival : (int64_t)args[1].fval;

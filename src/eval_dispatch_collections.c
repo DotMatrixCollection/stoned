@@ -466,6 +466,79 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = acc;
         return 1;
     }
+    if (strcmp(name, "chunk") == 0) {
+        if (!blk) { *out = recv; return 1; }
+        Value result = val_array_new();
+        if (recv.array->len == 0) { *out = result; return 1; }
+        Value prev_key = val_nil();
+        Value group = val_array_new();
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value elem = recv.array->elems[i];
+            Value key = call_block(ev, env, *blk, &elem, 1, site);
+            if (val_is_signal(key)) { *out = key; return 1; }
+            if (i == 0 || !val_equal(key, prev_key)) {
+                if (i > 0) {
+                    Value pair = val_array_new();
+                    val_array_push(&pair, prev_key);
+                    val_array_push(&pair, group);
+                    val_array_push(&result, pair);
+                }
+                group = val_array_new();
+                prev_key = key;
+            }
+            val_array_push(&group, elem);
+        }
+        Value pair = val_array_new();
+        val_array_push(&pair, prev_key);
+        val_array_push(&pair, group);
+        val_array_push(&result, pair);
+        *out = result; return 1;
+    }
+    if (strcmp(name, "chunk_while") == 0 || strcmp(name, "slice_when") == 0) {
+        if (!blk) { *out = recv; return 1; }
+        int invert = (strcmp(name, "slice_when") == 0);
+        Value result = val_array_new();
+        if (recv.array->len == 0) { *out = result; return 1; }
+        Value group = val_array_new();
+        val_array_push(&group, recv.array->elems[0]);
+        for (size_t i = 1; i < recv.array->len; i++) {
+            Value bargs[2] = { recv.array->elems[i-1], recv.array->elems[i] };
+            Value test = call_block(ev, env, *blk, bargs, 2, site);
+            if (val_is_signal(test)) { *out = test; return 1; }
+            int cont = val_truthy(test);
+            if (invert) cont = !cont;
+            if (!cont) {
+                val_array_push(&result, group);
+                group = val_array_new();
+            }
+            val_array_push(&group, recv.array->elems[i]);
+        }
+        val_array_push(&result, group);
+        *out = result; return 1;
+    }
+    if (strcmp(name, "slice_before") == 0) {
+        if (!blk && argc < 1) { *out = recv; return 1; }
+        Value result = val_array_new();
+        Value group = val_array_new();
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value elem = recv.array->elems[i];
+            int cut = 0;
+            if (blk) {
+                Value r = call_block(ev, env, *blk, &elem, 1, site);
+                if (val_is_signal(r)) { *out = r; return 1; }
+                cut = val_truthy(r);
+            } else {
+                cut = val_equal(elem, args[0]);
+            }
+            if (cut && group.array->len > 0) {
+                val_array_push(&result, group);
+                group = val_array_new();
+            }
+            val_array_push(&group, elem);
+        }
+        if (group.array->len > 0) val_array_push(&result, group);
+        *out = result; return 1;
+    }
     if (strcmp(name, "flatten") == 0) {
         int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : -1;
         Value result = val_array_new();
@@ -1451,10 +1524,15 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
 
     if (strcmp(name, "each") == 0) {
-        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+        if (r->begin_val.kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range#each requires Integer range"); return 1; }
-        int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+        /* Allow Float::INFINITY as end for lazy/break-able iteration */
+        int infinite = (r->end_val.kind == VAL_FLOAT && r->end_val.fval > 1e300) ||
+                       r->end_val.kind == VAL_NIL;
+        int64_t lo = r->begin_val.ival;
+        int64_t hi = r->end_val.kind == VAL_INT ? r->end_val.ival : INT64_MAX;
         if (!blk) {
+            if (infinite) { *out = eval_raise_class(ev, site, "TypeError", "Range#each: cannot build array from infinite range"); return 1; }
             Value arr = val_array_new();
             for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++)
                 val_array_push(&arr, val_int(i));
