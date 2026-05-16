@@ -237,6 +237,20 @@ Recent Stage 5 progress already landed:
 - PP shim (`require "pp"`): minimal `PP` class with `initialize`, `guard_inspect_key`, `pp`, `flush`, `self.pp`
 - `$>` global alias for `$stdout`
 - **birb session-6 milestone**: the REPL evaluates expressions and echoes results — `1+1` returns `2`, `puts 2+2` prints `4`
+- `Float::INFINITY` and `Float::NAN` constants bootstrapped in prelude
+- `Enumerator::Lazy`: `(1..Float::INFINITY).lazy.select{...}.first(n)` and chained lazy ops on infinite ranges
+- `Range#each` now accepts `Float::INFINITY` end for lazy/break-able iteration
+- `Array#chunk`, `#chunk_while`, `#slice_when`, `#slice_before` enumerable partitioning
+- Symbol methods: `:sym.upcase/downcase/capitalize/length/size/<=>` delegate to String or return Symbols
+- `Integer/Float#clamp(range)` single-argument Range form
+- Class comparison operators: `A < B`, `A <= B`, `A > B`, `A >= B`, `A <=> B` (subclass hierarchy)
+- `Class#class_variables`, `#const_defined?`, `#const_get`
+- `Object#singleton_class` (returns class), `#singleton_methods`, `#define_singleton_method`
+- `Kernel.instance_method(:name)` returns a working `UnboundMethod`; `.bind(obj).call` dispatches correctly
+- StringIO shim: `write/puts/print/<<`, `string`, `read`, `truncate`, `flush`, `tty?` — enables IRB commands
+- `execute_as_command?` bug fixed via post-load hook in `eval_require_path` after `irb.rb` fully loads
+- IRB commands (`ls`, `help`, `exit`, etc.) now route correctly through the command dispatch system
+- **birb session-7 milestone**: `ls` command executes without crashing; multi-line input, lazy enumerators, and class hierarchy work in the REPL
 
 Exit gate:
 
