@@ -1348,6 +1348,17 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         env_define(arena, ev->top_env, "Open3", open3_mod);
     }
     {
+        Value math_mod = val_class(arena, "Math", val_nil());
+        math_mod.klass->class_env = env_new(arena, ev->top_env, 1);
+        math_mod.klass->is_module = 1;
+        env_define(arena, ev->top_env, "Math", math_mod);
+        /* Math constants */
+        Value pi = {0}; pi.kind = VAL_FLOAT; pi.fval = 3.14159265358979323846;
+        env_define(arena, math_mod.klass->class_env, "PI", pi);
+        Value e = {0}; e.kind = VAL_FLOAT; e.fval = 2.71828182845904523536;
+        env_define(arena, math_mod.klass->class_env, "E", e);
+    }
+    {
         Value pp_class = val_class(arena, "PP", val_nil());
         pp_class.klass->class_env = env_new(arena, ev->top_env, 1);
         env_define(arena, ev->top_env, "PP", pp_class);

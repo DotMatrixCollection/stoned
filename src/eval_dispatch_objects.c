@@ -3,6 +3,7 @@
 
 #include "eval_internal.h"
 #include "utf8.h"
+#include <math.h>
 
 #include <fcntl.h>
 #include <limits.h>
@@ -1080,6 +1081,17 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
 
         env_define(ev->arena, klass.klass->class_env, "__struct_members__", members);
+
+        /* Evaluate optional block in context of the new Struct class */
+        if (blk && blk->kind == VAL_BLOCK && blk->block.block_node) {
+            env_set(ev->arena, klass.klass->class_env, "self", klass);
+            env_set(ev->arena, klass.klass->class_env, "__class__", klass);
+            env_set(ev->arena, klass.klass->class_env, "__singleton_target__", val_nil());
+            set_current_method_visibility(ev->arena, klass.klass->class_env, METHOD_PUBLIC);
+            Node *blk_body = blk->block.block_node->block.body;
+            if (blk_body) eval_node(ev, klass.klass->class_env, blk_body);
+        }
+
         *out = klass;
         return 1;
     }
@@ -1148,6 +1160,31 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         env_define(ev->arena, ev->top_env, full_name, args[0]);
         *out = args[0];
         return 1;
+    }
+    if (strcmp(recv.klass->name, "Math") == 0) {
+        double arg = (argc > 0) ? (args[0].kind == VAL_FLOAT ? args[0].fval :
+                     args[0].kind == VAL_INT ? (double)args[0].ival : 0.0) : 0.0;
+        double arg2 = (argc > 1) ? (args[1].kind == VAL_FLOAT ? args[1].fval :
+                      args[1].kind == VAL_INT ? (double)args[1].ival : 0.0) : 0.0;
+        if (strcmp(name, "sqrt") == 0) { *out = val_float(sqrt(arg)); return 1; }
+        if (strcmp(name, "cbrt") == 0) { *out = val_float(cbrt(arg)); return 1; }
+        if (strcmp(name, "sin") == 0)  { *out = val_float(sin(arg));  return 1; }
+        if (strcmp(name, "cos") == 0)  { *out = val_float(cos(arg));  return 1; }
+        if (strcmp(name, "tan") == 0)  { *out = val_float(tan(arg));  return 1; }
+        if (strcmp(name, "asin") == 0) { *out = val_float(asin(arg)); return 1; }
+        if (strcmp(name, "acos") == 0) { *out = val_float(acos(arg)); return 1; }
+        if (strcmp(name, "atan") == 0) { *out = val_float(atan(arg)); return 1; }
+        if (strcmp(name, "atan2") == 0){ *out = val_float(atan2(arg, arg2)); return 1; }
+        if (strcmp(name, "exp") == 0)  { *out = val_float(exp(arg));  return 1; }
+        if (strcmp(name, "log") == 0)  { *out = val_float(argc > 1 ? log(arg)/log(arg2) : log(arg)); return 1; }
+        if (strcmp(name, "log2") == 0) { *out = val_float(log2(arg)); return 1; }
+        if (strcmp(name, "log10") == 0){ *out = val_float(log10(arg));return 1; }
+        if (strcmp(name, "hypot") == 0){ *out = val_float(hypot(arg, arg2)); return 1; }
+        if (strcmp(name, "pow") == 0)  { *out = val_float(pow(arg, arg2));  return 1; }
+        if (strcmp(name, "floor") == 0){ *out = val_float(floor(arg)); return 1; }
+        if (strcmp(name, "ceil") == 0) { *out = val_float(ceil(arg));  return 1; }
+        if (strcmp(name, "ldexp") == 0){ *out = val_float(ldexp(arg, (int)arg2)); return 1; }
+        *out = val_nil(); return 1;
     }
     if (strcmp(recv.klass->name, "Reline") == 0 ||
         strcmp(recv.klass->name, "Reline::Unicode") == 0) {
@@ -2217,6 +2254,22 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = obj;
         return 1;
     }
+    /* Struct subclass class methods: members */
+    if (strcmp(name, "members") == 0 &&
+        class_is_a_named_class(ev, recv.klass, "Struct") &&
+        recv.klass->class_env) {
+        Value sm = val_nil();
+        if (env_get(recv.klass->class_env, "__struct_members__", &sm) && sm.kind == VAL_ARRAY) {
+            Value syms = val_array_new();
+            for (size_t i = 0; i < sm.array->len; i++) {
+                Value s = sm.array->elems[i];
+                val_array_push(&syms, val_symbol(s.kind == VAL_STRING ? s.sval : "?"));
+            }
+            *out = syms;
+        } else { *out = val_array_new(); }
+        return 1;
+    }
+
     /* ---- Class reflection ---- */
 
     if (strcmp(name, "superclass") == 0) {

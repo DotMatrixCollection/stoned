@@ -176,6 +176,19 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         *out = recv; return 1;
     }
+    if (strcmp(name, "<=>") == 0) {
+        if (argc < 1 || args[0].kind != VAL_ARRAY) { *out = val_nil(); return 1; }
+        size_t alen = recv.array->len, blen = args[0].array->len;
+        size_t minlen = alen < blen ? alen : blen;
+        for (size_t i = 0; i < minlen; i++) {
+            Value cmp = dispatch_method(ev, env, recv.array->elems[i], "<=>",
+                                        &args[0].array->elems[i], 1, NULL, site, 0, 1);
+            if (cmp.kind == VAL_INT && cmp.ival != 0) { *out = cmp; return 1; }
+            if (cmp.kind == VAL_NIL) { *out = val_nil(); return 1; }
+        }
+        *out = val_int(alen < blen ? -1 : alen > blen ? 1 : 0);
+        return 1;
+    }
     if (strcmp(name, "reverse") == 0) {
         Value arr = val_array_new();
         for (size_t i = recv.array->len; i > 0; i--) val_array_push(&arr, recv.array->elems[i - 1]);
