@@ -1034,6 +1034,20 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
 
     /* Kernel.method forwards to top-level builtin_kernel */
     if (strcmp(recv.klass->name, "Kernel") == 0) {
+        /* instance_method(:name) — return UnboundMethod wrapping the named method */
+        if (strcmp(name, "instance_method") == 0) {
+            if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+            const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+            if (!mname) { *out = val_nil(); return 1; }
+            Value ubm_klass;
+            if (!env_get(ev->top_env, "UnboundMethod", &ubm_klass) || ubm_klass.kind != VAL_CLASS)
+                { *out = val_nil(); return 1; }
+            Value ubm = val_object(ev->arena, ubm_klass);
+            val_object_set_ivar(ev->arena, ubm, "__klass__", recv);
+            val_object_set_ivar(ev->arena, ubm, "__method_name__", val_string(ev->arena, mname));
+            val_object_set_ivar(ev->arena, ubm, "__method__", val_nil()); /* native marker */
+            *out = ubm; return 1;
+        }
         extern Value builtin_kernel(Eval *ev, Env *env, const char *name,
                                     Value *args, int argc, Value *blk, Node *site);
         *out = builtin_kernel(ev, env, name, args, argc, blk, site);
@@ -2254,6 +2268,40 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = obj;
         return 1;
     }
+    /* Class comparison operators: A < B (A is strict subclass of B) */
+    if ((strcmp(name, "<") == 0 || strcmp(name, "<=") == 0 ||
+         strcmp(name, ">") == 0 || strcmp(name, ">=") == 0 ||
+         strcmp(name, "<=>") == 0) && recv.kind == VAL_CLASS) {
+        if (argc < 1 || args[0].kind != VAL_CLASS) { *out = val_nil(); return 1; }
+        RubyClass *a = recv.klass, *b = args[0].klass;
+        if (a == b) {
+            /* equal */
+            if (strcmp(name, "<") == 0 || strcmp(name, ">") == 0) *out = val_false();
+            else if (strcmp(name, "<=>") == 0) *out = val_int(0);
+            else *out = val_true();
+            return 1;
+        }
+        /* Check if a is a subclass of b */
+        int a_sub_b = 0;
+        for (RubyClass *k = a->superclass.kind == VAL_CLASS ? a->superclass.klass : NULL; k;
+             k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+            if (k == b) { a_sub_b = 1; break; }
+        }
+        int b_sub_a = 0;
+        for (RubyClass *k = b->superclass.kind == VAL_CLASS ? b->superclass.klass : NULL; k;
+             k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+            if (k == a) { b_sub_a = 1; break; }
+        }
+        if (strcmp(name, "<") == 0)  { *out = val_bool(a_sub_b); return 1; }
+        if (strcmp(name, "<=") == 0) { *out = val_bool(a_sub_b || a == b); return 1; }
+        if (strcmp(name, ">") == 0)  { *out = val_bool(b_sub_a); return 1; }
+        if (strcmp(name, ">=") == 0) { *out = val_bool(b_sub_a || a == b); return 1; }
+        if (strcmp(name, "<=>") == 0) {
+            *out = a_sub_b ? val_int(-1) : b_sub_a ? val_int(1) : val_nil();
+            return 1;
+        }
+    }
+
     /* Struct subclass class methods: members */
     if (strcmp(name, "members") == 0 &&
         class_is_a_named_class(ev, recv.klass, "Struct") &&
@@ -2270,6 +2318,32 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
 
+    if (strcmp(name, "class_variables") == 0) {
+        Value arr = val_array_new();
+        if (recv.klass->class_env) {
+            for (EnvEntry *e = recv.klass->class_env->vars; e; e = e->next) {
+                if (e->name && e->name[0] == '@' && e->name[1] == '@')
+                    val_array_push(&arr, val_symbol(e->name));
+            }
+        }
+        *out = arr; return 1;
+    }
+    if (strcmp(name, "const_defined?") == 0) {
+        if (argc < 1) { *out = val_false(); return 1; }
+        const char *cname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!cname) { *out = val_false(); return 1; }
+        Value v;
+        *out = val_bool(recv.klass->class_env && env_get(recv.klass->class_env, cname, &v));
+        return 1;
+    }
+    if (strcmp(name, "const_get") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        const char *cname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!cname) { *out = val_nil(); return 1; }
+        Value v = val_nil();
+        if (recv.klass->class_env) env_get(recv.klass->class_env, cname, &v);
+        *out = v; return 1;
+    }
     /* ---- Class reflection ---- */
 
     if (strcmp(name, "superclass") == 0) {

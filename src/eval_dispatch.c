@@ -1577,6 +1577,36 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         }
         return arr;
     }
+    if (strcmp(name, "singleton_class") == 0) {
+        /* Return a synthetic singleton class object */
+        Value sc_klass;
+        if (!env_get(ev->top_env, "Class", &sc_klass)) sc_klass = val_class_of(ev, recv);
+        /* For now return the actual class — proper singleton_class is complex */
+        return val_class_of(ev, recv);
+    }
+    if (strcmp(name, "singleton_methods") == 0) {
+        /* Return methods defined in the singleton env */
+        Value arr = val_array_new();
+        Env *singleton_env = value_singleton_env(recv);
+        if (singleton_env) {
+            for (EnvEntry *e = singleton_env->vars; e; e = e->next) {
+                if (e->val.kind == VAL_METHOD)
+                    val_array_push(&arr, val_symbol(e->name));
+            }
+        }
+        return arr;
+    }
+    if (strcmp(name, "define_singleton_method") == 0) {
+        if (argc < 1 || !blk) { return val_nil(); }
+        const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!mname) return val_nil();
+        Env **slot = value_singleton_env_slot(recv);
+        if (slot) {
+            if (!*slot) *slot = env_new(ev->arena, NULL, 1);
+            env_define(ev->arena, *slot, mname, val_method(blk->block.block_node, blk->block.closure, METHOD_PUBLIC));
+        }
+        return val_symbol(mname);
+    }
     if (strcmp(name, "tap") == 0) {
         if (!blk) return eval_raise_class(ev, site, "LocalJumpError", "no block given");
         Value result = call_block(ev, env, *blk, &recv, 1, site);

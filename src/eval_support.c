@@ -1495,8 +1495,40 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         return val_true();
     if (strcmp(path, "shellwords") == 0 || strcmp(path, "shellwords.rb") == 0)
         return val_true();
-    if (strcmp(path, "stringio") == 0 || strcmp(path, "stringio.rb") == 0)
-        return val_true();
+    if (strcmp(path, "stringio") == 0 || strcmp(path, "stringio.rb") == 0) {
+        static const char *sio_shim =
+"class StringIO\n"
+"  def initialize(str = '')\n"
+"    @buf = str.to_s.dup\n"
+"  end\n"
+"  def string; @buf; end\n"
+"  def string=(s); @buf = s.to_s; end\n"
+"  def write(s); @buf << s.to_s; s.to_s.length; end\n"
+"  def print(*args); args.each { |a| @buf << a.to_s }; nil; end\n"
+"  def puts(*args)\n"
+"    if args.empty?; @buf << \"\\n\"\n"
+"    else; args.each { |a| s = a.to_s; @buf << s; @buf << \"\\n\" unless s.end_with?(\"\\n\") }; end\n"
+"    nil\n"
+"  end\n"
+"  def <<(s); @buf << s.to_s; self; end\n"
+"  def rewind; self; end\n"
+"  def read; @buf; end\n"
+"  def truncate(n = 0); @buf = @buf[0, n] || ''; 0; end\n"
+"  def size; @buf.size; end\n"
+"  def length; @buf.length; end\n"
+"  def to_s; @buf; end\n"
+"  def inspect; \"#<StringIO>\"; end\n"
+"  def flush; self; end\n"
+"  def sync; true; end\n"
+"  def sync=(v); v; end\n"
+"  def tty?; false; end\n"
+"  def isatty; false; end\n"
+"  def fileno; raise IOError, 'StringIO has no fileno'; end\n"
+"  def external_encoding; Encoding::UTF_8 rescue nil; end\n"
+"  def internal_encoding; nil; end\n"
+"end\n";
+        return eval_ruby_string(ev, sio_shim, "stringio_shim", site);
+    }
     if (strcmp(path, "open3") == 0 || strcmp(path, "open3.rb") == 0)
         return val_true();
     if (strcmp(path, "pp") == 0 || strcmp(path, "pp.rb") == 0) {
