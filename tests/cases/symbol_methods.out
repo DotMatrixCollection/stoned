@@ -1,0 +1,5 @@
+:HELLO
+:world
+5
+[:apple, :banana, :cherry]
+[:A, :B, :C]

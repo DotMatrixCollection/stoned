@@ -1,0 +1,5 @@
+puts 3.clamp(1..5)
+puts 0.clamp(1..5)
+puts 10.clamp(1..5)
+puts 3.clamp(1...5)
+puts 5.clamp(1...5)
