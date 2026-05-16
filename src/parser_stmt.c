@@ -49,6 +49,24 @@ static const char *parse_const_path_name(Parser *p) {
     return buf;
 }
 
+static const char *join_const_parts(Parser *p, const char **parts, int count) {
+    if (count <= 0) return NULL;
+    size_t len = strlen(parts[0]);
+    char *buf = arena_alloc(p->arena, len + 1);
+    memcpy(buf, parts[0], len + 1);
+
+    for (int i = 1; i < count; i++) {
+        size_t plen = strlen(parts[i]);
+        char *next = arena_alloc(p->arena, len + 2 + plen + 1);
+        memcpy(next, buf, len);
+        memcpy(next + len, "::", 2);
+        memcpy(next + len + 2, parts[i], plen + 1);
+        buf = next;
+        len += 2 + plen;
+    }
+    return buf;
+}
+
 static const char *method_name_from_token(Parser *p, Token tok) {
     switch (tok.kind) {
         case TOK_IDENT:
@@ -162,7 +180,7 @@ static Node *parse_expr_list(Parser *p, Node *first, int elem_min_bp, int assign
     while (match(p, TOK_COMMA)) {
         if (assignment_target &&
             (check(p, TOK_EQ) || check(p, TOK_NEWLINE) || check(p, TOK_SEMICOLON) ||
-             check(p, TOK_RPAREN) || check(p, TOK_EOF)))
+             check(p, TOK_RPAREN) || check(p, TOK_EOF) || check(p, TOK_IN)))
             break;
         Node *elem = assignment_target ? parse_assignment_target_elem(p) : parse_expr(p, elem_min_bp);
         if (elem) elems = nodelist_append(p->arena, elems, elem);
@@ -260,12 +278,46 @@ Node *parse_stmt(Parser *p) {
         Node *n = node_new(p->arena, NODE_DEF, s);
         n->def.recv = NULL;
 
+        if (name_tok.kind == TOK_CONST && check(p, TOK_COLON2)) {
+            const char *parts[64];
+            int nparts = 0;
+            parts[nparts++] = name_tok.sval;
+            while (match(p, TOK_COLON2) && nparts < 64) {
+                Token part = advance(p);
+                if (part.kind != TOK_CONST) {
+                    error(p, "expected constant name after '::'", part.line, part.col);
+                    return NULL;
+                }
+                parts[nparts++] = part.sval;
+            }
+            if (nparts >= 2) {
+                Node *recv_node = node_new(p->arena, NODE_CONST, tok_span(name_tok));
+                recv_node->sval = join_const_parts(p, parts, nparts - 1);
+                n->def.recv = recv_node;
+                Token synthetic = name_tok;
+                synthetic.sval = parts[nparts - 1];
+                name_tok = synthetic;
+            }
+        }
+
         if (check(p, TOK_DOT)) {
             Node *recv_node = NULL;
             if (name_tok.kind == TOK_SELF) {
                 recv_node = node_new(p->arena, NODE_SELF, tok_span(name_tok));
-            } else if (name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) {
+            } else if (name_tok.kind == TOK_IDENT) {
                 recv_node = node_new(p->arena, NODE_LVAR, tok_span(name_tok));
+                recv_node->sval = name_tok.sval;
+            } else if (name_tok.kind == TOK_CONST) {
+                recv_node = node_new(p->arena, NODE_CONST, tok_span(name_tok));
+                recv_node->sval = name_tok.sval;
+            } else if (name_tok.kind == TOK_IVAR) {
+                recv_node = node_new(p->arena, NODE_IVAR, tok_span(name_tok));
+                recv_node->sval = name_tok.sval;
+            } else if (name_tok.kind == TOK_CVAR) {
+                recv_node = node_new(p->arena, NODE_CVAR, tok_span(name_tok));
+                recv_node->sval = name_tok.sval;
+            } else if (name_tok.kind == TOK_GVAR) {
+                recv_node = node_new(p->arena, NODE_GVAR, tok_span(name_tok));
                 recv_node->sval = name_tok.sval;
             } else {
                 error(p, "unexpected receiver in def", name_tok.line, name_tok.col);
@@ -377,7 +429,7 @@ Node *parse_stmt(Parser *p) {
 
     if (t.kind == TOK_CLASS) {
         advance(p);
-        if (match(p, TOK_LSHIFT)) {
+        if (match(p, TOK_LSHIFT) || (match(p, TOK_LT) && match(p, TOK_LT))) {
             Node *recv = parse_expr(p, 0);
             if (!recv) return NULL;
             Node *n = node_new(p->arena, NODE_SCLASS, s);
@@ -455,6 +507,8 @@ Node *parse_stmt(Parser *p) {
     if (t.kind == TOK_FOR) {
         advance(p);
         Node *target = parse_assignment_target_elem(p);
+        if (check(p, TOK_COMMA))
+            target = parse_expr_list(p, target, 7, 1);
         if (!target) {
             Token t2 = peek(p);
             error(p, "expected loop variable after 'for'", t2.line, t2.col);
@@ -476,6 +530,8 @@ Node *parse_stmt(Parser *p) {
         return n;
     }
 
+    Node *expr = NULL;
+
     if (t.kind == TOK_STAR) {
         Node *lhs = parse_assignment_target_elem(p);
         if (check(p, TOK_COMMA))
@@ -491,26 +547,26 @@ Node *parse_stmt(Parser *p) {
         n->assign.target = lhs;
         n->assign.value = rhs;
         mark_assign_targets_stmt(p, lhs);
-        return n;
-    }
+        expr = n;
+    } else {
+        expr = parse_expr(p, 0);
+        if (!expr) return NULL;
 
-    Node *expr = parse_expr(p, 0);
-    if (!expr) return NULL;
-
-    if (check(p, TOK_COMMA)) {
-        Node *lhs = parse_expr_list(p, expr, 7, 1);
-        if (!match(p, TOK_EQ)) {
-            Token t2 = peek(p);
-            error(p, "expected '=' after multiple assignment target", t2.line, t2.col);
-            return NULL;
+        if (check(p, TOK_COMMA)) {
+            Node *lhs = parse_expr_list(p, expr, 7, 1);
+            if (!match(p, TOK_EQ)) {
+                Token t2 = peek(p);
+                error(p, "expected '=' after multiple assignment target", t2.line, t2.col);
+                return NULL;
+            }
+            Node *rhs_first = parse_expr(p, 0);
+            Node *rhs = parse_expr_list(p, rhs_first, 0, 0);
+            Node *n = node_new(p->arena, NODE_ASSIGN, s);
+            n->assign.target = lhs;
+            n->assign.value = rhs;
+            mark_assign_targets_stmt(p, lhs);
+            expr = n;
         }
-        Node *rhs_first = parse_expr(p, 0);
-        Node *rhs = parse_expr_list(p, rhs_first, 0, 0);
-        Node *n = node_new(p->arena, NODE_ASSIGN, s);
-        n->assign.target = lhs;
-        n->assign.value = rhs;
-        mark_assign_targets_stmt(p, lhs);
-        return n;
     }
 
     t = peek(p);

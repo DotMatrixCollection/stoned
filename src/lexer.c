@@ -151,6 +151,14 @@ static Token scan_number(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
         t.ival = strtoll(l->src + start, NULL, 0);
         return t;
     }
+    /* octal */
+    if (peek_ch(l) == '0' && (peek2(l) == 'o' || peek2(l) == 'O')) {
+        advance(l); advance(l);
+        while ((peek_ch(l) >= '0' && peek_ch(l) <= '7') || peek_ch(l) == '_') advance(l);
+        Token t = make_tok(l, TOK_INT, start, sline, scol);
+        t.ival = strtoll(l->src + start + 2, NULL, 8);
+        return t;
+    }
 
     while (isdigit(peek_ch(l)) || peek_ch(l) == '_') advance(l);
     if (peek_ch(l) == '.' && isdigit(peek2(l))) {
@@ -286,6 +294,85 @@ static Token scan_percent_list(Lexer *l, size_t start, uint32_t sline, uint32_t 
 
     Token t = make_tok(l, TOK_ERROR, start, sline, scol);
     t.sval = "unterminated percent literal";
+    return t;
+}
+
+static Token scan_percent_regexp(Lexer *l, size_t start, uint32_t sline, uint32_t scol) {
+    advance(l); /* consume r */
+    if (at_end(l)) {
+        Token t = make_tok(l, TOK_ERROR, start, sline, scol);
+        t.sval = "unterminated percent literal";
+        return t;
+    }
+
+    char open = advance(l);
+    char close = paired_delim(open);
+    int nested = (open != close);
+    int depth = 0;
+    size_t content_start = l->pos;
+
+    while (!at_end(l)) {
+        char c = peek_ch(l);
+        if (c == '\\') {
+            advance(l);
+            if (!at_end(l)) advance(l);
+            continue;
+        }
+        if (nested && c == open) {
+            depth++;
+            advance(l);
+            continue;
+        }
+        if (c == close) {
+            if (depth == 0) {
+                Token t = make_tok(l, TOK_REGEXP, start, sline, scol);
+                t.sval = intern(l, l->src + content_start, l->pos - content_start);
+                advance(l);
+                int64_t flags = 0;
+                while (!at_end(l)) {
+                    char f = peek_ch(l);
+                    if      (f == 'i') { flags |= 1; advance(l); }
+                    else if (f == 'm') { flags |= 2; advance(l); }
+                    else if (f == 'x') { flags |= 4; advance(l); }
+                    else if (isalpha((unsigned char)f)) { advance(l); }
+                    else break;
+                }
+                t.ival = flags;
+                return t;
+            }
+            depth--;
+            advance(l);
+            continue;
+        }
+        advance(l);
+    }
+
+    Token t = make_tok(l, TOK_ERROR, start, sline, scol);
+    t.sval = "unterminated percent literal";
+    return t;
+}
+
+static Token scan_char_literal(Lexer *l, size_t start, uint32_t sline, uint32_t scol) {
+    Token t = make_tok(l, TOK_STRING, start, sline, scol);
+    if (at_end(l)) {
+        t.sval = "";
+        return t;
+    }
+    char buf[2];
+    size_t len = 0;
+    char c = advance(l);
+    if (c == '\\' && !at_end(l)) {
+        char esc = advance(l);
+        switch (esc) {
+            case 'n': buf[len++] = '\n'; break;
+            case 't': buf[len++] = '\t'; break;
+            case 'r': buf[len++] = '\r'; break;
+            default:  buf[len++] = esc; break;
+        }
+    } else {
+        buf[len++] = c;
+    }
+    t.sval = intern(l, buf, len);
     return t;
 }
 
@@ -488,6 +575,17 @@ static int heredoc_min_indent(const char *src, size_t start, size_t end) {
         if (i < end) i++;
     }
     return min_ind < 0 ? 0 : min_ind;
+}
+
+static int preceded_by_class_keyword(const char *src, size_t start) {
+    if (start < 5) return 0;
+    if (strncmp(src + start - 5, "class", 5) != 0) return 0;
+    if (start > 5) {
+        char prev = src[start - 6];
+        if (isalnum((unsigned char)prev) || prev == '_')
+            return 0;
+    }
+    return 1;
 }
 
 /* Called when hd_active && imode_top == LMODE_INTERP_STR.
@@ -815,7 +913,12 @@ static Token scan(Lexer *l) {
             }
             SIMPLE(TOK_RBRACE);
         case '~': SIMPLE(TOK_TILDE);
-        case '?': SIMPLE(TOK_QUESTION);
+        case '?':
+            if ((l->state == LEX_EXPR_BEG || l->state == LEX_EXPR_MID ||
+                 (l->state == LEX_EXPR_ARG && l->had_space)) &&
+                !at_end(l) && !isspace((unsigned char)peek_ch(l)))
+                return scan_char_literal(l, start, sline, scol);
+            SIMPLE(TOK_QUESTION);
 
         case '+':
             if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_PLUS_EQ); }
@@ -830,6 +933,7 @@ static Token scan(Lexer *l) {
             if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_PERCENT_EQ); }
             if (peek_ch(l) == 'w') return scan_percent_list(l, start, sline, scol, TOK_WORDS);
             if (peek_ch(l) == 'i') return scan_percent_list(l, start, sline, scol, TOK_SYMBOLS);
+            if (peek_ch(l) == 'r') return scan_percent_regexp(l, start, sline, scol);
             l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_PERCENT);
         case '^':
@@ -849,10 +953,10 @@ static Token scan(Lexer *l) {
             SIMPLE(TOK_STAR);
 
         case '/':
-            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_SLASH_EQ); }
             if (l->state == LEX_EXPR_BEG || l->state == LEX_EXPR_MID ||
                 (l->state == LEX_EXPR_ARG && l->had_space))
                 return scan_regexp(l, start, sline, scol);
+            if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_SLASH_EQ); }
             l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_SLASH);
 
@@ -887,8 +991,9 @@ static Token scan(Lexer *l) {
                 advance(l);
                 {
                     char hd_nc = peek_ch(l);
-                    if (hd_nc == '-' || hd_nc == '~' || hd_nc == '"' || hd_nc == '\'' ||
-                        isalpha((unsigned char)hd_nc) || hd_nc == '_') {
+                    if (!preceded_by_class_keyword(l->src, start) &&
+                        (hd_nc == '-' || hd_nc == '~' || hd_nc == '"' || hd_nc == '\'' ||
+                         isalpha((unsigned char)hd_nc) || hd_nc == '_')) {
                         return scan_heredoc(l, start, sline, scol);
                     }
                 }
@@ -946,11 +1051,13 @@ static Token scan(Lexer *l) {
             /* symbol if followed by ident char, quote, or operator char */
             {
                 char pc = peek_ch(l);
-                if (isalpha(pc) || pc == '_' || pc == '"' || pc == '\'' ||
-                    pc == '@' || pc == '$' ||
-                    pc == '+' || pc == '-' || pc == '*' || pc == '/' || pc == '%' ||
-                    pc == '<' || pc == '>' || pc == '=' || pc == '!' ||
-                    pc == '&' || pc == '|' || pc == '^' || pc == '~' || pc == '[') {
+                if ((l->state == LEX_EXPR_BEG ||
+                     (l->state == LEX_EXPR_ARG && l->had_space)) &&
+                    (isalpha(pc) || pc == '_' || pc == '"' || pc == '\'' ||
+                     pc == '@' || pc == '$' ||
+                     pc == '+' || pc == '-' || pc == '*' || pc == '/' || pc == '%' ||
+                     pc == '<' || pc == '>' || pc == '=' || pc == '!' ||
+                     pc == '&' || pc == '|' || pc == '^' || pc == '~' || pc == '[')) {
                     return scan_symbol(l, start, sline, scol);
                 }
             }
