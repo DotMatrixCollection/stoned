@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `338` tests are passing, and birb's REPL now fully evaluates expressions and echoes results — `1+1` returns `2`, `puts 2+2` prints `4`. Key session-6 additions: `String#<<` mutation propagation, `class<<self` visibility scope restoration, `NODE_LVAR` nil-for-unassigned (Ruby semantics), Prism/PP/Reline stubs, `MatchData` named captures, and many more runtime fixes. It is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `341` tests are passing, and birb's REPL now fully evaluates expressions and echoes results — `1+1` returns `2`, `puts 2+2` prints `4`. Key session-6 additions: `String#<<` mutation propagation, `class<<self` visibility scope restoration, `NODE_LVAR` nil-for-unassigned (Ruby semantics), Prism/PP/Reline stubs, `MatchData` named captures, and many more runtime fixes. It is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -52,7 +52,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `338 passed, 0 failed, 338 total`.
+Current coverage in the tree: `341 passed, 0 failed, 341 total`.
 
 What is working today:
 
