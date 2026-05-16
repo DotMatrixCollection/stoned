@@ -132,6 +132,14 @@ static Token make_tok(Lexer *l, TokenKind kind, size_t start_pos, uint32_t start
 /* ------------------------------------------------------------------ */
 /* Number scanning                                                      */
 /* ------------------------------------------------------------------ */
+/* Strip underscores from numeric literal for strtoll */
+static int64_t parse_int_with_underscores(const char *s, int base) {
+    char buf[64]; int bi = 0;
+    for (; *s && bi < 63; s++) { if (*s != '_') buf[bi++] = *s; }
+    buf[bi] = '\0';
+    return strtoll(buf, NULL, base);
+}
+
 static Token scan_number(Lexer *l, size_t start, uint32_t sline, uint32_t scol) {
     int is_float = 0;
 
@@ -140,7 +148,7 @@ static Token scan_number(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
         advance(l); advance(l);
         while (isxdigit(peek_ch(l)) || peek_ch(l) == '_') advance(l);
         Token t = make_tok(l, TOK_INT, start, sline, scol);
-        t.ival = strtoll(l->src + start, NULL, 0);
+        t.ival = parse_int_with_underscores(l->src + start, 0);
         return t;
     }
     /* binary */
@@ -148,15 +156,16 @@ static Token scan_number(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
         advance(l); advance(l);
         while (peek_ch(l) == '0' || peek_ch(l) == '1' || peek_ch(l) == '_') advance(l);
         Token t = make_tok(l, TOK_INT, start, sline, scol);
-        t.ival = strtoll(l->src + start, NULL, 0);
+        t.ival = parse_int_with_underscores(l->src + start, 0);
         return t;
     }
     /* octal */
     if (peek_ch(l) == '0' && (peek2(l) == 'o' || peek2(l) == 'O')) {
         advance(l); advance(l);
+        size_t digits_start = l->pos;
         while ((peek_ch(l) >= '0' && peek_ch(l) <= '7') || peek_ch(l) == '_') advance(l);
         Token t = make_tok(l, TOK_INT, start, sline, scol);
-        t.ival = strtoll(l->src + start + 2, NULL, 8);
+        t.ival = parse_int_with_underscores(l->src + digits_start, 8);
         return t;
     }
 
@@ -174,8 +183,17 @@ static Token scan_number(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
     }
 
     Token t = make_tok(l, is_float ? TOK_FLOAT : TOK_INT, start, sline, scol);
-    if (is_float) t.fval = strtod(l->src + start, NULL);
-    else          t.ival = strtoll(l->src + start, NULL, 10);
+    if (is_float) {
+        /* strip underscores for float parsing */
+        char fbuf[64]; int fi = 0;
+        for (size_t i = start; i < l->pos && fi < 63; i++) {
+            if (l->src[i] != '_') fbuf[fi++] = l->src[i];
+        }
+        fbuf[fi] = '\0';
+        t.fval = strtod(fbuf, NULL);
+    } else {
+        t.ival = parse_int_with_underscores(l->src + start, 10);
+    }
     return t;
 }
 
