@@ -1747,8 +1747,16 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
             /* count with block — fall through to Enumerable */
             return 0;
         }
-        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
-            { *out = val_nil(); return 1; }
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT) {
+            /* String range: count by iterating */
+            if (r->begin_val.kind == VAL_STRING && r->end_val.kind == VAL_STRING) {
+                Value arr_out;
+                dispatch_range(ev, env, recv, "to_a", NULL, 0, NULL, site, &arr_out);
+                *out = val_int(arr_out.kind == VAL_ARRAY ? (int64_t)arr_out.array->len : 0);
+                return 1;
+            }
+            *out = val_nil(); return 1;
+        }
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
         int64_t sz = r->exclusive ? (hi > lo ? hi - lo : 0) : (hi >= lo ? hi - lo + 1 : 0);
         *out = val_int(sz); return 1;

@@ -1524,7 +1524,14 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                 val_array_push(&copy, recv.array->elems[i]);
             return copy;
         }
-        /* primitives: dup/clone returns self (strings are value types here) */
+        /* String: dup returns unfrozen copy; clone preserves frozen */
+        if (recv.kind == VAL_STRING) {
+            Value copy = val_string(ev->arena, recv.sval);
+            if (is_clone) copy.frozen = recv.frozen;
+            /* else dup: unfrozen */
+            return copy;
+        }
+        /* Other primitives: return self */
         return recv;
     }
     if (strcmp(name, "itself") == 0) return recv;
