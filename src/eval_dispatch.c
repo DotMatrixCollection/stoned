@@ -1160,6 +1160,18 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
             inc->mod = args[i].klass;
             inc->next = self.klass->included_modules;
             self.klass->included_modules = inc;
+            /* Call Module.included(base) hook if defined */
+            {
+                Value included_method; RubyClass *inc_owner = NULL;
+                /* Look for self.included in the module's class_env */
+                size_t ilen = strlen("included");
+                char *ikey = arena_alloc(ev->arena, ilen + 6);
+                memcpy(ikey, "self.", 5); memcpy(ikey + 5, "included", ilen + 1);
+                Value cm;
+                if (env_get(args[i].klass->class_env, ikey, &cm) && cm.kind == VAL_METHOD) {
+                    call_method_value(ev, env, args[i], cm, args[i].klass, "included", &self, 1, NULL, site);
+                }
+            }
             if (strcmp(args[i].klass->name, "Singleton") == 0) {
                 Node *body = node_new(ev->arena, NODE_BODY, site ? site->span : (Span){0, 0, 0});
                 body->body.stmts = NULL;
