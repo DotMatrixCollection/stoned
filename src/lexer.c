@@ -1019,6 +1019,7 @@ static Token scan(Lexer *l) {
         case '&':
             if (peek_ch(l) == '.') {
                 advance(l);
+                l->prev_was_dot = 1;
                 SIMPLE(TOK_ANDDOT);
             }
             if (peek_ch(l) == '&') {
@@ -1100,6 +1101,7 @@ static Token scan(Lexer *l) {
                 if (peek_ch(l) == '.') { advance(l); SIMPLE(TOK_DOT3); }
                 SIMPLE(TOK_DOT2);
             }
+            l->prev_was_dot = 1;
             SIMPLE(TOK_DOT);
 
         case ':':
@@ -1210,8 +1212,10 @@ Token lexer_next(Lexer *l) {
     /* Track expr state so '/' disambiguation works on the next token. */
     switch (t.kind) {
         case TOK_IDENT:
-            /* Known local var → value expression; unknown → might be method call */
-            l->state = is_local_var(l, t.sval) ? LEX_EXPR_END : LEX_EXPR_ARG;
+            /* Known local var → value expression; unknown → method call.
+               But if preceded by DOT (method call on receiver), always EXPR_END. */
+            l->state = (l->prev_was_dot || is_local_var(l, t.sval)) ? LEX_EXPR_END : LEX_EXPR_ARG;
+            l->prev_was_dot = 0;
             break;
         case TOK_CONST:
         case TOK_IVAR:  case TOK_CVAR:  case TOK_GVAR:
@@ -1223,8 +1227,12 @@ Token lexer_next(Lexer *l) {
         case TOK_RPAREN: case TOK_RBRACKET: case TOK_RBRACE:
         case TOK_RETRY:
             l->state = LEX_EXPR_END;
+            l->prev_was_dot = 0;
             break;
         default:
+            /* Only keep prev_was_dot across DOT itself; clear for everything else */
+            if (t.kind != TOK_DOT && t.kind != TOK_ANDDOT)
+                l->prev_was_dot = 0;
             l->state = LEX_EXPR_BEG;
             break;
     }

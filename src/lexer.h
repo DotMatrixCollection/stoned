@@ -208,6 +208,7 @@ typedef struct {
     /* local-variable table for '/' disambiguation */
     LexLocalVar *local_vars;
     int          had_space;   /* set by skip_whitespace; used by '/' scanner */
+    int          prev_was_dot; /* previous meaningful token was DOT/ANDDOT */
 } Lexer;
 
 void  lexer_init(Lexer *l, const char *src, size_t len, Arena *arena);
