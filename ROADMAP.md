@@ -238,7 +238,7 @@ Recent Stage 5 progress already landed:
 - `$>` global alias for `$stdout`
 - **birb session-6 milestone**: the REPL evaluates expressions and echoes results — `1+1` returns `2`, `puts 2+2` prints `4`
 - `Float::INFINITY` and `Float::NAN` constants bootstrapped in prelude
-- `Enumerator::Lazy`: `(1..Float::INFINITY).lazy.select{...}.first(n)` and chained lazy ops on infinite ranges
+- `Enumerator::Lazy`: `(1..Float::INFINITY).lazy.select{...}.first(n)` and chained lazy ops on infinite ranges; `to_a`/`force` and `take` now correct — shared `_collect` helper fixes `to_a` returning a scalar and `:take` not limiting the outer loop
 - `Range#each` now accepts `Float::INFINITY` end for lazy/break-able iteration
 - `Array#chunk`, `#chunk_while`, `#slice_when`, `#slice_before` enumerable partitioning
 - Symbol methods: `:sym.upcase/downcase/capitalize/length/size/<=>` delegate to String or return Symbols
