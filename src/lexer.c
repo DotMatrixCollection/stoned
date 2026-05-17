@@ -951,7 +951,7 @@ static Token scan_regexp(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
         if (c == '[' && !in_class) { in_class = 1; advance(l); RBUF_PUSH('['); continue; }
         if (c == ']' && in_class)  { in_class = 0; advance(l); RBUF_PUSH(']'); continue; }
         if (c == '/' && !in_class) break;
-        if (c == '\n') break;
+        /* Allow newlines in regex — needed for /x extended-mode multiline patterns */
         RBUF_PUSH(advance(l));
     }
     RBUF_PUSH('\0');

@@ -423,6 +423,22 @@ static Value eval_ruby_string(Eval *ev, const char *src, const char *display_nam
     return val_true();
 }
 
+static Value eval_ruby_string_parts(Eval *ev, const char **parts, size_t part_count,
+                                    const char *display_name, Node *site) {
+    size_t cap = 0;
+    size_t used = 0;
+    char *src = NULL;
+    for (size_t i = 0; i < part_count; i++) {
+        if (!append_dynamic(&src, &cap, &used, parts[i], strlen(parts[i]))) {
+            free(src);
+            return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+        }
+    }
+    Value result = eval_ruby_string(ev, src ? src : "", display_name, site);
+    free(src);
+    return result;
+}
+
 static Value eval_require_path(Eval *ev, const char *resolved, const char *display_path, Node *site) {
     if (!display_path) display_path = resolved;
     const char *canonical_path = canonical_existing_path(ev->arena, resolved);
@@ -1665,8 +1681,34 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         return val_true();
     if (strcmp(path, "observer") == 0 || strcmp(path, "observer.rb") == 0)
         return val_true();
-    if (strcmp(path, "forwardable") == 0 || strcmp(path, "forwardable.rb") == 0)
-        return val_true();
+    if (strcmp(path, "forwardable") == 0 || strcmp(path, "forwardable.rb") == 0) {
+        static const char *forwardable_shim =
+"module Forwardable\n"
+"  def def_delegator(accessor, method, alias_name = method)\n"
+"    acc = accessor.to_s\n"
+"    meth = method.to_s\n"
+"    ali = alias_name.to_s\n"
+"    define_method(ali) { |*args, &blk| send(acc).send(meth, *args, &blk) }\n"
+"  end\n"
+"  def def_delegators(accessor, *methods)\n"
+"    methods.each { |m| def_delegator(accessor, m) }\n"
+"  end\n"
+"  alias delegate def_delegator\n"
+"  def self.included(base)\n"
+"    base.extend(Forwardable)\n"
+"  end\n"
+"end\n"
+"module SingleForwardable\n"
+"  def def_delegator(accessor, method, alias_name = method)\n"
+"    acc = accessor.to_s; meth = method.to_s; ali = alias_name.to_s\n"
+"    define_singleton_method(ali) { |*args, &blk| send(acc).send(meth, *args, &blk) }\n"
+"  end\n"
+"  def def_delegators(accessor, *methods)\n"
+"    methods.each { |m| def_delegator(accessor, m) }\n"
+"  end\n"
+"end\n";
+        return eval_ruby_string(ev, forwardable_shim, "forwardable_shim", site);
+    }
     if (strcmp(path, "ostruct") == 0 || strcmp(path, "ostruct.rb") == 0) {
         static const char *ostruct_shim =
 "class OpenStruct\n"
@@ -1839,11 +1881,33 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "end\n";
         return eval_ruby_string(ev, strscan_shim, "strscan_shim", site);
     }
+    if (strcmp(path, "rubygems/dependency") == 0 ||
+        strcmp(path, "rubygems/dependency.rb") == 0 ||
+        strcmp(path, "rubygems/deprecate") == 0 ||
+        strcmp(path, "rubygems/deprecate.rb") == 0 ||
+        strcmp(path, "rubygems/platform") == 0 ||
+        strcmp(path, "rubygems/platform.rb") == 0 ||
+        strcmp(path, "rubygems/specification") == 0 ||
+        strcmp(path, "rubygems/specification.rb") == 0 ||
+        strcmp(path, "rubygems/stub_specification") == 0 ||
+        strcmp(path, "rubygems/stub_specification.rb") == 0 ||
+        strcmp(path, "rubygems/name_tuple") == 0 ||
+        strcmp(path, "rubygems/name_tuple.rb") == 0 ||
+        strcmp(path, "rubygems/source") == 0 ||
+        strcmp(path, "rubygems/source.rb") == 0 ||
+        strcmp(path, "rubygems/user_interaction") == 0 ||
+        strcmp(path, "rubygems/user_interaction.rb") == 0 ||
+        strcmp(path, "rubygems/command") == 0 ||
+        strcmp(path, "rubygems/command.rb") == 0) {
+        return eval_require(ev, env, "rubygems", site);
+    }
     if (strcmp(path, "rubygems") == 0 || strcmp(path, "rubygems.rb") == 0) {
-        static const char *rubygems_shim =
+        static const char *rubygems_shim_part1 =
 "module Gem\n"
-"  VERSION = \"3.6.0\"\n"
-"  RUBYGEMS_VERSION = \"3.6.0\"\n"
+"  VERSION = \"3.6.9\"\n"
+"  RUBYGEMS_VERSION = \"3.6.9\"\n"
+"\n"
+"  module Deprecate; end\n"
 "\n"
 "  class Version\n"
 "    include Comparable\n"
@@ -1865,15 +1929,39 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "  class Requirement\n"
 "    OPS = { \"=\" => :==, \"!=\" => :!=, \">\" => :>, \"<\" => :<, \">=\" => :>=, \"<=\" => :<=, \"~>\" => :=~ }.freeze\n"
 "    def initialize(*reqs)\n"
-"      @requirements = reqs.flatten.map(&:to_s)\n"
-"      @requirements = ['>= 0'] if @requirements.empty?\n"
+"      raw = reqs.flatten.map(&:to_s)\n"
+"      raw = ['>= 0'] if raw.empty?\n"
+"      @requirements = raw.map do |req|\n"
+"        if req =~ /\\A\\s*(=|!=|>=|<=|>|<|~>)\\s*(.+)\\z/\n"
+"          [$1, Gem::Version.new($2)]\n"
+"        else\n"
+"          ['=', Gem::Version.new(req)]\n"
+"        end\n"
+"      end\n"
 "    end\n"
-"    def satisfied_by?(version); true; end\n"
-"    def to_s; @requirements.join(\", \"); end\n"
-"    def inspect; \"Gem::Requirement.new(#{@requirements.map(&:inspect).join(\", \")})\"; end\n"
+"    attr_reader :requirements\n"
+"    def satisfied_by?(version)\n"
+"      version = Gem::Version.new(version.to_s)\n"
+"      @requirements.all? do |op, other|\n"
+"        case op\n"
+"        when '=' then version == other\n"
+"        when '!=' then version != other\n"
+"        when '>' then version > other\n"
+"        when '<' then version < other\n"
+"        when '>=' then version >= other\n"
+"        when '<=' then version <= other\n"
+"        when '~>' then version >= other.release\n"
+"        else true\n"
+"        end\n"
+"      end\n"
+"    end\n"
+"    def requirements_list; @requirements.map { |op, v| \"#{op} #{v}\" }; end\n"
+"    def to_s; requirements_list.join(\", \"); end\n"
+"    def inspect; \"Gem::Requirement.new(#{requirements_list.map(&:inspect).join(\", \")})\"; end\n"
 "    def self.new(*reqs); super(*reqs); end\n"
 "    def self.default; new(\">= 0\"); end\n"
-"    def none?; @requirements == [\">= 0\"]; end\n"
+"    def none?; @requirements == [['>=', Gem::Version.new('0')]]; end\n"
+"    def ==(other); other.is_a?(Gem::Requirement) && requirements_list == other.requirements_list; end\n"
 "  end\n"
 "\n"
 "  class Dependency\n"
@@ -1881,21 +1969,44 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "    def initialize(name, *reqs)\n"
 "      type = reqs.last.is_a?(Symbol) ? reqs.pop : :runtime\n"
 "      @name = name.to_s\n"
+;
+        static const char *rubygems_shim_part2 =
 "      @type = type\n"
 "      @requirement = Gem::Requirement.new(*reqs)\n"
 "    end\n"
 "    def runtime?; @type == :runtime; end\n"
 "    def development?; @type == :development; end\n"
+"    def requirements_list; @requirement.requirements_list; end\n"
+"    def matches_spec?(spec)\n"
+"      spec && spec.name == name && requirement.satisfied_by?(spec.version)\n"
+"    end\n"
 "    def to_s; \"#{name} (#{requirement})\"; end\n"
 "    def inspect; \"#<Gem::Dependency name=\\\"#{name}\\\" requirements=\\\"#{requirement}\\\">\"; end\n"
 "  end\n"
 "\n"
+"  class Source\n"
+"    attr_accessor :uri\n"
+"    def initialize(uri = nil); @uri = uri; end\n"
+"  end\n"
+"  class Source::Installed < Source; end\n"
+"  class Source::Local < Source; end\n"
+"  class Source::Lock < Source; end\n"
+"  class Source::SpecificFile < Source; end\n"
+"  class Source::Git < Source; end\n"
+"  class Source::Vendor < Source; end\n"
+"\n"
 "  class Specification\n"
 "    CURRENT_SPEC_VERSION = 4\n"
+"    @@default_value = {\n"
+"      authors: [], email: [], require_paths: ['lib'], files: [], executables: [],\n"
+"      runtime_dependencies: [], development_dependencies: []\n"
+"    }\n"
+"    @@array_attributes = @@default_value.select { |_, v| v.is_a?(Array) }.keys\n"
 "    attr_accessor :name, :version, :summary, :description, :authors,\n"
 "                  :email, :homepage, :license, :require_paths,\n"
 "                  :files, :executables, :bindir, :metadata,\n"
-"                  :required_ruby_version, :required_rubygems_version\n"
+"                  :required_ruby_version, :required_rubygems_version,\n"
+"                  :loaded_from, :platform, :activated\n"
 "    def initialize\n"
 "      @name = \"\"\n"
 "      @version = Gem::Version.new(\"0.0.0\")\n"
@@ -1915,10 +2026,15 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "      @development_dependencies = []\n"
 "      @required_ruby_version = Gem::Requirement.default\n"
 "      @required_rubygems_version = Gem::Requirement.default\n"
+"      @loaded_from = nil\n"
+"      @platform = Gem::Platform::RUBY\n"
+"      @activated = false\n"
 "      yield self if block_given?\n"
 "      Gem::Specification._loading_spec = self\n"
 "    end\n"
 "    def add_runtime_dependency(name, *reqs)\n"
+;
+        static const char *rubygems_shim_part3 =
 "      @runtime_dependencies << Gem::Dependency.new(name, *reqs, :runtime)\n"
 "    end\n"
 "    alias add_dependency add_runtime_dependency\n"
@@ -1931,10 +2047,22 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "    def licenses; @licenses; end\n"
 "    def license=(val); @license = val; @licenses = [val]; end\n"
 "    def full_name; \"#{name}-#{version}\"; end\n"
+"    def base_dir; Gem.home; end\n"
 "    def gem_dir; File.join(Gem.home, \"gems\", full_name); end\n"
+"    def full_gem_path; gem_dir; end\n"
 "    def lib_dirs_glob\n"
 "      require_paths.map { |rp| File.join(gem_dir, rp) }\n"
 "    end\n"
+"    def full_require_paths; lib_dirs_glob; end\n"
+"    def load_paths; full_require_paths; end\n"
+"    def source; @source ||= Gem::Source.new(\"https://rubygems.org\"); end\n"
+"    def source=(value); @source = value; end\n"
+"    def extensions_dir; File.join(base_dir, \"extensions\"); end\n"
+"    def extension_dir; File.join(extensions_dir, full_name); end\n"
+"    def default_gem?; false; end\n"
+"    def ignored?; false; end\n"
+"    def missing_extensions?; false; end\n"
+"    def validate_for_resolution; true; end\n"
 "    def to_s; \"#{name}-#{version}\"; end\n"
 "    def inspect; \"#<Gem::Specification name=\\\"#{name}\\\" version=\\\"#{version}\\\">\"; end\n"
 "    def self._load_gemspec(path)\n"
@@ -1963,6 +2091,8 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "            # skip malformed gemspecs\n"
 "          end\n"
 "        end\n"
+;
+        static const char *rubygems_shim_part4 =
 "      end\n"
 "      @_loading_spec = nil\n"
 "      @_all\n"
@@ -1982,6 +2112,9 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "    def self.each(&blk)\n"
 "      all.each(&blk)\n"
 "    end\n"
+"    def self.any?(&blk)\n"
+"      all.any?(&blk)\n"
+"    end\n"
 "    def self._load(str); new; end\n"
 "    def self._loading_spec; @_loading_spec; end\n"
 "    def self._loading_spec=(s); @_loading_spec = s; end\n"
@@ -1989,15 +2122,75 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "      @_all = nil\n"
 "      @_loading_spec = nil\n"
 "    end\n"
+"    def self.reset\n"
+"      reset!\n"
+"    end\n"
 "  end\n"
+"\n"
+"  BasicSpecification = Specification\n"
+"  StubSpecification = Specification\n"
 "\n"
 "  class Platform\n"
 "    RUBY = \"ruby\"\n"
 "    CURRENT = RUBY_PLATFORM\n"
-"    def initialize(arch); @arch = arch.to_s; end\n"
+"    attr_accessor :cpu, :os, :version\n"
+"    def initialize(arch)\n"
+"      @arch = arch.to_s\n"
+"      parts = @arch.split('-', 3)\n"
+"      @cpu = parts[0]\n"
+"      @os = parts[1]\n"
+"      @version = parts[2]\n"
+"    end\n"
 "    def to_s; @arch; end\n"
 "    def inspect; \"Gem::Platform.new(\\\"#{@arch}\\\")\"; end\n"
 "    def ==(other); @arch == other.to_s; end\n"
+"    alias === ==\n"
+"    def self.local; new(CURRENT); end\n"
+"  end\n"
+"\n"
+"  class NameTuple\n"
+"    attr_reader :name, :version, :platform\n"
+"    def initialize(name, version, platform = Gem::Platform::RUBY)\n"
+"      @name = name.to_s\n"
+"      @version = Gem::Version.new(version.to_s)\n"
+"      @platform = platform.is_a?(Gem::Platform) ? platform.to_s : platform.to_s\n"
+"    end\n"
+"    def spec_name\n"
+"      suffix = platform == Gem::Platform::RUBY ? '' : \"-#{platform}\"\n"
+"      \"#{name}-#{version}#{suffix}.gemspec\"\n"
+"    end\n"
+"    def full_name\n"
+"      spec_name.sub(/\\.gemspec\\z/, '')\n"
+"    end\n"
+"    def lock_name\n"
+"      platform == Gem::Platform::RUBY ? \"#{name} (#{version})\" : \"#{name} (#{version}-#{platform})\"\n"
+"    end\n"
+"  end\n"
+"\n"
+"  class Command\n"
+"    class << self\n"
+"      attr_accessor :build_args\n"
+"    end\n"
+"  end\n"
+"\n"
+"  module DefaultUserInteraction\n"
+"    class << self\n"
+"      attr_accessor :ui\n"
+"    end\n"
+"  end\n"
+"\n"
+"  module Resolver\n"
+"    class VendorSpecification; end\n"
+;
+        static const char *rubygems_shim_part5 =
+"    class ActivationRequest; end\n"
+"    class APISet\n"
+"      class GemParser; end\n"
+"    end\n"
+"  end\n"
+"\n"
+"  class SafeMarshal\n"
+"    def self.safe_load(obj); obj; end\n"
 "  end\n"
 "\n"
 "  class ConfigFile\n"
@@ -2045,13 +2238,25 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "        File.join(home, \"..\", \"gems\", RUBY_VERSION)\n"
 "      end\n"
 "    end\n"
+"    def rubygems_version\n"
+"      Gem::Version.new(VERSION)\n"
+"    end\n"
 "    def loaded_specs\n"
 "      @loaded_specs ||= {}\n"
+"    end\n"
+"    def ruby_engine\n"
+"      defined?(RUBY_ENGINE) ? RUBY_ENGINE : \"ruby\"\n"
 "    end\n"
 "    def find_files(glob); []; end\n"
 "    def find_files_from_load_path(glob); []; end\n"
 "    def available?(name, *reqs); false; end\n"
 "    def ruby; RbConfig.ruby; end\n"
+"    def user_home\n"
+"      ENV[\"HOME\"] || \"/tmp\"\n"
+"    end\n"
+"    def bindir\n"
+"      File.join(home, \"bin\")\n"
+"    end\n"
 "    def win_platform?; false; end\n"
 "    def java_platform?; false; end\n"
 "    def platforms; [Gem::Platform::RUBY]; end\n"
@@ -2059,6 +2264,8 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "      @configuration ||= Gem::ConfigFile.new([])\n"
 "    end\n"
 "    def suffixes; [\"\", \".rb\"]; end\n"
+;
+        static const char *rubygems_shim_part6 =
 "    def datadir(name)\n"
 "      File.join(home, \"gems\", name, \"data\")\n"
 "    end\n"
@@ -2068,6 +2275,9 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "    def activate_bin_path(name, exec_name, *args)\n"
 "      bin_path(name, exec_name)\n"
 "    end\n"
+"    def suffix_pattern\n"
+"      /(?:\\.rb)?\\z/\n"
+"    end\n"
 "    def gem_path; path; end\n"
 "    def use_paths(home_dir, paths_arr = nil)\n"
 "      @home = home_dir\n"
@@ -2076,6 +2286,18 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "    def clear_paths\n"
 "      @home = nil\n"
 "      @path = nil\n"
+"    end\n"
+"    def spec_cache_dir\n"
+"      File.join(home, \"specs\")\n"
+"    end\n"
+"    def read_binary(path)\n"
+"      File.binread(path)\n"
+"    end\n"
+"    def marshal_version\n"
+"      \"#{Marshal::MAJOR_VERSION}.#{Marshal::MINOR_VERSION}\"\n"
+"    end\n"
+"    def load_safe_marshal\n"
+"      true\n"
 "    end\n"
 "    def source_index; nil; end\n"
 "    def sources\n"
@@ -2112,8 +2334,18 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "    lib = File.join(gems_dir, entry, \"lib\")\n"
 "    $LOAD_PATH << lib if Dir.exist?(lib) && !$LOAD_PATH.include?(lib)\n"
 "  end\n"
-"end\n";
-        return eval_ruby_string(ev, rubygems_shim, "rubygems_shim", site);
+"end\n"
+;
+        const char *rubygems_shim_parts[6];
+        rubygems_shim_parts[0] = rubygems_shim_part1;
+        rubygems_shim_parts[1] = rubygems_shim_part2;
+        rubygems_shim_parts[2] = rubygems_shim_part3;
+        rubygems_shim_parts[3] = rubygems_shim_part4;
+        rubygems_shim_parts[4] = rubygems_shim_part5;
+        rubygems_shim_parts[5] = rubygems_shim_part6;
+        return eval_ruby_string_parts(ev, rubygems_shim_parts,
+                                      sizeof(rubygems_shim_parts) / sizeof(rubygems_shim_parts[0]),
+                                      "rubygems_shim", site);
     }
 
     if (ev->current_file)
