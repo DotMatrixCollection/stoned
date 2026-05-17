@@ -1,21 +1,34 @@
-MIT License
+Copyright 1986-2026 Chad "Dot Matrix" Ingram (Matrix9180)
 
-Copyright (c) 2026 Matrix9180
+Muses: MRI Ruby, Microsoft Copilot, Anthropic Claude, OpenAI Codex, Everything Everywhere All At Once, the Matrix 1-4, Matz, _Why the lucky stiff, countless others...
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+of this Software and its accompanying ephemera (collectively, the “Software”),
+to do pretty much anything with it: use it, copy it, remix it, fold it into
+origami, merge it with your own strange contraptions, publish it, distribute
+it, sublicense it, or sell it to someone who thinks it’s worth money.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+You may also permit others to do the same, provided that all copies or
+substantial portions of the Software include:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+1. the copyright notice,
+2. the muses footnote (because lineage is a spell),
+3. and this permission notice (because lawyers get cranky otherwise).
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+(But if you try to make it a revenue stream, a warranty is highly recommended.
+Capitalism is a harsh and unforgiving cryptid.)
+
+THIS LICENSE IS LICENSED UNDER THE MIT LICENSE, which is licensed under the
+MIT License, which is licensed under the MIT License, and so on, until the
+recursion bottoms out or you do. 
+
+THE WHY LICENSE  
+Because software deserves a little whimsy.
