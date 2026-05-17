@@ -45,6 +45,8 @@ module RbConfig
     "vendordir" => libdir,
     "vendorlibdir" => libdir,
     "host_os" => "linux",
+    "gemdir" => File.join(File.dirname(File.dirname(libdir)), "gems", RUBY_API_VERSION),
+    "datadir" => File.join(File.dirname(File.dirname(libdir)), "share"),
   }
 
   def self.ruby

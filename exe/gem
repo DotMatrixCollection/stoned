@@ -1,0 +1,69 @@
+#!/usr/bin/env ruby
+# gem - stoned RubyGems command-line interface
+
+require "rubygems"
+
+def print_gem_env
+  puts "RubyGems Environment:"
+  puts "  - RUBYGEMS VERSION: #{Gem::VERSION}"
+  puts "  - RUBY VERSION: #{RUBY_VERSION} (#{RUBY_PLATFORM})"
+  puts "  - INSTALLATION DIRECTORY: #{Gem.home}"
+  puts "  - RUBY EXECUTABLE: #{RbConfig.ruby}"
+  puts "  - GEM PATHS:"
+  Gem.path.each { |p| puts "     - #{p}" }
+  puts "  - REMOTE SOURCES:"
+  puts "     - https://rubygems.org"
+end
+
+def print_usage
+  STDERR.puts "Usage: gem COMMAND [ARGS]"
+  STDERR.puts ""
+  STDERR.puts "Common commands:"
+  STDERR.puts "  env       Display RubyGems environment"
+  STDERR.puts "  list      List installed gems"
+  STDERR.puts "  version   Display RubyGems version"
+end
+
+command = ARGV[0]
+
+case command
+when "env"
+  case ARGV[1]
+  when "home", "gemhome", "GEM_HOME"
+    puts Gem.home
+  when "path", "gempath", "GEM_PATH"
+    puts Gem.path.join(File::PATH_SEPARATOR)
+  when "version"
+    puts Gem::VERSION
+  when "remotesources"
+    puts "https://rubygems.org"
+  else
+    print_gem_env
+  end
+
+when "list", "--list", "-l"
+  puts "*** LOCAL GEMS ***"
+  puts
+  specs = Gem::Specification.all
+  if specs.empty?
+    puts "(no gems installed)"
+  else
+    specs.sort_by(&:name).each { |s| puts "#{s.name} (#{s.version})" }
+  end
+
+when "-v", "--version", "version"
+  puts Gem::VERSION
+
+when "help", "-h", "--help", nil
+  print_usage
+
+when "install", "uninstall", "update", "push", "build", "fetch",
+     "open", "search", "pristine", "cleanup", "exec", "contents"
+  STDERR.puts "gem #{command}: not yet implemented in stoned"
+  exit 1
+
+else
+  STDERR.puts "ERROR: Unknown command '#{command}'"
+  print_usage
+  exit 1
+end

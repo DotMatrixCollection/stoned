@@ -27,9 +27,12 @@ clean:
 	rm -f $(OBJS) $(DEPS) $(TARGET)
 
 install: $(TARGET)
-	install -d "$(DESTDIR)$(PREFIX)/bin" "$(DESTDIR)$(PREFIX)/lib/ruby/$(STONED_RUBY_VERSION)"
+	install -d "$(DESTDIR)$(PREFIX)/bin" \
+	           "$(DESTDIR)$(PREFIX)/lib/ruby/$(STONED_RUBY_VERSION)" \
+	           "$(DESTDIR)$(PREFIX)/lib/ruby/gems/$(STONED_RUBY_VERSION)/gems"
 	install -m 755 "$(TARGET)" "$(DESTDIR)$(PREFIX)/bin/stoned"
 	ln -sf stoned "$(DESTDIR)$(PREFIX)/bin/ruby"
+	install -m 755 exe/gem "$(DESTDIR)$(PREFIX)/bin/gem"
 	install -m 644 rbconfig.rb "$(DESTDIR)$(PREFIX)/lib/ruby/$(STONED_RUBY_VERSION)/rbconfig.rb"
 
 mise-install: $(TARGET)
