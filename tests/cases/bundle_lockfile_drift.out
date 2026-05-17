@@ -1,0 +1,35 @@
+Using demo (path: /tmp/stoned_bundle_lockfile_drift_/demo_gem)
+Bundle complete! 1 gems now installed.
+--LOCK1--
+GEM
+  specs:
+    demo (path)
+
+BUNDLED WITH
+   2.5.0.stoned
+--LIST1--
+Gems included by the bundle:
+  * demo (path)
+--CHECK1--
+The Gemfile's dependencies are satisfied
+--LIST2--
+Gems included by the bundle:
+  * demo (path)
+  * extra (path)
+--CHECK2--
+The following gems are missing:
+  * extra
+--INSTALL2--
+Using demo (path: /tmp/stoned_bundle_lockfile_drift_/demo_gem)
+Using extra (path: /tmp/stoned_bundle_lockfile_drift_/extra_gem)
+Bundle complete! 2 gems now installed.
+--LOCK2--
+GEM
+  specs:
+    demo (path)
+    extra (path)
+
+BUNDLED WITH
+   2.5.0.stoned
+--CHECK3--
+The Gemfile's dependencies are satisfied

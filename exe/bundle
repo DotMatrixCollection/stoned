@@ -121,6 +121,28 @@ class Lockfile
   end
 end
 
+def bundle_dep_display_version(dep, lockfile)
+  locked = lockfile.gems[dep[:name]]
+  return locked if locked
+  return dep[:spec].version.to_s if dep[:spec] && dep[:spec].respond_to?(:version)
+  spec = Gem::Specification.find_by_name(dep[:name])
+  return spec.version.to_s if spec
+  dep[:path] ? "path" : "not installed"
+end
+
+def bundle_missing_dependencies(dsl, lockfile)
+  dsl.dependencies.reject do |dep|
+    locked = lockfile.gems[dep[:name]]
+    if dep[:path]
+      path_ok = File.directory?(File.expand_path(dep[:path]))
+      path_ok && !locked.nil?
+    else
+      spec = Gem::Specification.find_by_name(dep[:name])
+      spec && (!locked || spec.version.to_s == locked)
+    end
+  end
+end
+
 # ── Resolution ───────────────────────────────────────────────────────────────
 
 def check_tool(name)
@@ -296,9 +318,12 @@ when "check"
     exit 1
   end
   dsl = GemfileDSL.evaluate(GEMFILE)
-  missing = dsl.dependencies.reject do |dep|
-    dep[:path] || Gem::Specification.find_by_name(dep[:name])
+  unless File.exist?(LOCKFILE)
+    STDERR.puts "Could not locate Gemfile.lock"
+    exit 1
   end
+  lf = Lockfile.read(LOCKFILE)
+  missing = bundle_missing_dependencies(dsl, lf)
   if missing.empty?
     puts "The Gemfile's dependencies are satisfied"
   else
@@ -313,11 +338,11 @@ when "list"
     exit 1
   end
   dsl = GemfileDSL.evaluate(GEMFILE)
+  lf = Lockfile.read(LOCKFILE)
   Gem::Specification.reset!
   puts "Gems included by the bundle:"
   dsl.dependencies.each do |dep|
-    spec = Gem::Specification.find_by_name(dep[:name])
-    puts "  * #{dep[:name]} (#{spec ? spec.version : "not installed"})"
+    puts "  * #{dep[:name]} (#{bundle_dep_display_version(dep, lf)})"
   end
 
 when "outdated", "update", "add", "remove", "open", "console"
