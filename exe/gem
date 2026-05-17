@@ -250,8 +250,9 @@ def gem_build(gemspec_path)
       files = Dir.glob(File.join(source_root, "lib/**/*.rb")).map { |f|
         f.sub(source_root + "/", "")
       }
-      files += [File.basename(gemspec_path)]
     end
+    gemspec_name = File.basename(gemspec_path)
+    files += [gemspec_name] unless files.include?(gemspec_name)
 
     data_tar = File.join(tmp, "data.tar.gz")
     file_args = files.select { |f| File.exist?(File.join(source_root, f)) }
