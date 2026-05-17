@@ -1,8 +1,10 @@
 #include "eval_internal.h"
 #include "parser.h"
 #include "sema.h"
+#include "version.h"
 
 #include <stdio.h>
+#include <sys/stat.h>
 #include <string.h>
 
 #define CHECK(v) do { if (ev->errored || val_is_signal(v)) return (v); } while(0)
@@ -29,8 +31,10 @@ static Value lookup_const_head(Eval *ev, Env *env, const char *name) {
     if (env && env_get(env, "__class__", &current_class) && current_class.kind == VAL_CLASS) {
         Value scope = current_class;
         while (scope.kind == VAL_CLASS) {
-            if (scope.klass->class_env && env_get(scope.klass->class_env, name, &v))
-                return v;
+            for (RubyClass *klass = scope.klass; klass; klass = klass->superclass.kind == VAL_CLASS ? klass->superclass.klass : NULL) {
+                if (klass->class_env && env_get(klass->class_env, name, &v))
+                    return v;
+            }
             const char *scope_name = scope.klass->name;
             const char *last = scope_name ? strstr(scope_name, "::") : NULL;
             const char *scan = last;
@@ -79,6 +83,44 @@ static Value lookup_const_head(Eval *ev, Env *env, const char *name) {
     return val_nil();
 }
 
+static int path_exists(const char *path) {
+    struct stat st;
+    return path && stat(path, &st) == 0;
+}
+
+static const char *path_join2(Arena *arena, const char *left, const char *right) {
+    size_t left_len = strlen(left);
+    size_t right_len = strlen(right);
+    int needs_slash = left_len > 0 && left[left_len - 1] != '/';
+    char *joined = arena_alloc(arena, left_len + right_len + (size_t)needs_slash + 1);
+    memcpy(joined, left, left_len);
+    if (needs_slash) joined[left_len++] = '/';
+    memcpy(joined + left_len, right, right_len + 1);
+    return joined;
+}
+
+static const char *path_dirname(Arena *arena, const char *path) {
+    const char *slash = strrchr(path, '/');
+    if (!slash) return ".";
+    if (slash == path) return "/";
+    return val_string_n(arena, path, (size_t)(slash - path)).sval;
+}
+
+static const char *runtime_root_from_exec(Arena *arena, const char *exec_path) {
+    if (!exec_path || !*exec_path) return NULL;
+
+    const char *exec_dir = path_dirname(arena, exec_path);
+    if (path_exists(path_join2(arena, exec_dir, "rbconfig.rb")))
+        return exec_dir;
+
+    const char *prefix = path_dirname(arena, exec_dir);
+    const char *ruby_root = path_join2(arena, path_join2(arena, prefix, "lib"), "ruby");
+    if (path_exists(path_join2(arena, path_join2(arena, ruby_root, STONED_RUBY_VERSION), "rbconfig.rb")))
+        return prefix;
+
+    return NULL;
+}
+
 static Value lookup_const_path(Eval *ev, Env *env, const char *name) {
     const char *cursor = name;
     if (cursor[0] == ':' && cursor[1] == ':')
@@ -110,13 +152,35 @@ static Value lookup_const_path(Eval *ev, Env *env, const char *name) {
         part[part_len] = '\0';
         if (current.kind != VAL_CLASS || !current.klass->class_env)
             return val_nil();
-        if (!env_get(current.klass->class_env, part, &current))
-            return val_nil();
+        {
+            Value found = val_nil();
+            int found_any = 0;
+            for (RubyClass *klass = current.klass; klass; klass = klass->superclass.kind == VAL_CLASS ? klass->superclass.klass : NULL) {
+                if (klass->class_env && env_get(klass->class_env, part, &found)) {
+                    found_any = 1;
+                    break;
+                }
+            }
+            if (!found_any)
+                return val_nil();
+            current = found;
+        }
         if (!sep) break;
         cursor = sep + 2;
     }
 
     return current;
+}
+
+static Value lookup_const_on_class(Value current, const char *part) {
+    Value found = val_nil();
+    if (current.kind != VAL_CLASS)
+        return val_nil();
+    for (RubyClass *klass = current.klass; klass; klass = klass->superclass.kind == VAL_CLASS ? klass->superclass.klass : NULL) {
+        if (klass->class_env && env_get(klass->class_env, part, &found))
+            return found;
+    }
+    return val_nil();
 }
 
 static void split_const_path(Arena *arena, const char *full_name, const char **parent_out, const char **leaf_out) {
@@ -516,6 +580,14 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", node->sval);
             return v;
         }
+        case NODE_CONST_ACCESS: {
+            Value recv = eval_node(ev, env, node->const_access.recv);
+            CHECK(recv);
+            Value v = lookup_const_on_class(recv, node->const_access.name);
+            if (v.kind == VAL_NIL)
+                return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", node->const_access.name);
+            return v;
+        }
 
         case NODE_ASSIGN: {
             Value val = eval_node(ev, env, node->assign.value);
@@ -863,7 +935,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     char *key = arena_alloc(ev->arena, nlen + 6);
                     memcpy(key, "self.", 5);
                     memcpy(key + 5, node->def.name, nlen + 1);
-                    env_define(ev->arena, recv.klass->class_env, key, val_method(node, ev->top_env, METHOD_PUBLIC));
+                    env_define(ev->arena, recv.klass->class_env, key, val_method(node, ev->top_env, METHOD_PUBLIC, ev->current_file));
                 } else {
                     Env **slot = value_singleton_env_slot(recv);
                     if (!slot)
@@ -871,7 +943,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                                                 "can only define singleton methods on heap objects");
                     if (!*slot) *slot = env_new(ev->arena, NULL, 1);
                     env_define(ev->arena, *slot, node->def.name,
-                               val_method(node, ev->top_env, METHOD_PUBLIC));
+                               val_method(node, ev->top_env, METHOD_PUBLIC, ev->current_file));
                 }
             } else {
                 Value singleton_target = val_nil();
@@ -882,21 +954,21 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                         memcpy(key, "self.", 5);
                         memcpy(key + 5, node->def.name, nlen + 1);
                         env_define(ev->arena, singleton_target.klass->class_env, key,
-                                   val_method(node, ev->top_env, current_method_visibility(env)));
+                                   val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
                     } else {
                         Env **slot = value_singleton_env_slot(singleton_target);
                         if (slot) {
                             if (!*slot) *slot = env_new(ev->arena, NULL, 1);
                             env_define(ev->arena, *slot, node->def.name,
-                                       val_method(node, ev->top_env, current_method_visibility(env)));
+                                       val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
                         } else {
                             env_define(ev->arena, env, node->def.name,
-                                       val_method(node, ev->top_env, current_method_visibility(env)));
+                                       val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
                         }
                     }
                 } else {
                     env_define(ev->arena, env, node->def.name,
-                               val_method(node, ev->top_env, current_method_visibility(env)));
+                               val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
                 }
             }
             return val_nil();
@@ -995,7 +1067,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                             def_node->def.params = nodelist_append(a, NULL, rest_param);
                             def_node->def.body = call_node;
 
-                            Value fwd_method = val_method(def_node, env, METHOD_PUBLIC);
+                            Value fwd_method = val_method(def_node, env, METHOD_PUBLIC, ev->current_file);
                             env_define(ev->arena, self.klass->class_env, node->alias_stmt.new_name, fwd_method);
                             found = 1;
                         }
@@ -1240,7 +1312,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
     }
 }
 
-void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
+void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, const char *exec_path) {
     memset(ev, 0, sizeof(*ev));
     ev->arena   = arena;
     ev->out     = out;
@@ -1248,6 +1320,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     ev->active_defs[0] = ev->top_env;
     ev->active_def_count = 1;
     ev->current_file = current_file;
+    ev->exec_path = exec_path;
+    ev->runtime_root = runtime_root_from_exec(arena, exec_path);
 
     Value load_path = val_array_new();
     val_array_push(&load_path, val_string(arena, "."));
@@ -1256,6 +1330,26 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
         if (slash) {
             size_t len = (size_t)(slash - current_file);
             val_array_push(&load_path, val_string_n(arena, current_file, len));
+            const char *script_dir = val_string_n(arena, current_file, len).sval;
+            const char *dir_base = strrchr(script_dir, '/');
+            const char *dir_name = dir_base ? dir_base + 1 : script_dir;
+            if (strcmp(dir_name, "exe") == 0) {
+                const char *project_root = path_dirname(arena, script_dir);
+                const char *sibling_lib = path_join2(arena, project_root, "lib");
+                if (path_exists(sibling_lib)) {
+                    val_array_push(&load_path, val_string(arena, sibling_lib));
+                }
+            }
+        }
+    }
+    if (ev->runtime_root) {
+        const char *source_rbconfig = path_join2(arena, ev->runtime_root, "rbconfig.rb");
+        if (path_exists(source_rbconfig)) {
+            val_array_push(&load_path, val_string(arena, ev->runtime_root));
+        } else {
+            const char *ruby_root = path_join2(arena, path_join2(arena, ev->runtime_root, "lib"), "ruby");
+            val_array_push(&load_path, val_string(arena, path_join2(arena, ruby_root, STONED_RUBY_VERSION)));
+            val_array_push(&load_path, val_string(arena, ruby_root));
         }
     }
     global_set(arena, &ev->globals, "LOAD_PATH", load_path);
@@ -1334,14 +1428,15 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file) {
     }
 
     env_define(arena, ev->top_env, "ARGV", val_array_new());
-    env_define(arena, ev->top_env, "RUBY_ENGINE", val_string(arena, "stoned"));
-    env_define(arena, ev->top_env, "RUBY_VERSION", val_string(arena, "4.0.0"));
-    env_define(arena, ev->top_env, "RUBY_PLATFORM", val_string(arena, "x86_64-linux"));
-    env_define(arena, ev->top_env, "RUBY_DESCRIPTION", val_string(arena, "stoned 4.0.0"));
-    env_define(arena, ev->top_env, "RUBY_ENGINE_VERSION", val_string(arena, "4.0.0"));
+    env_define(arena, ev->top_env, "RUBY_ENGINE", val_string(arena, STONED_ENGINE_NAME));
+    env_define(arena, ev->top_env, "RUBY_VERSION", val_string(arena, STONED_RUBY_VERSION));
+    env_define(arena, ev->top_env, "RUBY_PLATFORM", val_string(arena, STONED_RUBY_PLATFORM));
+    env_define(arena, ev->top_env, "RUBY_DESCRIPTION",
+               val_string(arena, STONED_ENGINE_NAME " " STONED_BUILD_VERSION " (ruby " STONED_RUBY_VERSION ")"));
+    env_define(arena, ev->top_env, "RUBY_ENGINE_VERSION", val_string(arena, STONED_BUILD_VERSION));
     env_define(arena, ev->top_env, "RUBY_PATCHLEVEL", val_int(-1));
     env_define(arena, ev->top_env, "RUBY_REVISION", val_string(arena, "0"));
-    env_define(arena, ev->top_env, "RUBY_RELEASE_DATE", val_string(arena, "2026-01-01"));
+    env_define(arena, ev->top_env, "RUBY_RELEASE_DATE", val_string(arena, STONED_RELEASE_DATE));
     env_define(arena, ev->top_env, "RUBY_COPYRIGHT", val_string(arena, "stoned - Copyright (C) 2026"));
 
     {

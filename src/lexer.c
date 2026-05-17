@@ -92,6 +92,13 @@ static void skip_whitespace(Lexer *l) {
             while (!at_end(l) && peek_ch(l) != '\n') advance(l);
             l->had_space = 1;
         }
+        /* Trailing dot: expr.↵  method — newline is continuation, not statement end */
+        else if (c == '\n' && l->prev_was_dot) {
+            advance(l);
+            l->line++;
+            l->line_start = l->pos;
+            l->had_space = 1;
+        }
         else break;
     }
 }
@@ -240,6 +247,7 @@ static Token scan_string_dq(Lexer *l, size_t start, uint32_t sline, uint32_t sco
                 case 'n':  BUF_PUSH('\n'); break;
                 case 't':  BUF_PUSH('\t'); break;
                 case 'r':  BUF_PUSH('\r'); break;
+                case 'e':  BUF_PUSH('\x1b'); break;
                 case '\\': BUF_PUSH('\\'); break;
                 case '"':  BUF_PUSH('"');  break;
                 case '0':  err = "invalid \\0 escape in UTF-8 string"; break;
@@ -385,6 +393,7 @@ static Token scan_char_literal(Lexer *l, size_t start, uint32_t sline, uint32_t 
             case 'n': buf[len++] = '\n'; break;
             case 't': buf[len++] = '\t'; break;
             case 'r': buf[len++] = '\r'; break;
+            case 'e': buf[len++] = '\x1b'; break;
             default:  buf[len++] = esc; break;
         }
     } else {
@@ -448,9 +457,10 @@ static Token scan_symbol(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
         } else if (c == '=') {
             advance(l);
             if (peek_ch(l) == '=') { advance(l); if (peek_ch(l) == '=') advance(l); }
+            else if (peek_ch(l) == '~') advance(l);
         } else if (c == '!') {
             advance(l);
-            if (peek_ch(l) == '=') advance(l);
+            if (peek_ch(l) == '=' || peek_ch(l) == '~') advance(l);
         } else if (c == '[') {
             advance(l);
             if (peek_ch(l) == ']') {
@@ -553,6 +563,7 @@ static Token scan_interp_str_content(Lexer *l) {
                 case 'n':  IBUF_PUSH('\n'); break;
                 case 't':  IBUF_PUSH('\t'); break;
                 case 'r':  IBUF_PUSH('\r'); break;
+                case 'e':  IBUF_PUSH('\x1b'); break;
                 case '\\': IBUF_PUSH('\\'); break;
                 case '"':  IBUF_PUSH('"');  break;
                 case '#':  IBUF_PUSH('#');  break;

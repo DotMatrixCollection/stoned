@@ -5,6 +5,7 @@ puts File.read(path).inspect
 puts File.read(path, 2).inspect
 puts File.read(path, 2, 1).inspect
 puts File.read(path, nil, 1).inspect
+puts File.read(path, encoding: "UTF-8:UTF-8").inspect
 
 puts File.write(path, "Z", 1)
 puts File.read(path).inspect

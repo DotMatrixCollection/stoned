@@ -529,6 +529,39 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
                     continue;
                 }
             }
+            if (op.kind == TOK_COLON2 && name_tok.kind == TOK_CONST) {
+                Token nxt = peek(p);
+                Token sign_arg = peek_next_token(p);
+                int lparen_as_arg = (nxt.kind == TOK_LPAREN &&
+                                     token_adjacent(name_tok, nxt));
+                int can_be_arg =
+                    lparen_as_arg                  ||
+                    nxt.kind == TOK_SYMBOL         ||
+                    nxt.kind == TOK_STRING         ||
+                    nxt.kind == TOK_WORDS          ||
+                    nxt.kind == TOK_SYMBOLS        ||
+                    nxt.kind == TOK_INTERP_BEG     ||
+                    nxt.kind == TOK_INT            ||
+                    nxt.kind == TOK_FLOAT          ||
+                    nxt.kind == TOK_NIL            ||
+                    nxt.kind == TOK_TRUE           ||
+                    nxt.kind == TOK_FALSE          ||
+                    nxt.kind == TOK_SELF           ||
+                    nxt.kind == TOK_IVAR           ||
+                    nxt.kind == TOK_GVAR           ||
+                    nxt.kind == TOK_CONST          ||
+                    nxt.kind == TOK_IDENT          ||
+                    nxt.kind == TOK_BANG           ||
+                    nxt.kind == TOK_TILDE          ||
+                    unary_prefix_arg(name_tok, nxt, sign_arg);
+                if (!(can_be_arg && nxt.line == name_tok.line)) {
+                    Node *n = node_new(p->arena, NODE_CONST_ACCESS, left->span);
+                    n->const_access.recv = left;
+                    n->const_access.name = name_tok.sval;
+                    left = n;
+                    continue;
+                }
+            }
             if ((op.kind == TOK_DOT || op.kind == TOK_ANDDOT) &&
                 name_tok.kind == TOK_LPAREN && token_adjacent(op, name_tok)) {
                 method_name = "call";
@@ -1073,7 +1106,9 @@ Node *parse_primary(Parser *p) {
             }
             if (!check(p, TOK_NEWLINE) && !check(p, TOK_SEMICOLON) && !check(p, TOK_EOF) &&
                 !check(p, TOK_END) && !check(p, TOK_IF) && !check(p, TOK_UNLESS) &&
-                !check(p, TOK_WHILE) && !check(p, TOK_UNTIL) && !check(p, TOK_RESCUE)) {
+                !check(p, TOK_WHILE) && !check(p, TOK_UNTIL) && !check(p, TOK_RESCUE) &&
+                !check(p, TOK_RPAREN) && !check(p, TOK_RBRACKET) && !check(p, TOK_RBRACE) &&
+                !check(p, TOK_COMMA) && !check(p, TOK_DOT) && !check(p, TOK_COLON2)) {
                 n->call.args = parse_command_args(p);
             }
             return n;

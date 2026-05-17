@@ -40,6 +40,7 @@ const char *node_kind_name(NodeKind k) {
         case NODE_CVAR:      return "CVAR";
         case NODE_GVAR:      return "GVAR";
         case NODE_CONST:     return "CONST";
+        case NODE_CONST_ACCESS: return "CONST_ACCESS";
         case NODE_ASSIGN:    return "ASSIGN";
         case NODE_OP_ASSIGN: return "OP_ASSIGN";
         case NODE_BINOP:     return "BINOP";

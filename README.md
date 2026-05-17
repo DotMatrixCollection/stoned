@@ -19,13 +19,28 @@ Requires a C23 compiler and `libm`. GCC 13+ or Clang 18+ will do. Produces a `st
 
 ```sh
 make clean   # remove build artifacts
+make install PREFIX=/tmp/stoned-root
 ```
+
+`make install` lays out a Ruby-style prefix with `bin/ruby`, `bin/stoned`, and `lib/ruby/4.0.0/rbconfig.rb`.
+That makes the build consumable by version managers that only need a valid Ruby install tree.
+
+To register a local build directly with `mise`:
+
+```sh
+make mise-install MISE_VERSION=0.1.0-stoned-dev
+mise use ruby@0.1.0-stoned-dev
+```
+
+`mise-install` writes to `~/.local/share/mise/installs/ruby/<version>` by default. Override
+`MISE_DATA_DIR` if you keep `mise` data somewhere else.
 
 ## Usage
 
 ```sh
 ./stoned script.rb        # run a file
 ./stoned                  # read from stdin
+./stoned --version
 ```
 
 ## Tests

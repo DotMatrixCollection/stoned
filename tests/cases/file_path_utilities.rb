@@ -29,6 +29,8 @@ p File.split("/")
 puts File.expand_path("/foo/../bar")
 puts File.expand_path("/foo/./bar/baz/..")
 puts File.expand_path("/already/abs")
+puts File.expand_path("lib", "tests")
+puts File.expand_path("lib", "./tests")
 
 puts File.absolute_path("/foo/../bar")
 puts File.absolute_path("/foo", "/base")

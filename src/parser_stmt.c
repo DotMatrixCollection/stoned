@@ -89,6 +89,12 @@ static const char *method_name_from_token(Parser *p, Token tok) {
         case TOK_SPACESHIP: return "<=>";
         case TOK_LSHIFT: return "<<";
         case TOK_RSHIFT: return ">>";
+        case TOK_AMP: return "&";
+        case TOK_PIPE: return "|";
+        case TOK_CARET: return "^";
+        case TOK_TILDE: return "~";
+        case TOK_MATCH: return "=~";
+        case TOK_NMATCH: return "!~";
         case TOK_LBRACKET:
             if (match(p, TOK_RBRACKET)) {
                 if (match(p, TOK_EQ)) return "[]=";
@@ -240,7 +246,10 @@ Node *parse_stmt(Parser *p) {
     if (t.kind == TOK_WHILE || t.kind == TOK_UNTIL) {
         advance(p);
         NodeKind kind = (t.kind == TOK_WHILE) ? NODE_WHILE : NODE_UNTIL;
+        /* Raise command_arg_depth so 'do' is not consumed as a block by parse_expr */
+        p->command_arg_depth++;
         Node *cond = parse_expr(p, 0);
+        p->command_arg_depth--;
         if (!match(p, TOK_DO)) skip_terminators(p);
         Node *body = parse_body(p, 0);
         expect(p, TOK_END, "expected 'end'");
@@ -529,11 +538,14 @@ Node *parse_stmt(Parser *p) {
             error(p, "expected 'in' after for target", t2.line, t2.col);
             return NULL;
         }
+        p->command_arg_depth++;
         Node *iterable = parse_expr(p, 0);
+        p->command_arg_depth--;
         Node *n = node_new(p->arena, NODE_FOR, s);
         n->for_loop.target = target;
         n->for_loop.iterable = iterable;
         mark_assign_targets_stmt(p, target);
+        match(p, TOK_DO);
         skip_terminators(p);
         n->for_loop.body = parse_body(p, 0);
         expect(p, TOK_END, "expected 'end'");

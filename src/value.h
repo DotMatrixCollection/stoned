@@ -66,6 +66,7 @@ typedef struct Value {
             struct Node *def_node;
             struct Env  *closure;
             MethodVisibility visibility;
+            const char  *def_file;   /* ev->current_file at method definition time */
         } method;
 
         struct {             /* VAL_BLOCK */
@@ -159,7 +160,7 @@ Value val_string_n(Arena *a, const char *s, size_t len);
 Value val_array_new(void);
 void  val_array_push(Value *arr, Value elem);
 
-Value val_method(struct Node *def, struct Env *closure, MethodVisibility visibility);
+Value val_method(struct Node *def, struct Env *closure, MethodVisibility visibility, const char *def_file);
 Value val_block(struct Node *blk, struct Env *closure);
 Value val_proc(struct Node *blk, struct Env *closure);
 Value val_lambda(struct Node *blk, struct Env *closure);

@@ -180,7 +180,7 @@ static void define_attr_reader_in_env(Eval *ev, Env *target_env,
     def->def.name = method_name;
     def->def.body = body;
 
-    env_define(a, target_env, method_name, val_method(def, ev->top_env, METHOD_PUBLIC));
+    env_define(a, target_env, method_name, val_method(def, ev->top_env, METHOD_PUBLIC, ev->current_file));
 }
 
 static void define_attr_reader(Eval *ev, Value klass, const char *attr) {
@@ -234,7 +234,7 @@ static void define_attr_writer_in_env(Eval *ev, Env *target_env,
     def->def.params = params;
     def->def.body = body;
 
-    env_define(a, target_env, method_name, val_method(def, ev->top_env, METHOD_PUBLIC));
+    env_define(a, target_env, method_name, val_method(def, ev->top_env, METHOD_PUBLIC, ev->current_file));
 }
 
 static void define_attr_writer(Eval *ev, Value klass, const char *attr) {
@@ -557,6 +557,8 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     if (blk) method_env->block_arg = blk;
     bind_params(ev, method_env, params, args, argc);
     if (ev->exception_class != NULL) return val_exception();
+    const char *saved_file = ev->current_file;
+    if (method.method.def_file) ev->current_file = method.method.def_file;
     ev->call_depth++;
     if (ev->active_def_count < EVAL_MAX_DEPTH)
         ev->active_defs[ev->active_def_count++] = method_env;
@@ -567,6 +569,7 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     eval_pop_frame(ev);
     if (ev->active_def_count > 0) ev->active_def_count--;
     ev->call_depth--;
+    ev->current_file = saved_file;
     if (result.kind == VAL_RETURN && result.jump.target_env == method_env) return *result.jump.wrapped;
     return result;
 }
@@ -1184,7 +1187,7 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
                 def->def.name = "instance";
                 def->def.body = body;
                 env_define(ev->arena, self.klass->class_env, "self.instance",
-                           val_method(def, ev->top_env, METHOD_PUBLIC));
+                           val_method(def, ev->top_env, METHOD_PUBLIC, ev->current_file));
             }
         }
         return val_nil();
@@ -1628,7 +1631,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         Env **slot = value_singleton_env_slot(recv);
         if (slot) {
             if (!*slot) *slot = env_new(ev->arena, NULL, 1);
-            env_define(ev->arena, *slot, mname, val_method(blk->block.block_node, blk->block.closure, METHOD_PUBLIC));
+            env_define(ev->arena, *slot, mname, val_method(blk->block.block_node, blk->block.closure, METHOD_PUBLIC, blk->block.def_file));
         }
         return val_symbol(mname);
     }

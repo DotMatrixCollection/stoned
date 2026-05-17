@@ -1,11 +1,15 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "arena.h"
 #include "parser.h"
 #include "sema.h"
 #include "eval_internal.h"
 #include "utf8.h"
+#include "version.h"
 
 static char *read_file(const char *path, size_t *out_len) {
     FILE *f = fopen(path, "rb");
@@ -65,14 +69,43 @@ static void write_runtime_stderr(Eval *eval, Arena *arena, const char *text) {
     fputs(text, stderr);
 }
 
+static char *dup_cstr(const char *src) {
+    size_t len = strlen(src);
+    char *dup = malloc(len + 1);
+    if (!dup) return NULL;
+    memcpy(dup, src, len + 1);
+    return dup;
+}
+
+static char *detect_exec_path(const char *argv0) {
+    char buf[4096];
+    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len >= 0) {
+        buf[len] = '\0';
+        return dup_cstr(buf);
+    }
+    if (argv0 && strchr(argv0, '/')) return dup_cstr(argv0);
+    return NULL;
+}
+
 int main(int argc, char **argv) {
     const char *src;
     size_t src_len;
     char *file_buf = NULL;
+    char *exec_path = detect_exec_path(argc > 0 ? argv[0] : NULL);
+
+    if (argc == 2 && (!strcmp(argv[1], "-v") || !strcmp(argv[1], "--version"))) {
+        printf("%s %s (ruby %s)\n", STONED_ENGINE_NAME, STONED_BUILD_VERSION, STONED_RUBY_VERSION);
+        free(exec_path);
+        return 0;
+    }
 
     if (argc >= 2) {
         file_buf = read_file(argv[1], &src_len);
-        if (!file_buf) return 1;
+        if (!file_buf) {
+            free(exec_path);
+            return 1;
+        }
         src = file_buf;
     } else {
         /* read stdin */
@@ -96,6 +129,7 @@ int main(int argc, char **argv) {
             line_col_for_offset(src, bad, &line, &col);
             fprintf(stderr, "parse error:%u:%u: invalid UTF-8 in source\n", line, col);
             free(file_buf);
+            free(exec_path);
             return 1;
         }
     }
@@ -131,11 +165,12 @@ int main(int argc, char **argv) {
     if (parser.error_count || sema.error_count) {
         arena_free(&arena);
         free(file_buf);
+        free(exec_path);
         return 1;
     }
 
     Eval eval;
-    eval_init(&eval, &arena, stdout, argc >= 2 ? argv[1] : NULL);
+    eval_init(&eval, &arena, stdout, argc >= 2 ? argv[1] : NULL, exec_path);
     Value result = eval_node(&eval, eval.top_env, tree);
 
     if (eval.errored) {
@@ -144,6 +179,7 @@ int main(int argc, char **argv) {
         write_runtime_stderr(&eval, &arena, buf);
         arena_free(&arena);
         free(file_buf);
+        free(exec_path);
         return 1;
     }
     if (result.kind == VAL_EXCEPTION) {
@@ -160,10 +196,12 @@ int main(int argc, char **argv) {
         }
         arena_free(&arena);
         free(file_buf);
+        free(exec_path);
         return 1;
     }
 
     arena_free(&arena);
     free(file_buf);
+    free(exec_path);
     return parser.error_count ? 1 : 0;
 }

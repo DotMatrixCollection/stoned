@@ -15,6 +15,15 @@
 #include <unistd.h>
 
 static const char *file_fopen_mode(const char *mode) {
+    if (!mode) return NULL;
+    size_t mode_len = strcspn(mode, ":");
+    char normalized[8];
+    if (mode_len >= sizeof(normalized))
+        mode_len = sizeof(normalized) - 1;
+    memcpy(normalized, mode, mode_len);
+    normalized[mode_len] = '\0';
+    mode = normalized;
+
     if (strcmp(mode, "r") == 0 || strcmp(mode, "rb") == 0) return "rb";
     if (strcmp(mode, "r+") == 0 || strcmp(mode, "rb+") == 0 || strcmp(mode, "r+b") == 0) return "rb+";
     if (strcmp(mode, "w") == 0 || strcmp(mode, "wb") == 0) return "wb";
@@ -220,6 +229,7 @@ static int build_absolute_path(Eval *ev, const char *path, const char *base,
                                int expand_tilde, char *out, size_t out_size, Node *site) {
     char path_buf[PATH_MAX * 2];
     char base_buf[PATH_MAX * 2];
+    char resolved_base_buf[PATH_MAX * 2];
     const char *use_path = path ? path : "";
     const char *use_base = base;
     if (expand_tilde)
@@ -243,8 +253,8 @@ static int build_absolute_path(Eval *ev, const char *path, const char *base,
         const char *c = getcwd(cwd2, sizeof(cwd2));
         if (!c)
             return eval_raise_class(ev, site, errno_class_name(errno), "%s", strerror(errno)), 0;
-        snprintf(out, out_size, "%s/%s", c, resolved_base);
-        resolved_base = out;
+        snprintf(resolved_base_buf, sizeof(resolved_base_buf), "%s/%s", c, resolved_base);
+        resolved_base = resolved_base_buf;
     }
 
     snprintf(out, out_size, "%s/%s", resolved_base, use_path);
@@ -1108,7 +1118,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             def->def.name = member;
             def->def.body = body;
 
-            env_define(a, klass.klass->class_env, member, val_method(def, ev->top_env, METHOD_PUBLIC));
+            env_define(a, klass.klass->class_env, member, val_method(def, ev->top_env, METHOD_PUBLIC, ev->current_file));
         }
 
         env_define(ev->arena, klass.klass->class_env, "__struct_members__", members);
@@ -1139,6 +1149,51 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             env_get(recv.klass->class_env, "UTF_8", &enc_obj);
         }
         *out = enc_obj;
+        return 1;
+    }
+    if (strcmp(recv.klass->name, "Encoding") == 0 &&
+        (strcmp(name, "default_external") == 0 || strcmp(name, "default_internal") == 0 ||
+         strcmp(name, "default_external=") == 0 || strcmp(name, "default_internal=") == 0)) {
+        const char *slot = strcmp(name, "default_external") == 0 || strcmp(name, "default_external=") == 0
+                         ? "__default_external__"
+                         : "__default_internal__";
+
+        if (strcmp(name, "default_external") == 0 || strcmp(name, "default_internal") == 0) {
+            if (argc != 0) {
+                *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            Value current = val_nil();
+            if (!env_get(recv.klass->class_env, slot, &current) || current.kind == VAL_NIL) {
+                if (strcmp(slot, "__default_external__") == 0) {
+                    env_get(recv.klass->class_env, "UTF_8", &current);
+                }
+            }
+            *out = current;
+            return 1;
+        }
+
+        if (argc != 1) {
+            *out = wrong_arg_count(ev, site, argc, 1);
+            return 1;
+        }
+
+        Value assigned = args[0];
+        if (assigned.kind == VAL_STRING) {
+            Value enc = val_nil();
+            env_get(recv.klass->class_env, assigned.sval, &enc);
+            if (enc.kind == VAL_NIL) {
+                env_get(recv.klass->class_env, "UTF_8", &enc);
+            }
+            assigned = enc;
+        } else if (assigned.kind != VAL_NIL && !value_is_a_named_class(ev, assigned, "Encoding")) {
+            *out = eval_raise_class(ev, site, "TypeError", "wrong argument type %s (expected Encoding)",
+                                    value_class_name(ev, assigned));
+            return 1;
+        }
+
+        env_set(ev->arena, recv.klass->class_env, slot, assigned);
+        *out = assigned;
         return 1;
     }
     if (strcmp(recv.klass->name, "Shellwords") == 0 && strcmp(name, "split") == 0) {
@@ -1219,6 +1274,88 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(recv.klass->name, "Reline") == 0 ||
         strcmp(recv.klass->name, "Reline::Unicode") == 0) {
+        if (strcmp(name, "encoding_system_needs") == 0) {
+            Value enc = val_nil();
+            Value encoding_class = val_nil();
+            if (env_get(ev->top_env, "Encoding", &encoding_class) && encoding_class.kind == VAL_CLASS) {
+                env_get(encoding_class.klass->class_env, "UTF_8", &enc);
+            }
+            *out = enc;
+            return 1;
+        }
+        if (strcmp(recv.klass->name, "Reline") == 0) {
+            if (strcmp(name, "readmultiline") == 0) {
+                Value prompt = (argc >= 1) ? args[0] : val_string(ev->arena, "");
+                if (prompt.kind == VAL_STRING && prompt.sval && prompt.sval[0] != '\0') {
+                    Value stdout_obj = val_nil();
+                    if (env_get(ev->top_env, "STDOUT", &stdout_obj) && stdout_obj.kind == VAL_OBJECT) {
+                        Value prompt_line = prompt;
+                        Value wrote = dispatch_method(ev, env, stdout_obj, "write", &prompt_line, 1, NULL, site, 0, 1);
+                        if (val_is_signal(wrote)) {
+                            *out = wrote;
+                            return 1;
+                        }
+                    }
+                }
+                Value stdin_obj = val_nil();
+                if (!env_get(ev->top_env, "STDIN", &stdin_obj) || stdin_obj.kind != VAL_OBJECT) {
+                    *out = val_nil();
+                    return 1;
+                }
+                Value line = dispatch_method(ev, env, stdin_obj, "gets", NULL, 0, NULL, site, 0, 1);
+                if (val_is_signal(line)) {
+                    *out = line;
+                    return 1;
+                }
+                if (line.kind == VAL_NIL) {
+                    *out = val_nil();
+                    return 1;
+                }
+                *out = line;
+                return 1;
+            }
+            if (strcmp(name, "input") == 0) {
+                Value stdin_obj = val_nil();
+                if (env_get(ev->top_env, "STDIN", &stdin_obj)) { *out = stdin_obj; return 1; }
+                *out = val_nil(); return 1;
+            }
+            if (strcmp(name, "output") == 0) {
+                Value stdout_obj = val_nil();
+                if (env_get(ev->top_env, "STDOUT", &stdout_obj)) { *out = stdout_obj; return 1; }
+                *out = val_nil(); return 1;
+            }
+            if (strcmp(name, "input=") == 0 || strcmp(name, "output=") == 0 ||
+                strcmp(name, "completion_proc=") == 0 || strcmp(name, "completion_append_character=") == 0 ||
+                strcmp(name, "basic_word_break_characters=") == 0 || strcmp(name, "completer_quote_characters=") == 0 ||
+                strcmp(name, "output_modifier_proc=") == 0 || strcmp(name, "prompt_proc=") == 0 ||
+                strcmp(name, "auto_indent_proc=") == 0 || strcmp(name, "autocompletion=") == 0 ||
+                strcmp(name, "dig_perfect_match_proc=") == 0) {
+                *out = argc > 0 ? args[0] : val_nil();
+                return 1;
+            }
+            if (strcmp(name, "completion_proc") == 0 || strcmp(name, "completion_append_character") == 0 ||
+                strcmp(name, "output_modifier_proc") == 0 || strcmp(name, "prompt_proc") == 0 ||
+                strcmp(name, "auto_indent_proc") == 0 || strcmp(name, "dig_perfect_match_proc") == 0) {
+                *out = val_nil();
+                return 1;
+            }
+            if (strcmp(name, "basic_word_break_characters") == 0) {
+                *out = val_string(ev->arena, " \t\n\"'`><=;|&{");
+                return 1;
+            }
+            if (strcmp(name, "completer_quote_characters") == 0) {
+                *out = val_string(ev->arena, "");
+                return 1;
+            }
+            if (strcmp(name, "autocompletion") == 0) {
+                *out = val_false();
+                return 1;
+            }
+            if (strcmp(name, "add_dialog_proc") == 0 || strcmp(name, "delete_text") == 0 || strcmp(name, "ungetc") == 0) {
+                *out = val_nil();
+                return 1;
+            }
+        }
         if (strcmp(name, "get_screen_size") == 0) {
             Value arr = val_array_new();
             val_array_push(&arr, val_int(24));
@@ -1272,7 +1409,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         if (strcmp(name, "ambiguous_width") == 0) { *out = val_int(1); return 1; }
         if (strcmp(name, "get_last_line") == 0 || strcmp(name, "clear_screen") == 0)
             { *out = val_nil(); return 1; }
-        *out = val_nil(); return 1;
+        return 0;
     }
     if (strcmp(recv.klass->name, "Thread") == 0) {
         if (strcmp(name, "current") == 0) {
@@ -1361,7 +1498,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         def->def.name = mname;
         def->def.params = method_proc.block.block_node ? method_proc.block.block_node->block.params : NULL;
         def->def.body = method_proc.block.block_node ? method_proc.block.block_node->block.body : NULL;
-        Value method = val_method(def, method_proc.block.closure, current_method_visibility(env));
+        Value method = val_method(def, method_proc.block.closure, current_method_visibility(env), method_proc.block.def_file);
 
         Value singleton_target = val_nil();
         if (env_get(env, "__singleton_target__", &singleton_target) &&
@@ -1906,11 +2043,15 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             return 1;
         }
         if (strcmp(name, "read") == 0) {
-            if (argc < 1 || argc > 3) {
+            int effective_argc = argc;
+            if (effective_argc >= 2 && args[effective_argc - 1].kind == VAL_HASH)
+                effective_argc--;
+
+            if (argc < 1 || effective_argc > 3) {
                 *out = argc < 1
                      ? wrong_arg_count(ev, site, argc, 1)
                      : eval_raise_class(ev, site, "ArgumentError",
-                                        "wrong number of arguments (given %d, expected 0..2)", argc - 1);
+                                        "wrong number of arguments (given %d, expected 0..2)", effective_argc - 1);
             } else if (args[0].kind != VAL_STRING) {
                 *out = implicit_string_conversion_error(ev, args[0], site);
             } else {
@@ -1918,7 +2059,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 int64_t length = 0;
                 int has_offset = 0;
                 int64_t offset = 0;
-                if (argc >= 2 && args[1].kind != VAL_NIL) {
+                if (effective_argc >= 2 && args[1].kind != VAL_NIL) {
                     if (args[1].kind != VAL_INT) {
                         *out = implicit_integer_conversion_error(ev, args[1], site);
                         return 1;
@@ -1926,7 +2067,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                     has_length = 1;
                     length = args[1].ival;
                 }
-                if (argc >= 3) {
+                if (effective_argc >= 3) {
                     if (args[2].kind != VAL_INT) {
                         *out = implicit_integer_conversion_error(ev, args[2], site);
                         return 1;
@@ -2256,6 +2397,8 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 env_set(ev->arena, method_env, "__class__", klass_val);
                 if (blk) method_env->block_arg = blk;
                 bind_params(ev, method_env, init_method.method.def_node->def.params, args, argc);
+                const char *saved_file = ev->current_file;
+                if (init_method.method.def_file) ev->current_file = init_method.method.def_file;
                 ev->call_depth++;
                 if (ev->active_def_count < EVAL_MAX_DEPTH)
                     ev->active_defs[ev->active_def_count++] = method_env;
@@ -2264,6 +2407,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 eval_pop_frame(ev);
                 if (ev->active_def_count > 0) ev->active_def_count--;
                 ev->call_depth--;
+                ev->current_file = saved_file;
                 if (result.kind == VAL_RETURN && result.jump.target_env == method_env)
                     result = *result.jump.wrapped;
                 if (val_is_signal(result)) { *out = result; return 1; }
@@ -3248,6 +3392,50 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 *out = val_nil();
             return 1;
         }
+        if (strcmp(name, "set_encoding") == 0) {
+            if (argc < 1 || argc > 2) {
+                *out = eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 1..2)", argc);
+                return 1;
+            }
+            Value ext = args[0];
+            Value intl = argc >= 2 ? args[1] : val_nil();
+
+            if (ext.kind == VAL_STRING) {
+                Value encoding_class = val_nil();
+                Value enc = val_nil();
+                if (env_get(ev->top_env, "Encoding", &encoding_class) && encoding_class.kind == VAL_CLASS) {
+                    env_get(encoding_class.klass->class_env, ext.sval, &enc);
+                }
+                ext = enc.kind == VAL_NIL ? val_nil() : enc;
+            } else if (ext.kind != VAL_NIL && !value_is_a_named_class(ev, ext, "Encoding")) {
+                *out = eval_raise_class(ev, site, "TypeError", "wrong argument type %s (expected Encoding)",
+                                        value_class_name(ev, ext));
+                return 1;
+            }
+
+            if (intl.kind == VAL_STRING) {
+                if (strcmp(intl.sval, "-") == 0) {
+                    intl = val_nil();
+                } else {
+                    Value encoding_class = val_nil();
+                    Value enc = val_nil();
+                    if (env_get(ev->top_env, "Encoding", &encoding_class) && encoding_class.kind == VAL_CLASS) {
+                        env_get(encoding_class.klass->class_env, intl.sval, &enc);
+                    }
+                    intl = enc.kind == VAL_NIL ? val_nil() : enc;
+                }
+            } else if (intl.kind != VAL_NIL && !value_is_a_named_class(ev, intl, "Encoding")) {
+                *out = eval_raise_class(ev, site, "TypeError", "wrong argument type %s (expected Encoding)",
+                                        value_class_name(ev, intl));
+                return 1;
+            }
+
+            val_object_set_ivar(ev->arena, recv, "external_encoding", ext);
+            val_object_set_ivar(ev->arena, recv, "internal_encoding", intl);
+            *out = recv;
+            return 1;
+        }
         if (strcmp(name, "wait_readable") == 0) {
             if (argc > 1) {
                 *out = eval_raise_class(ev, site, "ArgumentError",
@@ -3681,7 +3869,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = recv;
             return 1;
         }
-        if (strcmp(name, "each_line") == 0) {
+        if (strcmp(name, "each") == 0 || strcmp(name, "each_line") == 0) {
             if (!blk) {
                 *out = eval_raise_class(ev, site, "LocalJumpError", "File#each_line requires a block");
                 return 1;

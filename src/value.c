@@ -150,11 +150,12 @@ int val_hash_delete(RubyHash *h, Value key) {
     return 0;
 }
 
-Value val_method(struct Node *def, struct Env *closure, MethodVisibility visibility) {
+Value val_method(struct Node *def, struct Env *closure, MethodVisibility visibility, const char *def_file) {
     Value v; v.kind = VAL_METHOD;
     v.method.def_node = def;
     v.method.closure  = closure;
     v.method.visibility = visibility;
+    v.method.def_file = def_file;
     return v;
 }
 

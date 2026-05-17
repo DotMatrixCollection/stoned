@@ -1544,11 +1544,7 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "  def self.dig_perfect_match_proc=(v); v; end\n"
 "  def self.delete_text; nil; end\n"
 "  def self.ungetc(c); nil; end\n"
-"  def self.encoding_system_needs\n"
-"    enc = Object.new\n"
-"    def enc.name; 'UTF-8'; end\n"
-"    enc\n"
-"  end\n"
+"  def self.encoding_system_needs; Encoding.find('UTF-8'); end\n"
 "  module IOGate\n"
 "    def self.in_pasting?; false; end\n"
 "    def self.prep; nil; end\n"
@@ -1697,6 +1693,51 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         return val_true();
     if (strcmp(path, "tempfile") == 0 || strcmp(path, "tempfile.rb") == 0)
         return val_true();
+    if (strcmp(path, "etc") == 0 || strcmp(path, "etc.rb") == 0) {
+        static const char *etc_shim =
+"module Etc\n"
+"  def self.sysconfdir; '/etc'; end\n"
+"  def self.nprocessors\n"
+"    n = ENV['NPROCESSORS'] || ENV['NUMBER_OF_PROCESSORS']\n"
+"    n ? n.to_i : 1\n"
+"  end\n"
+"  def self.getlogin; ENV['USER'] || ENV['LOGNAME'] || 'user'; end\n"
+"  def self.getpwuid(uid = nil)\n"
+"    pw = Object.new\n"
+"    def pw.name; ENV['USER'] || 'user'; end\n"
+"    def pw.dir; ENV['HOME'] || '/tmp'; end\n"
+"    pw\n"
+"  end\n"
+"  def self.getpwnam(name)\n"
+"    pw = Object.new\n"
+"    def pw.name; ENV['USER'] || 'user'; end\n"
+"    def pw.dir; ENV['HOME'] || '/tmp'; end\n"
+"    pw\n"
+"  end\n"
+"end\n";
+        return eval_ruby_string(ev, etc_shim, "etc_shim", site);
+    }
+    if (strcmp(path, "socket") == 0 || strcmp(path, "socket.rb") == 0)
+        return val_true();
+    if (strcmp(path, "fileutils") == 0 || strcmp(path, "fileutils.rb") == 0)
+        return val_true();
+    if (strcmp(path, "monitor") == 0 || strcmp(path, "monitor.rb") == 0) {
+        static const char *monitor_shim =
+"class Monitor\n"
+"  def synchronize; yield; end\n"
+"  def mon_enter; end\n"
+"  def mon_exit; end\n"
+"  def try_enter; true; end\n"
+"end\n"
+"module MonitorMixin\n"
+"  def self.included(base)\n"
+"    base.instance_eval { def new_cond; Object.new; end }\n"
+"  end\n"
+"  def mon_initialize; end\n"
+"  def synchronize; yield; end\n"
+"end\n";
+        return eval_ruby_string(ev, monitor_shim, "monitor_shim", site);
+    }
 
     if (ev->current_file)
         resolved = resolve_require_path(ev->arena, ev->current_file, path, 0);

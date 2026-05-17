@@ -25,6 +25,10 @@ void print_ast(FILE *out, Node *node, int indent) {
         case NODE_CVAR:   fprintf(out, "CVAR(@@%s)\n", node->sval); break;
         case NODE_GVAR:   fprintf(out, "GVAR($%s)\n", node->sval); break;
         case NODE_CONST:  fprintf(out, "CONST(%s)\n", node->sval); break;
+        case NODE_CONST_ACCESS:
+            fprintf(out, "CONST_ACCESS(%s)\n", node->const_access.name);
+            print_ast(out, node->const_access.recv, indent + 1);
+            break;
 
         case NODE_BINOP:
             fprintf(out, "BINOP(%s)\n", node->binop.op);

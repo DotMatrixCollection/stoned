@@ -38,10 +38,12 @@ typedef struct {
     Env         *active_defs[EVAL_MAX_DEPTH];
     int          active_def_count;
     const char  *current_file;
+    const char  *exec_path;
+    const char  *runtime_root;
     LoadedFile  *loaded_files;
 } Eval;
 
-void  eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file);
+void  eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, const char *exec_path);
 Value eval_node(Eval *ev, Env *env, Node *node);
 
 #endif

@@ -38,6 +38,7 @@ typedef enum {
     NODE_CVAR,          /* @@foo */
     NODE_GVAR,          /* $foo */
     NODE_CONST,         /* Foo */
+    NODE_CONST_ACCESS,  /* expr::Foo */
 
     /* Assignment */
     NODE_ASSIGN,        /* lhs = rhs */
@@ -122,6 +123,12 @@ struct Node {
         /* NODE_STRING, NODE_SYMBOL, NODE_LVAR, NODE_IVAR,
            NODE_CVAR, NODE_GVAR, NODE_CONST */
         const char *sval;
+
+        /* NODE_CONST_ACCESS */
+        struct {
+            Node *recv;
+            const char *name;
+        } const_access;
 
         /* NODE_BINOP, NODE_OP_ASSIGN */
         struct {
