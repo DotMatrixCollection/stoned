@@ -124,6 +124,7 @@ This is the bridge from language/runtime correctness to running larger real prog
 - continue RubyGems/Bundler bringup as a Stage 5 load-path workload:
   - tighten `Gem::Specification.find_by_name` and `gem(name)` activation against on-disk gem homes
   - expand command-surface coverage for `exe/gem` / `exe/bundle` with local fixture-driven tests before broader networked workflows
+  - keep `Gemfile.lock` behavior reproducible as grouped dependencies and `bundle exec` semantics get closer to Bundler
   - keep shim coverage focused on real compatibility callers rather than cloning all of RubyGems wholesale
 
 Recent Stage 5 progress already landed:
@@ -147,6 +148,7 @@ Recent Stage 5 progress already landed:
 - parenthesized statement groups: `(stmt; stmt)` now parsed as a multi-statement body when the opening `(` is immediately followed by a newline or semicolon, evaluating to the last statement; single-statement form continues to work as before
 - lexer operator state hardening: all binary and compound-assignment operators now set `LEX_EXPR_BEG` after the operator token, fixing `/` regex-vs-division disambiguation and multiline expression continuation after operators
 - multiline regexp literal lexing now accepts embedded newlines, which unblocks extended-mode `/.../x` patterns spread across lines
+- Bundler bringup now covers local install/check/list/exec flows, lockfile drift failures, `gemspec` runtime-dependency path overrides, grouped dependency filtering via `BUNDLE_WITH` / `BUNDLE_WITHOUT`, `bundle exec` command lookup for gem executables, and reproducible lockfiles that retain excluded path-group entries
 - `Array#flatten` fixed to recurse fully by default; optional depth argument (`flatten(n)`) limits recursion depth
 - `__method__` kernel method returning current method name as a symbol, or `nil` at top level; also fixed the `call_method:` dispatch path which was not setting `__method__` in the frame env
 - Enumerable: `filter_map`, `each_slice(n)`, `each_cons(n)`, `take_while`, `drop_while`; `each_slice` and `each_cons` return an array when called without a block

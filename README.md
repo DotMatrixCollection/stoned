@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `365` tests are passing, birb's REPL fully evaluates expressions and echoes results, and a minimal RubyGems/Bundler bringup path now exists for compatibility probes. It is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `380` tests are passing, birb's REPL fully evaluates expressions and echoes results, and a minimal RubyGems/Bundler bringup path now exists for compatibility probes. It is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -67,7 +67,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `365 passed, 0 failed, 365 total`. Recent additions include the minimal RubyGems shim (`require "rubygems"` plus key sub-requires), `exe/gem` and `exe/bundle` bringup helpers, multiline `/.../x` regexp lexing, and the earlier Session 7 runtime work (`Float::INFINITY`, `Enumerator::Lazy`, `Array#chunk/chunk_while`, Symbol methods, `Integer#clamp(range)`, Class comparison operators, `Kernel.instance_method`, StringIO shim, IRB command fixes, numeric underscore separators, and more).
+Current coverage in the tree: `380 passed, 0 failed, 380 total`. Recent additions include the minimal RubyGems shim (`require "rubygems"` plus key sub-requires), `exe/gem` and `exe/bundle` bringup helpers, multiline `/.../x` regexp lexing, and newer Bundler bringup coverage around lockfile drift, `bundle exec` command resolution, `gemspec` path overrides, and `BUNDLE_WITH` / `BUNDLE_WITHOUT` group handling.
 
 What is working today:
 
@@ -98,7 +98,7 @@ What is working today:
 - IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `close`, `closed?`, `tell`, `pos`, `seek`, `rewind`, `eof?`, `gets`, `readline`, `readlines`, `read`, `getc`, `readchar`, `getbyte`, `readbyte`, `each_byte`, `each_char`, `each_line`, and `IO.new(fd, mode)` wrappers with mode enforcement; `IO.new(fd)` / `IO.new(fd, nil)` now infer the descriptor access mode, and explicit `+` modes like `r+` are treated as read-write; `sync` / `sync=` state now persists on `IO`/`File`, and sync-enabled writes now flush immediately; kernel `puts` / `print` / `p` / `pp` now honor `$stdout`/`STDOUT` close state and write-capable `$stdout` redirection; invalid `$stdout`/`$stderr` assignment raises `TypeError`; uncaught runtime errors honor redirected `$stderr`, including custom write-capable objects; mode violations raise `IOError`, closed-stream access raises `IOError`
 - File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`, `File.realpath`, `File.directory?`, `File.file?`, `File.readable?`, `File.writable?`, `File.executable?`, `File.mtime`; path utilities `File.basename`, `File.dirname`, `File.extname`, `File.join`, `File.split`, `File.expand_path`, `File.absolute_path`; file objects with stateful native handles for `read`, `gets`, `readline`, `readlines`, `getc`, `readchar`, `getbyte`, `readbyte`, `each_byte`, `each_char`, `each_line`, `write`, `<<`, `print`, `puts`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `path`, `mode`, `tell`, `pos`, `seek`, `rewind`, `eof?`, `close`, `closed?`; text modes `r`, `w`, `a` and binary modes `rb`, `wb`, `ab` — binary mode skips UTF-8 validation so non-UTF-8 byte sequences read without error; file-not-found raises `Errno::ENOENT`
 - Dir: `Dir.pwd`, `Dir.chdir` (block and non-block), `Dir.mkdir`
-- Packaging/bootstrap: minimal `require "rubygems"` support with `Gem::Version`, `Gem::Requirement`, `Gem::Specification`, `Gem::Platform`, `Gem::NameTuple`, `Gem.loaded_specs`, `gem(name)` activation, and compatibility sub-requires like `rubygems/specification` and `rubygems/command`; `exe/gem` and `exe/bundle` provide early bringup command surfaces for install/build/probe workflows
+- Packaging/bootstrap: minimal `require "rubygems"` support with `Gem::Version`, `Gem::Requirement`, `Gem::Specification`, `Gem::Platform`, `Gem::NameTuple`, `Gem.loaded_specs`, `gem(name)` activation, and compatibility sub-requires like `rubygems/specification` and `rubygems/command`; `exe/gem` and `exe/bundle` provide early bringup command surfaces for install/build/probe workflows, including local gem build/install/manage flows plus Bundler lockfile, grouped dependency, and `bundle exec` probes
 - Globals and constants
 
 Known limitations:

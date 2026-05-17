@@ -178,6 +178,23 @@ class Lockfile
   end
 end
 
+def lockfile_resolved_dependencies(dsl, resolved)
+  locked = resolved.dup
+
+  normalized_dependencies(dsl).each do |dep|
+    next if locked.key?(dep[:name])
+    if dep[:spec] && dep[:spec].respond_to?(:version)
+      locked[dep[:name]] = dep[:spec].version.to_s
+      next
+    end
+    if dep[:path]
+      locked[dep[:name]] = "path"
+    end
+  end
+
+  locked
+end
+
 def bundle_load_path_spec(dep)
   return dep[:spec] if dep[:spec]
   return nil unless dep[:path]
@@ -398,7 +415,7 @@ when "install", "i"
   end
   resolved = resolve_and_install(dsl, verbose: true)
   if resolved
-    Lockfile.write(LOCKFILE, resolved)
+    Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
     puts "Bundle complete! #{resolved.length} gems now installed."
   else
     STDERR.puts "Bundle install failed."

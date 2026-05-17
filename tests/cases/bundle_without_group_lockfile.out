@@ -1,4 +1,4 @@
-Using main (path: /tmp/stoned_bundle_without_group_/main_gem)
+Using main (path: /tmp/stoned_bundle_without_group_lockfile_/main_gem)
 Bundle complete! 1 gems now installed.
 --LOCK--
 GEM
@@ -11,8 +11,3 @@ BUNDLED WITH
 --LIST--
 Gems included by the bundle:
   * main (path)
---CHECK--
-The Gemfile's dependencies are satisfied
---EXEC--
-1
-false
