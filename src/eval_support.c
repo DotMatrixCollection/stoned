@@ -933,7 +933,17 @@ static void rope_collect(Eval *ev, Env *env, RopeNode *r,
         case ROPE_EXPR: {
             Value v = eval_node(ev, env, r->expr.node);
             if (ev->errored || val_is_signal(v)) return;
-            const char *s = val_to_s(ev->arena, v);
+            /* For objects, dispatch Ruby-defined to_s before falling back. */
+            const char *s;
+            if (v.kind == VAL_OBJECT || v.kind == VAL_CLASS) {
+                Value ts = dispatch_method(ev, env, v, "to_s", NULL, 0, NULL, NULL, 0, 1);
+                if (!val_is_signal(ts) && ts.kind == VAL_STRING && ts.sval)
+                    s = ts.sval;
+                else
+                    s = val_to_s(ev->arena, v);
+            } else {
+                s = val_to_s(ev->arena, v);
+            }
             size_t slen = strlen(s);
             while (*len + slen + 1 > *cap) {
                 *cap  = (*cap < 64) ? 128 : *cap * 2;
@@ -1933,6 +1943,7 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "      all.each(&blk)\n"
 "    end\n"
 "    def self._load(str); new; end\n"
+"    def self._loading_spec; @_loading_spec; end\n"
 "    def self._loading_spec=(s); @_loading_spec = s; end\n"
 "    def self.reset!\n"
 "      @_all = nil\n"

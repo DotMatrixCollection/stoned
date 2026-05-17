@@ -94,15 +94,30 @@ static Value wrong_arg_count(Eval *ev, Node *site, int given, int expected) {
 #define GLOB_BRACE 0
 #endif
 
-/* Recursive glob for ** patterns — appends matches to result array. */
+/* Recursive glob helper — ** matches zero or more path components. */
 static void glob_recursive(Arena *arena, const char *base, const char *rest,
                            int sort, Value *result) {
-    DIR *d = opendir(base[0] ? base : ".");
-    if (!d) return;
-
     char pattern[PATH_MAX];
     const char *after_stars = rest;
     while (*after_stars == '/') after_stars++;
+
+    /* Zero-level match: apply after_stars directly to base. */
+    if (*after_stars) {
+        int n = snprintf(pattern, sizeof(pattern), "%s%s%s",
+                         base[0] ? base : ".", base[0] ? "/" : "", after_stars);
+        if (n > 0 && n < (int)sizeof(pattern)) {
+            glob_t gl;
+            memset(&gl, 0, sizeof(gl));
+            if (glob(pattern, GLOB_BRACE | GLOB_NOSORT, NULL, &gl) == 0) {
+                for (size_t k = 0; k < gl.gl_pathc; k++)
+                    val_array_push(result, val_string(arena, gl.gl_pathv[k]));
+            }
+            globfree(&gl);
+        }
+    }
+
+    DIR *d = opendir(base[0] ? base : ".");
+    if (!d) return;
 
     struct dirent **entries = NULL;
     size_t n = 0, cap = 0;
@@ -142,23 +157,12 @@ static void glob_recursive(Arena *arena, const char *base, const char *rest,
         struct stat st;
         int is_dir = (stat(child, &st) == 0 && S_ISDIR(st.st_mode));
 
-        if (*after_stars) {
-            if (snprintf(pattern, sizeof(pattern), "%s/%s", child, after_stars) >= (int)sizeof(pattern)) {
-                free(entries[i]); i++; continue;
-            }
-            glob_t gl;
-            memset(&gl, 0, sizeof(gl));
-            if (glob(pattern, GLOB_BRACE | GLOB_NOSORT, NULL, &gl) == 0) {
-                for (size_t k = 0; k < gl.gl_pathc; k++)
-                    val_array_push(result, val_string(arena, gl.gl_pathv[k]));
-            }
-            globfree(&gl);
-        } else {
-            val_array_push(result, val_string(arena, child));
-        }
-
-        if (is_dir)
+        /* Recurse into subdirs for deeper ** matching. */
+        if (is_dir) {
+            if (*after_stars == '\0')
+                val_array_push(result, val_string(arena, child));
             glob_recursive(arena, child, rest, sort, result);
+        }
 
         free(entries[i]);
     }
@@ -2130,7 +2134,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             *out = val_int(0);
             return 1;
         }
-        if (strcmp(name, "glob") == 0) {
+        if (strcmp(name, "glob") == 0 || strcmp(name, "[]") == 0) {
             if (argc < 1 || argc > 2) {
                 *out = eval_raise_class(ev, site, "ArgumentError",
                                         "wrong number of arguments (given %d, expected 1..2)", argc);

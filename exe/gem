@@ -34,11 +34,7 @@ def print_gem_env
   puts "     - #{GEM_SERVER}"
 end
 
-def gem_install(names, opts = {})
-  unless check_tool("curl")
-    STDERR.puts "ERROR: 'curl' is required for gem install"
-    exit 1
-  end
+def install_gem_file(gem_path)
   unless check_tool("tar")
     STDERR.puts "ERROR: 'tar' is required for gem install"
     exit 1
@@ -52,11 +48,113 @@ def gem_install(names, opts = {})
     system("mkdir", "-p", d) unless File.directory?(d)
   end
 
+  gem_base = File.basename(gem_path, ".gem")
+  parts = gem_base.split("-")
+  version = parts.pop
+  gem_name = parts.join("-")
+  gem_full = gem_base
+
+  tmp = "/tmp/stoned_gem_install_#{gem_name}_#{$$}"
+  system("mkdir", "-p", tmp)
+
+  begin
+    unless system("tar", "-xf", gem_path, "-C", tmp)
+      STDERR.puts "ERROR: Failed to extract #{gem_path}"
+      return
+    end
+
+    install_dir = File.join(gems_dir, gem_full)
+    system("mkdir", "-p", install_dir)
+    data_tar = File.join(tmp, "data.tar.gz")
+    unless File.exist?(data_tar)
+      STDERR.puts "ERROR: data.tar.gz not found in gem package"
+      return
+    end
+    unless system("tar", "-xzf", data_tar, "-C", install_dir)
+      STDERR.puts "ERROR: Failed to extract gem contents"
+      return
+    end
+
+    # Try to load the gemspec from the gem for a real spec, fall back to stub
+    spec_path = File.join(specs_dir, "#{gem_full}.gemspec")
+    unless File.exist?(spec_path)
+      gemspec_src = File.join(install_dir, "#{gem_name}.gemspec")
+      if File.exist?(gemspec_src)
+        Gem::Specification.reset!
+        Gem::Specification._loading_spec = nil
+        load gemspec_src
+        real_spec = Gem::Specification._loading_spec
+        if real_spec && !real_spec.name.to_s.empty?
+          File.write(spec_path, build_gemspec_content(real_spec))
+        else
+          File.write(spec_path, gemspec_stub(gem_name, version, install_dir))
+        end
+      else
+        File.write(spec_path, gemspec_stub(gem_name, version, install_dir))
+      end
+    end
+
+    bin_src = File.join(install_dir, "bin")
+    if File.directory?(bin_src)
+      Dir.children(bin_src).each do |exe|
+        wrapper = File.join(bin_dir, exe)
+        exe_path = File.join(bin_src, exe)
+        File.write(wrapper, "#!/usr/bin/env ruby\nload #{exe_path.inspect}\n")
+        system("chmod", "+x", wrapper)
+      end
+    end
+
+    puts "Successfully installed #{gem_full}"
+    Gem::Specification.reset!
+  ensure
+    system("rm", "-rf", tmp)
+  end
+end
+
+def build_gemspec_content(spec)
+  lines = ["Gem::Specification.new do |s|"]
+  lines << "  s.name    = #{spec.name.inspect}"
+  lines << "  s.version = Gem::Version.new(#{spec.version.to_s.inspect})"
+  lines << "  s.summary = #{spec.summary.to_s.inspect}"
+  (spec.require_paths || ["lib"]).each { |rp|
+    lines << "  s.require_paths = #{(spec.require_paths || ["lib"]).inspect}"
+    break
+  }
+  (spec.runtime_dependencies || []).each do |dep|
+    lines << "  s.add_runtime_dependency #{dep.name.inspect}, #{dep.requirement.to_s.inspect}"
+  end
+  lines << "end"
+  lines.join("\n") + "\n"
+end
+
+def gem_install(names, opts = {})
   names.each do |gem_name|
+    # Local .gem file?
+    if gem_name.end_with?(".gem") && File.exist?(gem_name)
+      install_gem_file(File.expand_path(gem_name))
+      next
+    end
+
+    unless check_tool("curl")
+      STDERR.puts "ERROR: 'curl' is required for gem install"
+      exit 1
+    end
+    unless check_tool("tar")
+      STDERR.puts "ERROR: 'tar' is required for gem install"
+      exit 1
+    end
+
+    home = Gem.home
+    gems_dir = File.join(home, "gems")
+    specs_dir = File.join(home, "specifications")
+    bin_dir = File.join(home, "bin")
+    [home, gems_dir, specs_dir, bin_dir].each do |d|
+      system("mkdir", "-p", d) unless File.directory?(d)
+    end
+
     version = opts[:version]
     puts "Fetching #{gem_name}..."
 
-    # Resolve version from rubygems.org API
     unless version
       body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{gem_name}.json")
       unless body
@@ -86,49 +184,11 @@ def gem_install(names, opts = {})
         next
       end
 
-      # A .gem file is a tar archive containing:
-      #   metadata.gz   — the gemspec (marshalled, but we use the YAML form)
-      #   data.tar.gz   — the gem contents
-      unless system("tar", "-xf", gem_path, "-C", tmp)
-        STDERR.puts "ERROR: Failed to extract #{gem_file}"
-        next
-      end
-
-      install_dir = File.join(gems_dir, gem_full)
-      system("mkdir", "-p", install_dir)
-      data_tar = File.join(tmp, "data.tar.gz")
-      unless File.exist?(data_tar)
-        STDERR.puts "ERROR: data.tar.gz not found in gem package"
-        next
-      end
-      unless system("tar", "-xzf", data_tar, "-C", install_dir)
-        STDERR.puts "ERROR: Failed to extract gem contents"
-        next
-      end
-
-      # Write a minimal gemspec into specifications/
-      spec_path = File.join(specs_dir, "#{gem_full}.gemspec")
-      unless File.exist?(spec_path)
-        File.write(spec_path, gemspec_stub(gem_name, version, install_dir))
-      end
-
-      # Create bin wrappers
-      bin_src = File.join(install_dir, "bin")
-      if File.directory?(bin_src)
-        Dir.children(bin_src).each do |exe|
-          wrapper = File.join(bin_dir, exe)
-          exe_path = File.join(bin_src, exe)
-          File.write(wrapper, "#!/usr/bin/env ruby\nload #{exe_path.inspect}\n")
-          system("chmod", "+x", wrapper)
-        end
-      end
-
-      puts "Successfully installed #{gem_full}"
-      Gem::Specification.reset! if Gem::Specification.respond_to?(:reset!)
+      install_gem_file(gem_path)
     ensure
       system("rm", "-rf", tmp)
     end
-    version = nil # reset for next gem
+    version = nil
   end
 end
 
@@ -152,10 +212,114 @@ def gemspec_stub(name, version, install_dir)
   lines.join("\n") + "\n"
 end
 
+def gem_build(gemspec_path)
+  unless File.exist?(gemspec_path)
+    STDERR.puts "ERROR: #{gemspec_path}: no such file"
+    exit 1
+  end
+
+  unless check_tool("tar") && check_tool("gzip")
+    STDERR.puts "ERROR: 'tar' and 'gzip' are required for gem build"
+    exit 1
+  end
+
+  # Load the gemspec to get name/version
+  Gem::Specification.reset!
+  load File.expand_path(gemspec_path)
+  spec = Gem::Specification._loading_spec
+  unless spec && !spec.name.to_s.empty?
+    STDERR.puts "ERROR: Could not load gemspec from #{gemspec_path}"
+    exit 1
+  end
+
+  gem_name = "#{spec.name}-#{spec.version}.gem"
+  source_root = File.dirname(File.expand_path(gemspec_path))
+  tmp = "/tmp/stoned_gem_build_#{spec.name}_#{$$}"
+  system("mkdir", "-p", tmp)
+
+  begin
+    # Build metadata (YAML-ish gemspec content)
+    meta_path = File.join(tmp, "metadata")
+    File.write(meta_path, build_metadata_yaml(spec))
+    system("gzip", "-n", "-9", meta_path)  # produces metadata.gz
+
+    # Build data.tar.gz from files
+    files = spec.files
+    if files.empty?
+      # Auto-discover if files is empty
+      files = Dir.glob(File.join(source_root, "lib/**/*.rb")).map { |f|
+        f.sub(source_root + "/", "")
+      }
+      files += [File.basename(gemspec_path)]
+    end
+
+    data_tar = File.join(tmp, "data.tar.gz")
+    file_args = files.select { |f| File.exist?(File.join(source_root, f)) }
+    system("tar", "-czf", data_tar, "-C", source_root, *file_args)
+
+    # Compute checksums
+    sha256_meta = `sha256sum #{tmp}/metadata.gz 2>/dev/null`.split(" ").first || ""
+    sha256_data = `sha256sum #{data_tar} 2>/dev/null`.split(" ").first || ""
+
+    checksums = "---\nmetadata.gz:\n  sha256: #{sha256_meta}\ndata.tar.gz:\n  sha256: #{sha256_data}\n"
+    checksums_path = File.join(tmp, "checksums.yaml.gz")
+    cs_raw = File.join(tmp, "checksums.yaml")
+    File.write(cs_raw, checksums)
+    system("gzip", "-n", "-9", cs_raw)
+
+    # Pack everything into the .gem file (which is a tar)
+    system("tar", "-cf", gem_name,
+           "-C", tmp,
+           "metadata.gz", "data.tar.gz", "checksums.yaml.gz")
+
+    puts "Successfully built gem: #{gem_name}"
+    puts "  Gem: #{File.expand_path(gem_name)}"
+  ensure
+    system("rm", "-rf", tmp)
+  end
+end
+
+def build_metadata_yaml(spec)
+  lines = []
+  lines << "--- !ruby/object:Gem::Specification"
+  lines << "name: #{spec.name}"
+  lines << "version: !ruby/object:Gem::Version"
+  lines << "  version: '#{spec.version}'"
+  lines << "summary: #{spec.summary.to_s.inspect}"
+  lines << "description: #{spec.description.to_s.inspect}"
+  authors = spec.authors || []
+  lines << "authors:"
+  authors.each { |a| lines << "- #{a}" }
+  lines << "email:"
+  [spec.email].flatten.each { |e| lines << "- #{e}" }
+  lines << "homepage: #{spec.homepage.to_s.inspect}"
+  lines << "licenses:"
+  [spec.license].flatten.compact.each { |l| lines << "- #{l}" }
+  lines << "require_paths:"
+  (spec.require_paths || ["lib"]).each { |rp| lines << "- #{rp}" }
+  files = spec.files || []
+  lines << "files:"
+  files.each { |f| lines << "- #{f}" }
+  deps = spec.runtime_dependencies || []
+  if deps.any?
+    lines << "dependencies:"
+    deps.each do |dep|
+      lines << "- !ruby/object:Gem::Dependency"
+      lines << "  name: #{dep.name}"
+      lines << "  requirement: !ruby/object:Gem::Requirement"
+      lines << "    requirements:"
+      lines << "    - - \"#{dep.requirement}\""
+      lines << "  type: :runtime"
+    end
+  end
+  lines.join("\n") + "\n"
+end
+
 def print_usage
   STDERR.puts "Usage: gem COMMAND [ARGS]"
   STDERR.puts ""
   STDERR.puts "Common commands:"
+  STDERR.puts "  build GEMSPEC    Build a gem from a gemspec"
   STDERR.puts "  install GEMNAME  Install a gem"
   STDERR.puts "  list             List installed gems"
   STDERR.puts "  env              Display RubyGems environment"
@@ -165,6 +329,23 @@ end
 command = ARGV[0]
 
 case command
+when "build"
+  gemspec = ARGV[1]
+  if gemspec.nil?
+    # Auto-find .gemspec in current dir
+    specs = Dir.glob("*.gemspec")
+    if specs.length == 1
+      gemspec = specs.first
+    elsif specs.empty?
+      STDERR.puts "ERROR: No gemspec found in current directory"
+      exit 1
+    else
+      STDERR.puts "ERROR: Multiple gemspecs found, specify one: #{specs.join(", ")}"
+      exit 1
+    end
+  end
+  gem_build(gemspec)
+
 when "install", "i"
   names = ARGV[1..].reject { |a| a.start_with?("-") }
   if names.empty?
@@ -227,8 +408,8 @@ when "-v", "--version", "version"
 when "help", "-h", "--help", nil
   print_usage
 
-when "update"
-  STDERR.puts "gem update: not yet implemented"
+when "update", "push", "fetch", "open", "search", "pristine", "cleanup", "exec", "contents"
+  STDERR.puts "gem #{command}: not yet implemented"
   exit 1
 
 else
