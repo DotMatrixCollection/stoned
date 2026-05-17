@@ -594,9 +594,32 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
                     case TOK_AND: case TOK_OR: case TOK_NOT:
                     case TOK_IN: case TOK_RESCUE: case TOK_ENSURE:
                     case TOK_BEGIN: case TOK_YIELD: case TOK_SUPER:
-                    case TOK_CASE: case TOK_WHEN:
+                    case TOK_CASE: case TOK_WHEN: case TOK_ALIAS: case TOK_FOR:
                         method_name = name_tok.sval;
                         break;
+                    /* Operator method names after dot: obj.%(s), obj.+(x), etc. */
+                    case TOK_PERCENT:    method_name = "%";   break;
+                    case TOK_PLUS:       method_name = "+";   break;
+                    case TOK_MINUS:      method_name = "-";   break;
+                    case TOK_STAR:       method_name = "*";   break;
+                    case TOK_STAR2:      method_name = "**";  break;
+                    case TOK_SLASH:      method_name = "/";   break;
+                    case TOK_LT:         method_name = "<";   break;
+                    case TOK_GT:         method_name = ">";   break;
+                    case TOK_LEQ:        method_name = "<=";  break;
+                    case TOK_GEQ:        method_name = ">=";  break;
+                    case TOK_EQ2:        method_name = "==";  break;
+                    case TOK_EQ3:        method_name = "==="; break;
+                    case TOK_NEQ:        method_name = "!=";  break;
+                    case TOK_SPACESHIP:  method_name = "<=>"; break;
+                    case TOK_MATCH:      method_name = "=~";  break;
+                    case TOK_NMATCH:     method_name = "!~";  break;
+                    case TOK_LSHIFT:     method_name = "<<";  break;
+                    case TOK_RSHIFT:     method_name = ">>";  break;
+                    case TOK_AMP:        method_name = "&";   break;
+                    case TOK_PIPE:       method_name = "|";   break;
+                    case TOK_CARET:      method_name = "^";   break;
+                    case TOK_TILDE:      method_name = "~";   break;
                     default:
                         error(p, "expected method name after '.'", name_tok.line, name_tok.col);
                         break;
@@ -1165,14 +1188,11 @@ Node *parse_primary(Parser *p) {
         case TOK_LPAREN: {
             advance(p);
             Node *inner = NULL;
-            if (check(p, TOK_NEWLINE) || check(p, TOK_SEMICOLON)) {
-                skip_terminators(p);
-                inner = parse_body_until_rparen(p);
-                if (inner && inner->kind == NODE_BODY && inner->body.stmts && !inner->body.stmts->next)
-                    inner = inner->body.stmts->node;
-            } else {
-                inner = parse_stmt(p);
-            }
+            skip_terminators(p);
+            inner = parse_body_until_rparen(p);
+            /* Unwrap single-statement body to keep the tree clean */
+            if (inner && inner->kind == NODE_BODY && inner->body.stmts && !inner->body.stmts->next)
+                inner = inner->body.stmts->node;
             inner = attach_pending_do_block(p, inner, 0);
             expect(p, TOK_RPAREN, "expected ')'");
             return inner;

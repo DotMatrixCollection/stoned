@@ -208,8 +208,9 @@ typedef struct {
 
     /* local-variable table for '/' disambiguation */
     LexLocalVar *local_vars;
-    int          had_space;   /* set by skip_whitespace; used by '/' scanner */
+    int          had_space;    /* set by skip_whitespace; used by '/' scanner */
     int          prev_was_dot; /* previous meaningful token was DOT/ANDDOT */
+    int          after_def;    /* previous meaningful token was DEF/ALIAS/UNDEF */
 
     /* close char for %(...) / %{...} / %[...] interpolated string literals */
     char         percent_close[LEX_INTERP_DEPTH];

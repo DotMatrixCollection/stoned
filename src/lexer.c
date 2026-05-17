@@ -573,12 +573,73 @@ static Token scan_interp_str_content(Lexer *l) {
                 case 't':  IBUF_PUSH('\t'); break;
                 case 'r':  IBUF_PUSH('\r'); break;
                 case 'e':  IBUF_PUSH('\x1b'); break;
+                case 'a':  IBUF_PUSH('\a'); break;
+                case 'b':  IBUF_PUSH('\b'); break;
+                case 'f':  IBUF_PUSH('\f'); break;
+                case 'v':  IBUF_PUSH('\v'); break;
+                case 's':  IBUF_PUSH(' ');  break;
                 case '\\': IBUF_PUSH('\\'); break;
                 case '"':  IBUF_PUSH('"');  break;
                 case '`':  IBUF_PUSH('`');  break;
                 case '#':  IBUF_PUSH('#');  break;
-                case '0':  err = "invalid \\0 escape in UTF-8 string"; break;
-                default:   IBUF_PUSH('\\'); IBUF_PUSH(esc); break;
+                case '\'': IBUF_PUSH('\''); break;
+                case '/':  IBUF_PUSH('/');  break;
+                case 'x': { /* hex escape \xHH */
+                    int val = 0, digits = 0;
+                    while (digits < 2 && !at_end(l)) {
+                        char h = peek_ch(l);
+                        if (h >= '0' && h <= '9')      { val = val*16 + (h-'0'); advance(l); digits++; }
+                        else if (h >= 'a' && h <= 'f') { val = val*16 + (h-'a'+10); advance(l); digits++; }
+                        else if (h >= 'A' && h <= 'F') { val = val*16 + (h-'A'+10); advance(l); digits++; }
+                        else break;
+                    }
+                    if (val == 0 && digits == 0) { IBUF_PUSH('x'); }
+                    else if (val == 0) { err = "invalid \\x00 escape in UTF-8 string"; }
+                    else IBUF_PUSH((char)val);
+                    break;
+                }
+                case 'u': { /* unicode escape \uHHHH or \u{HHHH} */
+                    /* For now, output the raw codepoint as UTF-8 if it fits in ASCII */
+                    if (!at_end(l) && peek_ch(l) == '{') {
+                        advance(l); /* consume { */
+                        unsigned long cp = 0;
+                        while (!at_end(l) && peek_ch(l) != '}') {
+                            char h = advance(l);
+                            if (h >= '0' && h <= '9') cp = cp*16 + (h-'0');
+                            else if (h >= 'a' && h <= 'f') cp = cp*16 + (h-'a'+10);
+                            else if (h >= 'A' && h <= 'F') cp = cp*16 + (h-'A'+10);
+                        }
+                        if (!at_end(l)) advance(l); /* consume } */
+                        if (cp < 0x80) { IBUF_PUSH((char)cp); }
+                        else if (cp < 0x800) { IBUF_PUSH((char)(0xC0|(cp>>6))); IBUF_PUSH((char)(0x80|(cp&0x3F))); }
+                        else if (cp < 0x10000) { IBUF_PUSH((char)(0xE0|(cp>>12))); IBUF_PUSH((char)(0x80|((cp>>6)&0x3F))); IBUF_PUSH((char)(0x80|(cp&0x3F))); }
+                        else { IBUF_PUSH((char)(0xF0|(cp>>18))); IBUF_PUSH((char)(0x80|((cp>>12)&0x3F))); IBUF_PUSH((char)(0x80|((cp>>6)&0x3F))); IBUF_PUSH((char)(0x80|(cp&0x3F))); }
+                    } else {
+                        /* \uHHHH */
+                        unsigned long cp = 0;
+                        for (int ui = 0; ui < 4 && !at_end(l); ui++) {
+                            char h = advance(l);
+                            if (h >= '0' && h <= '9') cp = cp*16 + (h-'0');
+                            else if (h >= 'a' && h <= 'f') cp = cp*16 + (h-'a'+10);
+                            else if (h >= 'A' && h <= 'F') cp = cp*16 + (h-'A'+10);
+                        }
+                        if (cp < 0x80) { IBUF_PUSH((char)cp); }
+                        else if (cp < 0x800) { IBUF_PUSH((char)(0xC0|(cp>>6))); IBUF_PUSH((char)(0x80|(cp&0x3F))); }
+                        else if (cp < 0x10000) { IBUF_PUSH((char)(0xE0|(cp>>12))); IBUF_PUSH((char)(0x80|((cp>>6)&0x3F))); IBUF_PUSH((char)(0x80|(cp&0x3F))); }
+                    }
+                    break;
+                }
+                default:
+                    if (esc >= '0' && esc <= '7') { /* octal escape \0nn etc */
+                        int val = esc - '0';
+                        for (int oi = 0; oi < 2 && !at_end(l) && peek_ch(l) >= '0' && peek_ch(l) <= '7'; oi++)
+                            val = val * 8 + (advance(l) - '0');
+                        if (val == 0) { err = "invalid \\0 escape in UTF-8 string"; }
+                        else IBUF_PUSH((char)val);
+                    } else {
+                        IBUF_PUSH('\\'); IBUF_PUSH(esc);
+                    }
+                    break;
             }
             if (err) break;
         } else {
@@ -1012,8 +1073,11 @@ static Token scan(Lexer *l) {
             if (peek_ch(l) == 'w') return scan_percent_list(l, start, sline, scol, TOK_WORDS);
             if (peek_ch(l) == 'i') return scan_percent_list(l, start, sline, scol, TOK_SYMBOLS);
             if (peek_ch(l) == 'r') return scan_percent_regexp(l, start, sline, scol);
-            /* %() %{} %[] %<> and %Q() — interpolated string literals */
-            if ((l->state == LEX_EXPR_BEG || l->state == LEX_EXPR_MID ||
+            /* %() %{} %[] %<> and %Q() — interpolated string literals.
+               Suppress after 'def'/'alias' or '.' so def %(args) and obj.%(s)
+               treat % as an operator/method name, not a string delimiter. */
+            if (!l->after_def && !l->prev_was_dot &&
+                (l->state == LEX_EXPR_BEG || l->state == LEX_EXPR_MID ||
                  l->state == LEX_EXPR_ARG) &&
                 (peek_ch(l) == '(' || peek_ch(l) == '{' || peek_ch(l) == '[' ||
                  peek_ch(l) == '<' || peek_ch(l) == 'Q' || peek_ch(l) == 'q')) {
@@ -1297,6 +1361,8 @@ Token lexer_next(Lexer *l) {
             l->state = LEX_EXPR_BEG;
             break;
     }
+    /* Track whether we just emitted DEF/ALIAS so % isn't misread as a string start */
+    l->after_def = (t.kind == TOK_DEF || t.kind == TOK_ALIAS);
     return t;
 }
 
