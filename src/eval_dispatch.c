@@ -5,6 +5,7 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/wait.h>
+
+extern char **environ;
 
 #define CHECK(v) do { if (ev->errored || val_is_signal(v)) return (v); } while(0)
 
@@ -21,6 +24,75 @@ static Value val_class_of(Eval *ev, Value v);
 static void set_child_status(Eval *ev, Env *env __attribute__((unused)),
                              int exit_code, Node *site __attribute__((unused))) {
     global_set(ev->arena, &ev->globals, "__child_exit__", val_int((int64_t)exit_code));
+}
+
+static void apply_child_env_overrides(Eval *ev, Value overrides) {
+    if (overrides.kind != VAL_HASH)
+        return;
+    for (size_t i = 0; i < overrides.hash->len; i++) {
+        const char *key = val_to_s(ev->arena, overrides.hash->keys[i]);
+        if (!key || key[0] == '\0')
+            continue;
+        if (overrides.hash->vals[i].kind == VAL_NIL) {
+            unsetenv(key);
+            continue;
+        }
+        const char *value = val_to_s(ev->arena, overrides.hash->vals[i]);
+        setenv(key, value ? value : "", 1);
+    }
+}
+
+static Value run_child_process(Eval *ev, Env *env, Value overrides, Value *args, int argc,
+                               Node *site, int return_pid) {
+    int arg_index = 0;
+    if (argc > 0 && args[0].kind == VAL_HASH) {
+        overrides = args[0];
+        arg_index = 1;
+    }
+    if (argc - arg_index <= 0) {
+        if (return_pid)
+            return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments (given 0, expected 1+)");
+        return val_false();
+    }
+
+    int shell_form = (argc - arg_index == 1);
+    char **argv = NULL;
+    if (!shell_form) {
+        argv = arena_alloc(ev->arena, (size_t)(argc - arg_index + 1) * sizeof(char *));
+        for (int i = arg_index; i < argc; i++)
+            argv[i - arg_index] = (char *)val_to_s(ev->arena, args[i]);
+        argv[argc - arg_index] = NULL;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        if (return_pid)
+            return eval_raise_class(ev, site, "SystemCallError", "%s", strerror(errno));
+        set_child_status(ev, env, -1, site);
+        return val_nil();
+    }
+    if (pid == 0) {
+        apply_child_env_overrides(ev, overrides);
+        if (shell_form) {
+            const char *cmd = val_to_s(ev->arena, args[arg_index]);
+            execlp("sh", "sh", "-c", cmd ? cmd : "", (char *)NULL);
+        } else {
+            execvp(argv[0], argv);
+        }
+        _exit(127);
+    }
+
+    if (return_pid)
+        return val_int((int64_t)pid);
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        set_child_status(ev, env, -1, site);
+        return val_nil();
+    }
+    int exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    set_child_status(ev, env, exit_code, site);
+    return exit_code == 0 ? val_true() : val_false();
 }
 
 static NativeBinding *native_binding(Value v) {
@@ -935,32 +1007,10 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         return val_string(ev->arena, "");
     }
     if (strcmp(name, "system") == 0) {
-        if (argc == 0) return val_false();
-        size_t total = 0;
-        for (int i = 0; i < argc; i++) {
-            if (args[i].kind != VAL_STRING) continue;
-            total += strlen(args[i].sval ? args[i].sval : "") + 2;
-        }
-        char *cmd = arena_alloc(ev->arena, total + 1);
-        cmd[0] = '\0';
-        for (int i = 0; i < argc; i++) {
-            if (i > 0) strcat(cmd, " ");
-            if (args[i].kind == VAL_STRING && args[i].sval)
-                strcat(cmd, args[i].sval);
-        }
-        int ret = system(cmd);
-        if (ret == -1) { set_child_status(ev, env, -1, site); return val_nil(); }
-        int exit_code = WIFEXITED(ret) ? WEXITSTATUS(ret) : -1;
-        set_child_status(ev, env, exit_code, site);
-        return exit_code == 0 ? val_true() : val_false();
+        return run_child_process(ev, env, val_nil(), args, argc, site, 0);
     }
     if (strcmp(name, "spawn") == 0) {
-        if (argc == 0) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments (given 0, expected 1+)");
-        if (args[0].kind != VAL_STRING) return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into String", value_class_name(ev, args[0]));
-        pid_t pid = fork();
-        if (pid < 0) return eval_raise_class(ev, site, "SystemCallError", "%s", strerror(errno));
-        if (pid == 0) { execlp("sh", "sh", "-c", args[0].sval, (char *)NULL); _exit(127); }
-        return val_int((int64_t)pid);
+        return run_child_process(ev, env, val_nil(), args, argc, site, 1);
     }
     if (strcmp(name, "wait") == 0 || strcmp(name, "waitpid") == 0) {
         pid_t pid = argc > 0 && args[0].kind == VAL_INT ? (pid_t)args[0].ival : -1;

@@ -1,8 +1,42 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "eval_internal.h"
 
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int hash_is_process_env(Eval *ev, RubyHash *h) {
+    Value env_hash = val_nil();
+    return env_get(ev->top_env, "ENV", &env_hash) &&
+           env_hash.kind == VAL_HASH &&
+           env_hash.hash == h;
+}
+
+static void sync_process_env_pair(Eval *ev, RubyHash *h, Value key, Value value) {
+    if (!hash_is_process_env(ev, h))
+        return;
+    const char *env_key = val_to_s(ev->arena, key);
+    if (!env_key || env_key[0] == '\0')
+        return;
+    if (value.kind == VAL_NIL) {
+        unsetenv(env_key);
+        return;
+    }
+    const char *env_value = val_to_s(ev->arena, value);
+    if (!env_value)
+        env_value = "";
+    setenv(env_key, env_value, 1);
+}
+
+static void sync_process_env_delete(Eval *ev, RubyHash *h, Value key) {
+    if (!hash_is_process_env(ev, h))
+        return;
+    const char *env_key = val_to_s(ev->arena, key);
+    if (!env_key || env_key[0] == '\0')
+        return;
+    unsetenv(env_key);
+}
 
 static void combination_helper(Value *elems, size_t n, size_t k, size_t start,
                                Value *current, size_t depth, Value *result) {
@@ -1105,7 +1139,11 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "[]=") == 0) {
         if (argc < 2) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#[]= requires key and value");
-        else { val_hash_set(h, args[0], args[1]); *out = args[1]; }
+        else {
+            val_hash_set(h, args[0], args[1]);
+            sync_process_env_pair(ev, h, args[0], args[1]);
+            *out = args[1];
+        }
         return 1;
     }
     if (strcmp(name, "fetch") == 0) {
@@ -1141,6 +1179,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             Value found;
             int ok = val_hash_get(h, args[0], &found);
             val_hash_delete(h, args[0]);
+            sync_process_env_delete(ev, h, args[0]);
             if (ok) *out = found;
             else if (blk) *out = call_block(ev, env, *blk, &args[0], 1, site);
             else *out = val_nil();
