@@ -126,6 +126,18 @@ def normalized_dependencies(dsl)
   ordered
 end
 
+def bundle_without_groups
+  ENV["BUNDLE_WITHOUT"].to_s.split(/[:\s,]+/).map(&:strip).reject(&:empty?)
+end
+
+def active_dependencies(dsl)
+  excluded = bundle_without_groups
+  normalized_dependencies(dsl).reject do |dep|
+    groups = dep[:groups] || []
+    groups.any? { |group| excluded.include?(group) }
+  end
+end
+
 # ── Lockfile ─────────────────────────────────────────────────────────────────
 
 class Lockfile
@@ -169,7 +181,7 @@ def bundle_dep_display_version(dep, lockfile)
 end
 
 def bundle_missing_dependencies(dsl, lockfile)
-  normalized_dependencies(dsl).reject do |dep|
+  active_dependencies(dsl).reject do |dep|
     locked = lockfile.gems[dep[:name]]
     if dep[:path]
       path_ok = File.directory?(File.expand_path(dep[:path]))
@@ -182,7 +194,7 @@ def bundle_missing_dependencies(dsl, lockfile)
 end
 
 def bundle_needs_remote_tools?(dsl)
-  normalized_dependencies(dsl).any? { |dep| !dep[:path] && !dep[:git] }
+  active_dependencies(dsl).any? { |dep| !dep[:path] && !dep[:git] }
 end
 
 # ── Resolution ───────────────────────────────────────────────────────────────
@@ -253,7 +265,7 @@ def resolve_and_install(dsl, verbose: true)
   resolved = {}
   errors   = []
 
-  normalized_dependencies(dsl).each do |dep|
+  active_dependencies(dsl).each do |dep|
     name = dep[:name]
     next if resolved.key?(name)
 
@@ -297,7 +309,7 @@ def resolve_and_install(dsl, verbose: true)
 end
 
 def setup_load_path(dsl, lockfile)
-  normalized_dependencies(dsl).each do |dep|
+  active_dependencies(dsl).each do |dep|
     name = dep[:name]
     if dep[:path]
       lib = File.join(File.expand_path(dep[:path]), "lib")
@@ -398,7 +410,7 @@ when "list"
   lf = Lockfile.read(LOCKFILE)
   Gem::Specification.reset!
   puts "Gems included by the bundle:"
-  normalized_dependencies(dsl).each do |dep|
+  active_dependencies(dsl).each do |dep|
     puts "  * #{dep[:name]} (#{bundle_dep_display_version(dep, lf)})"
   end
 
