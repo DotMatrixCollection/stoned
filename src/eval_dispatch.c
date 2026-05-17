@@ -17,6 +17,12 @@
 
 static Value val_class_of(Eval *ev, Value v);
 
+/* Store last child exit code in a global; the Ruby prelude wraps it as $?. */
+static void set_child_status(Eval *ev, Env *env __attribute__((unused)),
+                             int exit_code, Node *site __attribute__((unused))) {
+    global_set(ev->arena, &ev->globals, "__child_exit__", val_int((int64_t)exit_code));
+}
+
 static NativeBinding *native_binding(Value v) {
     if (v.kind != VAL_OBJECT || v.obj->klass.kind != VAL_CLASS ||
         strcmp(v.obj->klass.klass->name, "Binding") != 0)
@@ -476,7 +482,7 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
             "raise", "fail", "exit", "abort", "lambda", "proc", "loop", "rand",
             "__method__", "__dir__", "__FILE__", "__LINE__",
             "sleep", "catch", "throw", "trap", "at_exit", "printf", "sprintf", "format",
-            "system", "spawn", "wait", "waitpid", "`",
+            "system", "spawn", "wait", "waitpid", "`", "load",
             NULL
         };
         for (int ki = 0; kernel[ki]; ki++) {
@@ -906,7 +912,10 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         if (argc == 1 && args[0].kind == VAL_STRING) {
             const char *cmd = args[0].sval;
             FILE *fp = popen(cmd, "r");
-            if (!fp) return val_string(ev->arena, "");
+            if (!fp) {
+                set_child_status(ev, env, -1, site);
+                return val_string(ev->arena, "");
+            }
             char buf[4096]; size_t total = 0;
             char *out = arena_alloc(ev->arena, 1);
             out[0] = '\0';
@@ -917,14 +926,16 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
                 memcpy(next + total, buf, n + 1);
                 out = next; total += n;
             }
-            pclose(fp);
+            int wstatus = pclose(fp);
+            int exit_code = WIFEXITED(wstatus) ? WEXITSTATUS(wstatus) : -1;
+            set_child_status(ev, env, exit_code, site);
             return val_string(ev->arena, out);
         }
+        set_child_status(ev, env, 0, site);
         return val_string(ev->arena, "");
     }
     if (strcmp(name, "system") == 0) {
         if (argc == 0) return val_false();
-        /* Build shell command from arguments. */
         size_t total = 0;
         for (int i = 0; i < argc; i++) {
             if (args[i].kind != VAL_STRING) continue;
@@ -938,8 +949,10 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
                 strcat(cmd, args[i].sval);
         }
         int ret = system(cmd);
-        if (ret == -1) return val_nil();
-        return WIFEXITED(ret) && WEXITSTATUS(ret) == 0 ? val_true() : val_false();
+        if (ret == -1) { set_child_status(ev, env, -1, site); return val_nil(); }
+        int exit_code = WIFEXITED(ret) ? WEXITSTATUS(ret) : -1;
+        set_child_status(ev, env, exit_code, site);
+        return exit_code == 0 ? val_true() : val_false();
     }
     if (strcmp(name, "spawn") == 0) {
         if (argc == 0) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments (given 0, expected 1+)");
@@ -1244,6 +1257,14 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         if (!env_get(env, "self", &self))
             return eval_raise_class(ev, site, "TypeError", "extend requires an object");
         return builtin_extend(ev, self, args, argc, site);
+    }
+    if (strcmp(name, "load") == 0) {
+        if (argc < 1)
+            return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments (given 0, expected 1+)");
+        if (args[0].kind != VAL_STRING)
+            return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into String",
+                                    value_class_name(ev, args[0]));
+        return eval_load(ev, args[0].sval, site);
     }
     if (strcmp(name, "require_relative") == 0) {
         if (argc < 1)
@@ -1901,7 +1922,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             "puts", "print", "p", "pp", "warn", "require", "require_relative", "raise",
             "lambda", "proc", "loop", "rand", "exit", "format", "sprintf", "printf",
             "sleep", "catch", "throw", "trap", "at_exit", "`",
-            "system", "spawn", "wait", "waitpid", NULL
+            "system", "spawn", "wait", "waitpid", "load", NULL
         };
         for (int ki = 0; kern_nil[ki]; ki++) {
             if (strcmp(name, kern_nil[ki]) == 0)
@@ -2228,7 +2249,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             "deprecate_constant", "private_constant", "public_constant",
             "__dir__", "__method__", "__FILE__", "__LINE__", "__callee__", "binding", "eval", "`",
             "trap", "at_exit", "sleep", "catch", "throw", "method",
-            "system", "spawn", "wait", "waitpid", NULL
+            "system", "spawn", "wait", "waitpid", "load", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
             if (strcmp(name, kernel_names[i]) == 0)

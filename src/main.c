@@ -170,7 +170,11 @@ int main(int argc, char **argv) {
     }
 
     Eval eval;
-    eval_init(&eval, &arena, stdout, argc >= 2 ? argv[1] : NULL, exec_path);
+    /* argv[2..] are script arguments exposed as ARGV inside the script */
+    int script_argc = argc > 2 ? argc - 2 : 0;
+    char **script_argv = argc > 2 ? argv + 2 : NULL;
+    eval_init(&eval, &arena, stdout, argc >= 2 ? argv[1] : NULL, exec_path,
+              script_argc, script_argv);
     Value result = eval_node(&eval, eval.top_env, tree);
 
     if (eval.errored) {

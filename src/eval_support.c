@@ -6,6 +6,7 @@
 
 #include <stdarg.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
@@ -1815,6 +1816,7 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "      @required_ruby_version = Gem::Requirement.default\n"
 "      @required_rubygems_version = Gem::Requirement.default\n"
 "      yield self if block_given?\n"
+"      Gem::Specification._loading_spec = self\n"
 "    end\n"
 "    def add_runtime_dependency(name, *reqs)\n"
 "      @runtime_dependencies << Gem::Dependency.new(name, *reqs, :runtime)\n"
@@ -1835,12 +1837,57 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "    end\n"
 "    def to_s; \"#{name}-#{version}\"; end\n"
 "    def inspect; \"#<Gem::Specification name=\\\"#{name}\\\" version=\\\"#{version}\\\">\"; end\n"
-"    def self.find_by_name(name, *reqs); nil; end\n"
-"    def self.each; end\n"
-"    def self.all; []; end\n"
-"    def self.all_by_name; {}; end\n"
-"    def self.find_all_by_name(name, *reqs); []; end\n"
+"    def self._load_gemspec(path)\n"
+"      spec = new\n"
+"      begin\n"
+"        load path\n"
+"      rescue Exception\n"
+"        nil\n"
+"      end\n"
+"      spec\n"
+"    end\n"
+"    def self._scan_gemspecs\n"
+"      return @_all if defined?(@_all) && @_all\n"
+"      @_all = []\n"
+"      Gem.path.each do |gem_dir|\n"
+"        spec_dir = File.join(gem_dir, \"specifications\")\n"
+"        next unless Dir.exist?(spec_dir)\n"
+"        Dir.glob(File.join(spec_dir, \"*.gemspec\")).each do |f|\n"
+"          begin\n"
+"            # Gemspecs call Gem::Specification.new { |s| ... } which returns spec.\n"
+"            # Capture via a sentinel around load.\n"
+"            @_loading_spec = nil\n"
+"            load f\n"
+"            @_all << @_loading_spec if @_loading_spec && !@_loading_spec.name.to_s.empty?\n"
+"          rescue Exception\n"
+"            # skip malformed gemspecs\n"
+"          end\n"
+"        end\n"
+"      end\n"
+"      @_loading_spec = nil\n"
+"      @_all\n"
+"    end\n"
+"    def self.all\n"
+"      _scan_gemspecs\n"
+"    end\n"
+"    def self.all_by_name\n"
+"      all.each_with_object({}) { |s, h| (h[s.name] ||= []) << s }\n"
+"    end\n"
+"    def self.find_by_name(name, *reqs)\n"
+"      all.find { |s| s.name == name.to_s }\n"
+"    end\n"
+"    def self.find_all_by_name(name, *reqs)\n"
+"      all.select { |s| s.name == name.to_s }\n"
+"    end\n"
+"    def self.each(&blk)\n"
+"      all.each(&blk)\n"
+"    end\n"
 "    def self._load(str); new; end\n"
+"    def self._loading_spec=(s); @_loading_spec = s; end\n"
+"    def self.reset!\n"
+"      @_all = nil\n"
+"      @_loading_spec = nil\n"
+"    end\n"
 "  end\n"
 "\n"
 "  class Platform\n"
@@ -1943,7 +1990,27 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "end\n"
 "\n"
 "def gem(name, *requirements)\n"
-"  # activation not yet implemented — gem is available as no-op stub\n"
+"  spec = Gem::Specification.find_by_name(name.to_s)\n"
+"  if spec\n"
+"    spec.require_paths.each do |rp|\n"
+"      lib = File.join(spec.gem_dir, rp)\n"
+"      $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)\n"
+"    end\n"
+"    Gem.loaded_specs[name.to_s] = spec\n"
+"    true\n"
+"  else\n"
+"    raise Gem::MissingSpecError.new(name.to_s)\n"
+"  end\n"
+"end\n"
+"\n"
+"# Extend $LOAD_PATH with all installed gem lib dirs when rubygems is loaded.\n"
+"Gem.path.each do |gem_root|\n"
+"  gems_dir = File.join(gem_root, \"gems\")\n"
+"  next unless Dir.exist?(gems_dir)\n"
+"  Dir.children(gems_dir).each do |entry|\n"
+"    lib = File.join(gems_dir, entry, \"lib\")\n"
+"    $LOAD_PATH << lib if Dir.exist?(lib) && !$LOAD_PATH.include?(lib)\n"
+"  end\n"
 "end\n";
         return eval_ruby_string(ev, rubygems_shim, "rubygems_shim", site);
     }
@@ -1974,4 +2041,62 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
     }
 
     return eval_raise_class(ev, site, "LoadError", "cannot load such file -- %s", path);
+}
+
+Value eval_load(Eval *ev, const char *path, Node *site) {
+    if (!path || path[0] == '\0')
+        return eval_raise_class(ev, site, "LoadError", "load path is empty");
+
+    /* Expand relative paths relative to cwd */
+    char resolved_buf[PATH_MAX * 2];
+    if (path[0] != '/') {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd))) {
+            int n = snprintf(resolved_buf, sizeof(resolved_buf), "%s/%s", cwd, path);
+            if (n > 0 && n < (int)sizeof(resolved_buf))
+                path = resolved_buf;
+        }
+    }
+
+    size_t src_len = 0;
+    char *src = read_file_bytes(path, &src_len);
+    if (!src)
+        return eval_raise_class(ev, site, "LoadError", "cannot load such file -- %s", path);
+
+    {
+        size_t bad = 0;
+        if (!utf8_validate(src, src_len, &bad)) {
+            free(src);
+            return eval_raise_class(ev, site, "LoadError", "invalid UTF-8 in source -- %s", path);
+        }
+    }
+
+    Parser parser;
+    parser_init(&parser, src, src_len, ev->arena);
+    Node *tree = parse_program(&parser);
+    if (parser.error_count) {
+        Value err = eval_raise_class(ev, site, "LoadError", "parse error in %s: %s",
+                                     path, parser.errors[0].message);
+        free(src);
+        return err;
+    }
+
+    Sema sema;
+    sema_init(&sema, ev->arena);
+    sema_run(&sema, tree);
+    if (sema.error_count) {
+        Value err = eval_raise_class(ev, site, "LoadError", "sema error in %s: %s",
+                                     path, sema.errors[0].message);
+        free(src);
+        return err;
+    }
+
+    const char *previous_file = ev->current_file;
+    ev->current_file = path;
+    Value result = eval_node(ev, ev->top_env, tree);
+    ev->current_file = previous_file;
+    free(src);
+
+    if (val_is_signal(result)) return result;
+    return val_true();
 }

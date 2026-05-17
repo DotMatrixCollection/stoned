@@ -74,11 +74,19 @@ run_case() {
 
     expected_status=$(read_expected_status "$CASES_DIR/$stem.status")
 
+    local args_file="$CASES_DIR/$stem.args"
+    local extra_args=()
+    if [ -f "$args_file" ]; then
+        while IFS= read -r arg; do
+            extra_args+=("$arg")
+        done <"$args_file"
+    fi
+
     if [ "$mode" = "file" ]; then
-        "$BIN" "$input_file" >"$actual_out" 2>"$actual_err"
+        "$BIN" "$input_file" "${extra_args[@]}" >"$actual_out" 2>"$actual_err"
         status=$?
     else
-        "$BIN" <"$input_file" >"$actual_out" 2>"$actual_err"
+        "$BIN" "${extra_args[@]}" <"$input_file" >"$actual_out" 2>"$actual_err"
         status=$?
     fi
 

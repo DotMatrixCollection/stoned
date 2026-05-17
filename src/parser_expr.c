@@ -922,6 +922,7 @@ Node *parse_primary(Parser *p) {
             advance(p);
             return parse_percent_list(p, s, t, NODE_SYMBOL);
         case TOK_INTERP_BEG: {
+            int is_backtick = (t.ival == 1);
             advance(p);
             Node *n = node_new(p->arena, NODE_ROPE, s);
             RopeNode *rope = NULL;
@@ -952,6 +953,18 @@ Node *parse_primary(Parser *p) {
             if (rope_is_static(rope)) {
                 n->kind = NODE_STRING;
                 n->sval = rope_flatten(p->arena, rope);
+            }
+            if (is_backtick) {
+                /* Wrap interpolated string in a backtick method call `(string) */
+                Node *call = node_new(p->arena, NODE_CALL, s);
+                call->call.recv = NULL;
+                call->call.method = "`";
+                NodeList *args = arena_alloc(p->arena, sizeof(NodeList));
+                args->node = n;
+                args->next = NULL;
+                call->call.args = args;
+                call->call.block = NULL;
+                return call;
             }
             return n;
         }

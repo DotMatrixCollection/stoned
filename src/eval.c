@@ -554,6 +554,25 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             return v;
         }
         case NODE_GVAR: {
+            /* $? — synthesize Process::Status from last child exit code */
+            if (node->sval && strcmp(node->sval, "?") == 0) {
+                Value code = val_int(0);
+                global_get(&ev->globals, "__child_exit__", &code);
+                /* Find Process::Status class and instantiate it */
+                Value proc_mod = val_nil();
+                if (env_get(ev->top_env, "Process", &proc_mod) &&
+                    proc_mod.kind == VAL_CLASS && proc_mod.klass->class_env) {
+                    Value status_class = val_nil();
+                    if (env_get(proc_mod.klass->class_env, "Status", &status_class) &&
+                        status_class.kind == VAL_CLASS) {
+                        Value args[1] = { code };
+                        Value ps = dispatch_method(ev, env, status_class, "new", args, 1,
+                                                   NULL, node, 0, 1);
+                        if (!val_is_signal(ps)) return ps;
+                    }
+                }
+                return val_nil();
+            }
             Value v;
             if (!global_get(&ev->globals, node->sval, &v)) return val_nil();
             return v;
@@ -1312,7 +1331,8 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
     }
 }
 
-void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, const char *exec_path) {
+void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, const char *exec_path,
+               int script_argc, char **script_argv) {
     memset(ev, 0, sizeof(*ev));
     ev->arena   = arena;
     ev->out     = out;
@@ -1427,7 +1447,12 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         }
     }
 
-    env_define(arena, ev->top_env, "ARGV", val_array_new());
+    {
+        Value argv_val = val_array_new();
+        for (int i = 0; i < script_argc; i++)
+            val_array_push(&argv_val, val_string(arena, script_argv[i]));
+        env_define(arena, ev->top_env, "ARGV", argv_val);
+    }
     env_define(arena, ev->top_env, "RUBY_ENGINE", val_string(arena, STONED_ENGINE_NAME));
     env_define(arena, ev->top_env, "RUBY_VERSION", val_string(arena, STONED_RUBY_VERSION));
     env_define(arena, ev->top_env, "RUBY_PLATFORM", val_string(arena, STONED_RUBY_PLATFORM));
@@ -2214,13 +2239,39 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  def lazy; Enumerator::Lazy.new(self); end\n"
         "end\n";
 
+    static const char *prelude_file_constants =
+        "class File\n"
+        "  SEPARATOR = '/'\n"
+        "  PATH_SEPARATOR = ':'\n"
+        "  ALT_SEPARATOR = nil\n"
+        "end\n"
+        "class IO\n"
+        "  NULL = '/dev/null'\n"
+        "end\n";
+
+    static const char *prelude_process_status =
+        "class Process\n"
+        "  class Status\n"
+        "    def initialize(code); @exitstatus = code.to_i; end\n"
+        "    def exitstatus; @exitstatus; end\n"
+        "    def success?; @exitstatus == 0; end\n"
+        "    def to_i; @exitstatus; end\n"
+        "    def ==(other); to_i == other.to_i; end\n"
+        "    def to_s; \"pid exit #{@exitstatus}\"; end\n"
+        "    def inspect; \"#<Process::Status: exit #{@exitstatus}>\"; end\n"
+        "  end\n"
+        "end\n";
+
     size_t prelude_len =
-        strlen(prelude_comparable) + strlen(prelude_enumerable) + strlen(prelude_core) + 2;
+        strlen(prelude_comparable) + strlen(prelude_enumerable) + strlen(prelude_core) +
+        strlen(prelude_file_constants) + strlen(prelude_process_status) + 2;
     char *prelude = arena_alloc(arena, prelude_len);
     prelude[0] = '\0';
     strcat(prelude, prelude_comparable);
     strcat(prelude, prelude_enumerable);
     strcat(prelude, prelude_core);
+    strcat(prelude, prelude_file_constants);
+    strcat(prelude, prelude_process_status);
 
     Parser parser;
     parser_init(&parser, prelude, strlen(prelude), arena);

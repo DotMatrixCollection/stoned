@@ -43,7 +43,8 @@ typedef struct {
     LoadedFile  *loaded_files;
 } Eval;
 
-void  eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, const char *exec_path);
+void  eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, const char *exec_path,
+                int script_argc, char **script_argv);
 Value eval_node(Eval *ev, Env *env, Node *node);
 
 #endif

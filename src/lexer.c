@@ -503,23 +503,25 @@ static Token scan_ident(Lexer *l, size_t start, uint32_t sline, uint32_t scol) {
 /* ------------------------------------------------------------------ */
 /* Interpolated string content scanner                                  */
 /*                                                                      */
-/* Called when imode_top == LMODE_INTERP_STR.                          */
+/* Called when imode_top == LMODE_INTERP_STR or LMODE_INTERP_BACKTICK. */
 /* Returns:                                                             */
 /*   TOK_INTERP_LIT      — literal segment (may be empty only at EOF)  */
 /*   TOK_INTERP_EXPR_BEG — encountered #{, pushed LMODE_INTERP_EXPR    */
-/*   TOK_INTERP_END      — encountered closing ", popped mode           */
+/*   TOK_INTERP_END      — encountered closing delimiter, popped mode   */
 /* ------------------------------------------------------------------ */
 static Token scan_interp_str_content(Lexer *l) {
     size_t   start = l->pos;
     uint32_t sline = l->line;
     uint32_t scol  = col_of(l, start);
+    char close_ch = (imode_top(l) == LMODE_INTERP_BACKTICK) ? '`' : '"';
 
-    /* Closing quote or end-of-string before any chars → INTERP_END */
-    if (at_end(l) || peek_ch(l) == '"') {
+    /* Closing delimiter or end-of-string before any chars → INTERP_END */
+    if (at_end(l) || peek_ch(l) == close_ch) {
         if (!at_end(l)) advance(l);
         imode_pop(l);
         Token t; memset(&t, 0, sizeof(t));
         t.kind = TOK_INTERP_END;
+        t.ival = (close_ch == '`') ? 1 : 0; /* backtick flag */
         t.line = sline; t.col = scol; t.len = 1;
         return t;
     }
@@ -551,7 +553,7 @@ static Token scan_interp_str_content(Lexer *l) {
     while (!at_end(l)) {
         char c = peek_ch(l);
 
-        if (c == '"') break;  /* closing quote — will be consumed next call */
+        if (c == close_ch) break;  /* closing delimiter — consumed next call */
 
         if (c == '#' && peek2(l) == '{') break;  /* interpolation — handled next call */
 
@@ -566,6 +568,7 @@ static Token scan_interp_str_content(Lexer *l) {
                 case 'e':  IBUF_PUSH('\x1b'); break;
                 case '\\': IBUF_PUSH('\\'); break;
                 case '"':  IBUF_PUSH('"');  break;
+                case '`':  IBUF_PUSH('`');  break;
                 case '#':  IBUF_PUSH('#');  break;
                 case '0':  err = "invalid \\0 escape in UTF-8 string"; break;
                 default:   IBUF_PUSH('\\'); IBUF_PUSH(esc); break;
@@ -914,9 +917,10 @@ static Token scan_regexp(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
 /* Main scan                                                            */
 /* ------------------------------------------------------------------ */
 static Token scan(Lexer *l) {
-    /* String content mode — don't skip whitespace, it's significant */
-    if (imode_top(l) == LMODE_INTERP_STR) {
-        if (l->hd_active && l->imode_depth == l->hd_imode_depth)
+    /* String/backtick content mode — don't skip whitespace, it's significant */
+    if (imode_top(l) == LMODE_INTERP_STR || imode_top(l) == LMODE_INTERP_BACKTICK) {
+        if (l->hd_active && l->imode_depth == l->hd_imode_depth &&
+            imode_top(l) == LMODE_INTERP_STR)
             return scan_heredoc_content(l);
         return scan_interp_str_content(l);
     }
@@ -1169,14 +1173,10 @@ static Token scan(Lexer *l) {
             return t;
         }
         case '`': {
-            /* Backtick command string: scan until closing ` */
-            size_t content_start = l->pos;
-            while (!at_end(l) && peek_ch(l) != '`' && peek_ch(l) != '\n') advance(l);
-            Token t = make_tok(l, TOK_STRING, start, sline, scol);
-            t.sval = intern(l, l->src + content_start, l->pos - content_start);
-            t.ival = 1; /* backtick flag */
-            if (!at_end(l) && peek_ch(l) == '`') advance(l);
-            l->state = LEX_EXPR_END;
+            /* Backtick command string: like "..." but closes on ` */
+            imode_push(l, LMODE_INTERP_BACKTICK);
+            Token t = make_tok(l, TOK_INTERP_BEG, start, sline, scol);
+            t.ival = 1; /* backtick flag — signals parser to emit xstring node */
             return t;
         }
 

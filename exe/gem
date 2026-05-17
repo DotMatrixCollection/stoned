@@ -2,6 +2,25 @@
 # gem - stoned RubyGems command-line interface
 
 require "rubygems"
+require "open3"
+
+GEM_SERVER = "https://rubygems.org"
+
+def run_cmd(*args)
+  system(*args)
+end
+
+def check_tool(name)
+  ENV["PATH"].to_s.split(":").any? do |dir|
+    path = File.join(dir, name)
+    File.file?(path) && File.executable?(path)
+  end
+end
+
+def fetch_url(url)
+  out = `curl -fsSL #{url} 2>/dev/null`
+  out.empty? ? nil : out
+end
 
 def print_gem_env
   puts "RubyGems Environment:"
@@ -12,33 +31,166 @@ def print_gem_env
   puts "  - GEM PATHS:"
   Gem.path.each { |p| puts "     - #{p}" }
   puts "  - REMOTE SOURCES:"
-  puts "     - https://rubygems.org"
+  puts "     - #{GEM_SERVER}"
+end
+
+def gem_install(names, opts = {})
+  unless check_tool("curl")
+    STDERR.puts "ERROR: 'curl' is required for gem install"
+    exit 1
+  end
+  unless check_tool("tar")
+    STDERR.puts "ERROR: 'tar' is required for gem install"
+    exit 1
+  end
+
+  home = Gem.home
+  gems_dir = File.join(home, "gems")
+  specs_dir = File.join(home, "specifications")
+  bin_dir = File.join(home, "bin")
+  [home, gems_dir, specs_dir, bin_dir].each do |d|
+    system("mkdir", "-p", d) unless File.directory?(d)
+  end
+
+  names.each do |gem_name|
+    version = opts[:version]
+    puts "Fetching #{gem_name}..."
+
+    # Resolve version from rubygems.org API
+    unless version
+      body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{gem_name}.json")
+      unless body
+        STDERR.puts "ERROR: Could not fetch info for gem '#{gem_name}'"
+        next
+      end
+      if body =~ /"version"\s*:\s*"([^"]+)"/
+        version = $1
+      else
+        STDERR.puts "ERROR: Could not parse version for gem '#{gem_name}'"
+        next
+      end
+    end
+
+    gem_full = "#{gem_name}-#{version}"
+    gem_file = "#{gem_full}.gem"
+    url = "#{GEM_SERVER}/gems/#{gem_file}"
+
+    tmp = "/tmp/stoned_gem_install_#{gem_name}_#{$$}"
+    system("mkdir", "-p", tmp)
+
+    begin
+      gem_path = File.join(tmp, gem_file)
+      puts "Downloading #{url}..."
+      unless system("curl", "-fsSL", "-o", gem_path, url)
+        STDERR.puts "ERROR: Download failed for #{gem_name} #{version}"
+        next
+      end
+
+      # A .gem file is a tar archive containing:
+      #   metadata.gz   — the gemspec (marshalled, but we use the YAML form)
+      #   data.tar.gz   — the gem contents
+      unless system("tar", "-xf", gem_path, "-C", tmp)
+        STDERR.puts "ERROR: Failed to extract #{gem_file}"
+        next
+      end
+
+      install_dir = File.join(gems_dir, gem_full)
+      system("mkdir", "-p", install_dir)
+      data_tar = File.join(tmp, "data.tar.gz")
+      unless File.exist?(data_tar)
+        STDERR.puts "ERROR: data.tar.gz not found in gem package"
+        next
+      end
+      unless system("tar", "-xzf", data_tar, "-C", install_dir)
+        STDERR.puts "ERROR: Failed to extract gem contents"
+        next
+      end
+
+      # Write a minimal gemspec into specifications/
+      spec_path = File.join(specs_dir, "#{gem_full}.gemspec")
+      unless File.exist?(spec_path)
+        File.write(spec_path, gemspec_stub(gem_name, version, install_dir))
+      end
+
+      # Create bin wrappers
+      bin_src = File.join(install_dir, "bin")
+      if File.directory?(bin_src)
+        Dir.children(bin_src).each do |exe|
+          wrapper = File.join(bin_dir, exe)
+          exe_path = File.join(bin_src, exe)
+          File.write(wrapper, "#!/usr/bin/env ruby\nload #{exe_path.inspect}\n")
+          system("chmod", "+x", wrapper)
+        end
+      end
+
+      puts "Successfully installed #{gem_full}"
+      Gem::Specification.reset! if Gem::Specification.respond_to?(:reset!)
+    ensure
+      system("rm", "-rf", tmp)
+    end
+    version = nil # reset for next gem
+  end
+end
+
+def gemspec_stub(name, version, install_dir)
+  require_paths = []
+  lib_dir = File.join(install_dir, "lib")
+  require_paths << "lib" if File.directory?(lib_dir)
+  require_paths = ["lib"] if require_paths.empty?
+
+  exes = []
+  bin_dir = File.join(install_dir, "bin")
+  exes = Dir.children(bin_dir) if File.directory?(bin_dir)
+
+  lines = []
+  lines << "Gem::Specification.new do |s|"
+  lines << "  s.name = #{name.inspect}"
+  lines << "  s.version = Gem::Version.new(#{version.inspect})"
+  lines << "  s.require_paths = #{require_paths.inspect}"
+  lines << "  s.executables = #{exes.inspect}" unless exes.empty?
+  lines << "end"
+  lines.join("\n") + "\n"
 end
 
 def print_usage
   STDERR.puts "Usage: gem COMMAND [ARGS]"
   STDERR.puts ""
   STDERR.puts "Common commands:"
-  STDERR.puts "  env       Display RubyGems environment"
-  STDERR.puts "  list      List installed gems"
-  STDERR.puts "  version   Display RubyGems version"
+  STDERR.puts "  install GEMNAME  Install a gem"
+  STDERR.puts "  list             List installed gems"
+  STDERR.puts "  env              Display RubyGems environment"
+  STDERR.puts "  version          Display RubyGems version"
 end
 
 command = ARGV[0]
 
 case command
-when "env"
-  case ARGV[1]
-  when "home", "gemhome", "GEM_HOME"
-    puts Gem.home
-  when "path", "gempath", "GEM_PATH"
-    puts Gem.path.join(File::PATH_SEPARATOR)
-  when "version"
-    puts Gem::VERSION
-  when "remotesources"
-    puts "https://rubygems.org"
-  else
-    print_gem_env
+when "install", "i"
+  names = ARGV[1..].reject { |a| a.start_with?("-") }
+  if names.empty?
+    STDERR.puts "ERROR: Please specify a gem name"
+    exit 1
+  end
+  version = nil
+  ARGV.each_with_index do |arg, i|
+    version = ARGV[i + 1] if arg == "-v" || arg == "--version"
+  end
+  gem_install(names, version: version)
+
+when "uninstall", "uni"
+  names = ARGV[1..].reject { |a| a.start_with?("-") }
+  names.each do |gem_name|
+    spec = Gem::Specification.find_by_name(gem_name)
+    unless spec
+      STDERR.puts "ERROR: gem '#{gem_name}' is not installed"
+      next
+    end
+    puts "Removing #{spec.full_name}..."
+    system("rm", "-rf", spec.gem_dir)
+    spec_file = File.join(Gem.home, "specifications", "#{spec.full_name}.gemspec")
+    File.delete(spec_file) if File.exist?(spec_file)
+    puts "Successfully uninstalled #{spec.full_name}"
+    Gem::Specification.reset! if Gem::Specification.respond_to?(:reset!)
   end
 
 when "list", "--list", "-l"
@@ -48,7 +200,25 @@ when "list", "--list", "-l"
   if specs.empty?
     puts "(no gems installed)"
   else
-    specs.sort_by(&:name).each { |s| puts "#{s.name} (#{s.version})" }
+    by_name = specs.group_by(&:name)
+    by_name.keys.sort.each do |name|
+      versions = by_name[name].map(&:version).map(&:to_s).join(", ")
+      puts "#{name} (#{versions})"
+    end
+  end
+
+when "env"
+  case ARGV[1]
+  when "home", "gemhome", "GEM_HOME"
+    puts Gem.home
+  when "path", "gempath", "GEM_PATH"
+    puts Gem.path.join(File::PATH_SEPARATOR)
+  when "version"
+    puts Gem::VERSION
+  when "remotesources"
+    puts GEM_SERVER
+  else
+    print_gem_env
   end
 
 when "-v", "--version", "version"
@@ -57,9 +227,8 @@ when "-v", "--version", "version"
 when "help", "-h", "--help", nil
   print_usage
 
-when "install", "uninstall", "update", "push", "build", "fetch",
-     "open", "search", "pristine", "cleanup", "exec", "contents"
-  STDERR.puts "gem #{command}: not yet implemented in stoned"
+when "update"
+  STDERR.puts "gem update: not yet implemented"
   exit 1
 
 else

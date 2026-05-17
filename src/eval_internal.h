@@ -95,6 +95,7 @@ const char *eval_rope(Eval *ev, Env *env, RopeNode *r);
 Value call_block(Eval *ev, Env *caller_env, Value blk, Value *args, int argc, Node *call_site);
 Value eval_require(Eval *ev, Env *env, const char *path, Node *site);
 Value eval_require_relative(Eval *ev, Env *env, const char *path, Node *site);
+Value eval_load(Eval *ev, const char *path, Node *site);
 Value eval_file_read(Eval *ev, const char *path, Node *site);
 Value eval_file_read_slice(Eval *ev, const char *path, int has_length, int64_t length,
                            int has_offset, int64_t offset, Node *site);

@@ -154,9 +154,10 @@ typedef enum {
 #define LEX_INTERP_DEPTH 32
 
 typedef enum {
-    LMODE_NORMAL,       /* ordinary scanning */
-    LMODE_INTERP_STR,   /* inside "..." — scanning string content */
-    LMODE_INTERP_EXPR,  /* inside #{...} — scanning expression */
+    LMODE_NORMAL,           /* ordinary scanning */
+    LMODE_INTERP_STR,       /* inside "..." — scanning string content */
+    LMODE_INTERP_BACKTICK,  /* inside `...` — scanning backtick content */
+    LMODE_INTERP_EXPR,      /* inside #{...} — scanning expression */
 } LexMode;
 
 typedef struct LexLocalVar {
