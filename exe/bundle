@@ -88,6 +88,44 @@ class GemfileDSL
   end
 end
 
+def normalized_dependencies(dsl)
+  ordered = []
+  by_name = {}
+
+  dsl.dependencies.each do |dep|
+    name = dep[:name]
+    existing = by_name[name]
+    if existing
+      if dep[:path] || dep[:git] || dep[:spec]
+        existing[:path] = dep[:path] if dep[:path]
+        existing[:git] = dep[:git] if dep[:git]
+        existing[:branch] = dep[:branch] if dep[:branch]
+        existing[:spec] = dep[:spec] if dep[:spec]
+      end
+      if existing[:reqs].empty? && dep[:reqs] && !dep[:reqs].empty?
+        existing[:reqs] = dep[:reqs]
+      end
+      existing[:groups] |= dep[:groups] if dep[:groups]
+      existing[:require] = dep[:require] if dep.key?(:require) && !dep[:require].nil?
+    else
+      copy = {
+        name: name,
+        reqs: (dep[:reqs] || []).dup,
+        path: dep[:path],
+        git: dep[:git],
+        branch: dep[:branch],
+        groups: (dep[:groups] || []).dup,
+        require: dep[:require],
+        spec: dep[:spec],
+      }
+      ordered << copy
+      by_name[name] = copy
+    end
+  end
+
+  ordered
+end
+
 # ── Lockfile ─────────────────────────────────────────────────────────────────
 
 class Lockfile
@@ -131,7 +169,7 @@ def bundle_dep_display_version(dep, lockfile)
 end
 
 def bundle_missing_dependencies(dsl, lockfile)
-  dsl.dependencies.reject do |dep|
+  normalized_dependencies(dsl).reject do |dep|
     locked = lockfile.gems[dep[:name]]
     if dep[:path]
       path_ok = File.directory?(File.expand_path(dep[:path]))
@@ -144,7 +182,7 @@ def bundle_missing_dependencies(dsl, lockfile)
 end
 
 def bundle_needs_remote_tools?(dsl)
-  dsl.dependencies.any? { |dep| !dep[:path] && !dep[:git] }
+  normalized_dependencies(dsl).any? { |dep| !dep[:path] && !dep[:git] }
 end
 
 # ── Resolution ───────────────────────────────────────────────────────────────
@@ -215,7 +253,7 @@ def resolve_and_install(dsl, verbose: true)
   resolved = {}
   errors   = []
 
-  dsl.dependencies.each do |dep|
+  normalized_dependencies(dsl).each do |dep|
     name = dep[:name]
     next if resolved.key?(name)
 
@@ -259,7 +297,7 @@ def resolve_and_install(dsl, verbose: true)
 end
 
 def setup_load_path(dsl, lockfile)
-  dsl.dependencies.each do |dep|
+  normalized_dependencies(dsl).each do |dep|
     name = dep[:name]
     if dep[:path]
       lib = File.join(File.expand_path(dep[:path]), "lib")
@@ -360,7 +398,7 @@ when "list"
   lf = Lockfile.read(LOCKFILE)
   Gem::Specification.reset!
   puts "Gems included by the bundle:"
-  dsl.dependencies.each do |dep|
+  normalized_dependencies(dsl).each do |dep|
     puts "  * #{dep[:name]} (#{bundle_dep_display_version(dep, lf)})"
   end
 

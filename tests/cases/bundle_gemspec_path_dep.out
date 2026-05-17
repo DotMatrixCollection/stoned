@@ -1,0 +1,19 @@
+Using demo (path: /tmp/stoned_bundle_gemspec_path_dep_/app)
+Using dep (path: /tmp/stoned_bundle_gemspec_path_dep_/dep_gem)
+Bundle complete! 2 gems now installed.
+--LOCK--
+GEM
+  specs:
+    demo (0.1.0)
+    dep (path)
+
+BUNDLED WITH
+   2.5.0.stoned
+--LIST--
+Gems included by the bundle:
+  * demo (0.1.0)
+  * dep (path)
+--CHECK--
+The Gemfile's dependencies are satisfied
+--EXEC--
+13
