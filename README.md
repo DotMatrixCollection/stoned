@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `352` tests are passing, and birb's REPL now fully evaluates expressions and echoes results — `1+1` returns `2`, `puts 2+2` prints `4`. Key session-6 additions: `String#<<` mutation propagation, `class<<self` visibility scope restoration, `NODE_LVAR` nil-for-unassigned (Ruby semantics), Prism/PP/Reline stubs, `MatchData` named captures, and many more runtime fixes. It is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `365` tests are passing, birb's REPL fully evaluates expressions and echoes results, and a minimal RubyGems/Bundler bringup path now exists for compatibility probes. It is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -67,7 +67,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `352 passed, 0 failed, 352 total`. Session 7 additions: `Float::INFINITY`, `Enumerator::Lazy`, `Array#chunk/chunk_while`, Symbol methods, `Integer#clamp(range)`, Class comparison operators, `Kernel.instance_method`, StringIO shim, `execute_as_command?` fix enabling IRB commands, subscript compound assignment (`h[k]+=1`), numeric underscore separators (`1_000_000`), `Array#[]=`, `String#chomp(sep)`, `String/Range#to_a` for string ranges, and many more.
+Current coverage in the tree: `365 passed, 0 failed, 365 total`. Recent additions include the minimal RubyGems shim (`require "rubygems"` plus key sub-requires), `exe/gem` and `exe/bundle` bringup helpers, multiline `/.../x` regexp lexing, and the earlier Session 7 runtime work (`Float::INFINITY`, `Enumerator::Lazy`, `Array#chunk/chunk_while`, Symbol methods, `Integer#clamp(range)`, Class comparison operators, `Kernel.instance_method`, StringIO shim, IRB command fixes, numeric underscore separators, and more).
 
 What is working today:
 
@@ -98,6 +98,7 @@ What is working today:
 - IO: `$stdout`, `$stderr`, `$stdin`, `STDOUT`, `STDERR`, `STDIN` as IO objects with `puts`, `print`, `write`, `<<`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `close`, `closed?`, `tell`, `pos`, `seek`, `rewind`, `eof?`, `gets`, `readline`, `readlines`, `read`, `getc`, `readchar`, `getbyte`, `readbyte`, `each_byte`, `each_char`, `each_line`, and `IO.new(fd, mode)` wrappers with mode enforcement; `IO.new(fd)` / `IO.new(fd, nil)` now infer the descriptor access mode, and explicit `+` modes like `r+` are treated as read-write; `sync` / `sync=` state now persists on `IO`/`File`, and sync-enabled writes now flush immediately; kernel `puts` / `print` / `p` / `pp` now honor `$stdout`/`STDOUT` close state and write-capable `$stdout` redirection; invalid `$stdout`/`$stderr` assignment raises `TypeError`; uncaught runtime errors honor redirected `$stderr`, including custom write-capable objects; mode violations raise `IOError`, closed-stream access raises `IOError`
 - File: `File.read`, `File.write`, `File.open` (block and non-block), `File.delete`, `File.exist?`, `File.realpath`, `File.directory?`, `File.file?`, `File.readable?`, `File.writable?`, `File.executable?`, `File.mtime`; path utilities `File.basename`, `File.dirname`, `File.extname`, `File.join`, `File.split`, `File.expand_path`, `File.absolute_path`; file objects with stateful native handles for `read`, `gets`, `readline`, `readlines`, `getc`, `readchar`, `getbyte`, `readbyte`, `each_byte`, `each_char`, `each_line`, `write`, `<<`, `print`, `puts`, `flush`, `sync`, `sync=`, `fileno`, `isatty` / `tty?`, `path`, `mode`, `tell`, `pos`, `seek`, `rewind`, `eof?`, `close`, `closed?`; text modes `r`, `w`, `a` and binary modes `rb`, `wb`, `ab` — binary mode skips UTF-8 validation so non-UTF-8 byte sequences read without error; file-not-found raises `Errno::ENOENT`
 - Dir: `Dir.pwd`, `Dir.chdir` (block and non-block), `Dir.mkdir`
+- Packaging/bootstrap: minimal `require "rubygems"` support with `Gem::Version`, `Gem::Requirement`, `Gem::Specification`, `Gem::Platform`, `Gem::NameTuple`, `Gem.loaded_specs`, `gem(name)` activation, and compatibility sub-requires like `rubygems/specification` and `rubygems/command`; `exe/gem` and `exe/bundle` provide early bringup command surfaces for install/build/probe workflows
 - Globals and constants
 
 Known limitations:
@@ -105,6 +106,7 @@ Known limitations:
 - This is not Ruby-compatible enough for real-world code yet
 - Text is UTF-8-only across source loading and runtime strings; invalid UTF-8 is rejected in source, `require`, `File.read`, and stdin text reads
 - File/IO coverage is now stateful enough for real cursors, descriptor wrappers, line/char/byte reads, and several MRI-style cursor/query methods, but it is still well short of MRI: no socket IO and still-limited encoding/mode fidelity outside the covered text/binary and shared stream-read behavior
+- RubyGems/Bundler support is still bringup-grade: enough for shim loading and targeted experiments, not yet full dependency resolution, activation semantics, native extensions, or real-world gem installation compatibility
 - Exceptions work, but they still need broader standard exception coverage and fuller Ruby rescue semantics beyond the current typed clauses, lists, variable binding, and `retry`
 - Proc/lambda semantics exist, but there are still edge cases around proc-vs-lambda control flow beyond the current top-level/lambda-return and direct/escaped-proc `break`/`return` cases, and around argument handling, that are not Ruby-complete
 - Compatibility around edge-case parsing and method semantics is still being tightened, especially outside the now-covered command-call spacing, unary-arg, grouped-call, and delayed `do`/`end` attachment cases

@@ -121,6 +121,10 @@ This is the bridge from language/runtime correctness to running larger real prog
   - ~~`IO.new` from raw file descriptors~~ done
   - ~~closer stdin behavior and line-separator handling~~ done — shared `gets` path now supports custom separators, `nil`, paragraph mode (`""`), and long lines without fixed-buffer truncation across both `IO` and `File`
 - keep file/object lifecycle semantics closer to MRI under block and non-block forms
+- continue RubyGems/Bundler bringup as a Stage 5 load-path workload:
+  - tighten `Gem::Specification.find_by_name` and `gem(name)` activation against on-disk gem homes
+  - expand command-surface coverage for `exe/gem` / `exe/bundle` with local fixture-driven tests before broader networked workflows
+  - keep shim coverage focused on real compatibility callers rather than cloning all of RubyGems wholesale
 
 Recent Stage 5 progress already landed:
 
@@ -142,6 +146,7 @@ Recent Stage 5 progress already landed:
 - modifier `rescue` in assignment position (`lhs = expr rescue fallback`) and bare-expression position (`expr rescue fallback`); inner expression is wrapped in an implicit `begin/rescue` so only that expression is rescued
 - parenthesized statement groups: `(stmt; stmt)` now parsed as a multi-statement body when the opening `(` is immediately followed by a newline or semicolon, evaluating to the last statement; single-statement form continues to work as before
 - lexer operator state hardening: all binary and compound-assignment operators now set `LEX_EXPR_BEG` after the operator token, fixing `/` regex-vs-division disambiguation and multiline expression continuation after operators
+- multiline regexp literal lexing now accepts embedded newlines, which unblocks extended-mode `/.../x` patterns spread across lines
 - `Array#flatten` fixed to recurse fully by default; optional depth argument (`flatten(n)`) limits recursion depth
 - `__method__` kernel method returning current method name as a symbol, or `nil` at top level; also fixed the `call_method:` dispatch path which was not setting `__method__` in the frame env
 - Enumerable: `filter_map`, `each_slice(n)`, `each_cons(n)`, `take_while`, `drop_while`; `each_slice` and `each_cons` return an array when called without a block
@@ -238,6 +243,7 @@ Recent Stage 5 progress already landed:
 - `$>` global alias for `$stdout`
 - **birb session-6 milestone**: the REPL evaluates expressions and echoes results — `1+1` returns `2`, `puts 2+2` prints `4`
 - `Float::INFINITY` and `Float::NAN` constants bootstrapped in prelude
+- RubyGems bringup: `require "rubygems"` now loads a larger compatibility shim with `Gem::Version`, `Gem::Requirement`, `Gem::Dependency`, `Gem::Specification`, `Gem::Platform`, `Gem::NameTuple`, `Gem::Command`, and key `rubygems/*` sub-requires routed back to the shim; inline source assembly now uses chunked C string parts to avoid overlength string-literal warnings
 - `Enumerator::Lazy`: `(1..Float::INFINITY).lazy.select{...}.first(n)` and chained lazy ops on infinite ranges; `to_a`/`force` and `take` now correct — shared `_collect` helper fixes `to_a` returning a scalar and `:take` not limiting the outer loop
 - `Range#each` now accepts `Float::INFINITY` end for lazy/break-able iteration
 - `Array#chunk`, `#chunk_while`, `#slice_when`, `#slice_before` enumerable partitioning
@@ -290,6 +296,8 @@ Latest compatibility probe:
 - 2026-05-13: probing `birb` with `birb/lib` on `$LOAD_PATH` now gets past `class << self`, safe navigation `&.`, ternary parsing after predicate methods, and block-body `rescue`; the next parser targets in `birb/lib/irb.rb` are remaining implicit-body rescue nesting, interpolation edge cases, and other uncovered expression forms later in the file
 - 2026-05-16: `receiver.method :sym, val` command-call with symbol args now works — lexer colon case extended to allow symbols in `LEX_EXPR_END+had_space` state (covers post-dot-method position); `require "irb"` now loads clean with no parse errors
 - 2026-05-16: `define_singleton_method` block now actually executes — `call_method_value` was reading `NODE_BLOCK` fields through the `def` union member (wrong offsets); fixed by dispatching on `node->kind` to use `block.params`/`block.body` vs `def.params`/`def.body`
+- 2026-05-16: RubyGems bringup expanded — `require "rubygems"` now exposes a much broader compatibility shim, direct `rubygems/specification`/`platform`/`name_tuple`/`command` sub-requires resolve through it, and fixture coverage now exercises the shim explicitly
+- 2026-05-16: multiline extended-mode regexp literals now lex across embedded newlines, with a regression covering `/.../x` patterns split across lines and comments
 
 ## Stage gap survey (2026-04-22)
 
