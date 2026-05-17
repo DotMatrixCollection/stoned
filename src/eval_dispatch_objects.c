@@ -7,11 +7,13 @@
 
 #include <fcntl.h>
 #include <limits.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <termios.h>
 #include <unistd.h>
 
 static const char *file_fopen_mode(const char *mode) {
@@ -83,6 +85,65 @@ static Value wrong_arg_count(Eval *ev, Node *site, int given, int expected) {
     return eval_raise_class(ev, site, "ArgumentError",
                             "wrong number of arguments (given %d, expected %d)",
                             given, expected);
+}
+
+static int tty_enable_reline_mode(int fd, struct termios *saved) {
+    if (fd < 0 || !saved || !isatty(fd))
+        return 0;
+    if (tcgetattr(fd, saved) != 0)
+        return 0;
+    struct termios raw = *saved;
+    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+    raw.c_oflag |= OPOST;
+    raw.c_cflag |= CS8;
+    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+    return tcsetattr(fd, TCSAFLUSH, &raw) == 0;
+}
+
+static void tty_restore_mode(int fd, const struct termios *saved, int active) {
+    if (active && fd >= 0 && saved)
+        tcsetattr(fd, TCSAFLUSH, saved);
+}
+
+static void reline_write_prompt(FILE *out, const char *prompt, const char *buf, size_t len, size_t cursor) {
+    if (!out)
+        return;
+    fputc('\r', out);
+    fputs(prompt ? prompt : "", out);
+    if (buf && len)
+        fwrite(buf, 1, len, out);
+    fputs("\x1b[K", out);
+    if (len > cursor)
+        fprintf(out, "\x1b[%zuD", len - cursor);
+    fflush(out);
+}
+
+static int reline_buffer_reserve(char **buf, size_t *cap, size_t need) {
+    if (need + 1 <= *cap)
+        return 1;
+    size_t next = *cap ? *cap : 64;
+    while (next < need + 1)
+        next *= 2;
+    char *grown = realloc(*buf, next);
+    if (!grown)
+        return 0;
+    *buf = grown;
+    *cap = next;
+    return 1;
+}
+
+static int reline_buffer_replace(char **buf, size_t *cap, size_t *len, size_t *cursor, const char *src) {
+    size_t slen = src ? strlen(src) : 0;
+    if (!reline_buffer_reserve(buf, cap, slen))
+        return 0;
+    if (slen)
+        memcpy(*buf, src, slen);
+    (*buf)[slen] = '\0';
+    *len = slen;
+    *cursor = slen;
+    return 1;
 }
 
 static size_t regexp_union_piece_length(Value v) {
@@ -1286,32 +1347,225 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         if (strcmp(recv.klass->name, "Reline") == 0) {
             if (strcmp(name, "readmultiline") == 0) {
                 Value prompt = (argc >= 1) ? args[0] : val_string(ev->arena, "");
-                if (prompt.kind == VAL_STRING && prompt.sval && prompt.sval[0] != '\0') {
-                    Value stdout_obj = val_nil();
-                    if (env_get(ev->top_env, "STDOUT", &stdout_obj) && stdout_obj.kind == VAL_OBJECT) {
-                        Value prompt_line = prompt;
-                        Value wrote = dispatch_method(ev, env, stdout_obj, "write", &prompt_line, 1, NULL, site, 0, 1);
+                Value stdin_obj = val_nil();
+                Value stdout_obj = val_nil();
+                if (!env_get(ev->top_env, "STDIN", &stdin_obj) || stdin_obj.kind != VAL_OBJECT) {
+                    *out = val_nil();
+                    return 1;
+                }
+                if (!env_get(ev->top_env, "STDOUT", &stdout_obj) || stdout_obj.kind != VAL_OBJECT) {
+                    *out = val_nil();
+                    return 1;
+                }
+
+                NativeFile *stdin_nf = native_file(stdin_obj);
+                NativeFile *stdout_nf = native_file(stdout_obj);
+                FILE *in = (stdin_nf && stdin_nf->fp) ? stdin_nf->fp : stdin;
+                FILE *out_stream = (stdout_nf && stdout_nf->fp) ? stdout_nf->fp : stdout;
+                int fd = fileno(in);
+                int use_tty = fd >= 0 && isatty(fd);
+
+                if (!use_tty) {
+                    if (prompt.kind == VAL_STRING && prompt.sval && prompt.sval[0] != '\0') {
+                        Value wrote = dispatch_method(ev, env, stdout_obj, "write", &prompt, 1, NULL, site, 0, 1);
                         if (val_is_signal(wrote)) {
                             *out = wrote;
                             return 1;
                         }
                     }
-                }
-                Value stdin_obj = val_nil();
-                if (!env_get(ev->top_env, "STDIN", &stdin_obj) || stdin_obj.kind != VAL_OBJECT) {
-                    *out = val_nil();
-                    return 1;
-                }
-                Value line = dispatch_method(ev, env, stdin_obj, "gets", NULL, 0, NULL, site, 0, 1);
-                if (val_is_signal(line)) {
+                    Value line = dispatch_method(ev, env, stdin_obj, "gets", NULL, 0, NULL, site, 0, 1);
+                    if (val_is_signal(line)) {
+                        *out = line;
+                        return 1;
+                    }
+                    if (line.kind == VAL_NIL) {
+                        *out = val_nil();
+                        return 1;
+                    }
                     *out = line;
                     return 1;
                 }
-                if (line.kind == VAL_NIL) {
+
+                struct termios saved_tio;
+                int tty_active = tty_enable_reline_mode(fd, &saved_tio);
+                if (!tty_active) {
+                    Value line = dispatch_method(ev, env, stdin_obj, "gets", NULL, 0, NULL, site, 0, 1);
+                    if (val_is_signal(line)) {
+                        *out = line;
+                        return 1;
+                    }
+                    if (line.kind == VAL_NIL) {
+                        *out = val_nil();
+                        return 1;
+                    }
+                    *out = line;
+                    return 1;
+                }
+
+                const char *prompt_s = (prompt.kind == VAL_STRING && prompt.sval) ? prompt.sval : "";
+                Value history = val_nil();
+                env_get(recv.klass->class_env, "HISTORY", &history);
+                size_t history_len = history.kind == VAL_ARRAY ? history.array->len : 0;
+                ssize_t history_pos = (ssize_t)history_len;
+
+                char *line_buf = NULL;
+                size_t line_cap = 0, line_len = 0, cursor = 0;
+                char *pending = NULL;
+                size_t pending_cap = 0;
+                int interrupted = 0;
+                int eof = 0;
+                int error = 0;
+                int done = 0;
+
+                if (!reline_buffer_reserve(&line_buf, &line_cap, 0)) {
+                    tty_restore_mode(fd, &saved_tio, tty_active);
+                    *out = eval_raise_class(ev, site, "NoMemoryError", "cannot allocate line buffer");
+                    return 1;
+                }
+                line_buf[0] = '\0';
+                reline_write_prompt(out_stream, prompt_s, line_buf, line_len, cursor);
+
+                while (!done) {
+                    int ch = fgetc(in);
+                    if (ch == EOF) {
+                        if (ferror(in) && errno == EINTR) {
+                            clearerr(in);
+                            continue;
+                        }
+                        eof = 1;
+                        break;
+                    }
+
+                    if (ch == 3) {
+                        interrupted = 1;
+                        break;
+                    }
+                    if (ch == 4) {
+                        if (line_len == 0) {
+                            eof = 1;
+                            break;
+                        }
+                        continue;
+                    }
+                    if (ch == '\r' || ch == '\n') {
+                        fputs("\r\n", out_stream);
+                        fflush(out_stream);
+                        done = 1;
+                        break;
+                    }
+                    if (ch == 127 || ch == '\b') {
+                        if (cursor > 0) {
+                            memmove(line_buf + cursor - 1, line_buf + cursor, line_len - cursor);
+                            cursor--;
+                            line_len--;
+                            line_buf[line_len] = '\0';
+                            reline_write_prompt(out_stream, prompt_s, line_buf, line_len, cursor);
+                        }
+                        continue;
+                    }
+                    if (ch == 27) {
+                        int c1 = fgetc(in);
+                        if (c1 == EOF) {
+                            if (ferror(in) && errno == EINTR) clearerr(in);
+                            continue;
+                        }
+                        if (c1 != '[')
+                            continue;
+                        int c2 = fgetc(in);
+                        if (c2 == EOF) {
+                            if (ferror(in) && errno == EINTR) clearerr(in);
+                            continue;
+                        }
+                        if (c2 == 'A' || c2 == 'B') {
+                            if (history.kind != VAL_ARRAY || history.array->len == 0)
+                                continue;
+                            if (!pending && history_pos == (ssize_t)history_len) {
+                                pending_cap = line_len + 1;
+                                pending = malloc(pending_cap);
+                                if (!pending) {
+                                    error = 1;
+                                    break;
+                                }
+                                memcpy(pending, line_buf, line_len);
+                                pending[line_len] = '\0';
+                            }
+                            if (c2 == 'A') {
+                                if (history_pos <= 0)
+                                    continue;
+                                history_pos--;
+                            } else {
+                                if (history_pos >= (ssize_t)history_len)
+                                    continue;
+                                history_pos++;
+                            }
+
+                            const char *replacement = "";
+                            if (history_pos >= 0 && history_pos < (ssize_t)history_len) {
+                                Value entry = history.array->elems[history_pos];
+                                if (entry.kind == VAL_STRING && entry.sval)
+                                    replacement = entry.sval;
+                            } else if (history_pos == (ssize_t)history_len && pending) {
+                                replacement = pending;
+                            }
+                            if (!reline_buffer_replace(&line_buf, &line_cap, &line_len, &cursor, replacement)) {
+                                error = 1;
+                                break;
+                            }
+                            reline_write_prompt(out_stream, prompt_s, line_buf, line_len, cursor);
+                            continue;
+                        }
+                        if (c2 == 'C') {
+                            if (cursor < line_len) {
+                                cursor++;
+                                reline_write_prompt(out_stream, prompt_s, line_buf, line_len, cursor);
+                            }
+                            continue;
+                        }
+                        if (c2 == 'D') {
+                            if (cursor > 0) {
+                                cursor--;
+                                reline_write_prompt(out_stream, prompt_s, line_buf, line_len, cursor);
+                            }
+                            continue;
+                        }
+                        continue;
+                    }
+                    if ((unsigned char)ch < 32)
+                        continue;
+                    if (!reline_buffer_reserve(&line_buf, &line_cap, line_len + 1)) {
+                        error = 1;
+                        break;
+                    }
+                    memmove(line_buf + cursor + 1, line_buf + cursor, line_len - cursor);
+                    line_buf[cursor] = (char)ch;
+                    line_len++;
+                    cursor++;
+                    line_buf[line_len] = '\0';
+                    reline_write_prompt(out_stream, prompt_s, line_buf, line_len, cursor);
+                }
+
+                tty_restore_mode(fd, &saved_tio, tty_active);
+                free(pending);
+
+                if (error) {
+                    free(line_buf);
+                    *out = eval_raise_class(ev, site, "NoMemoryError", "cannot allocate line buffer");
+                    return 1;
+                }
+                if (interrupted) {
+                    fputs("^C\r\n", out_stream);
+                    fflush(out_stream);
+                    free(line_buf);
+                    *out = val_string(ev->arena, "");
+                    return 1;
+                }
+                if (eof) {
+                    free(line_buf);
                     *out = val_nil();
                     return 1;
                 }
-                *out = line;
+                *out = val_string(ev->arena, line_buf ? line_buf : "");
+                free(line_buf);
                 return 1;
             }
             if (strcmp(name, "input") == 0) {
@@ -2186,22 +2440,38 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             return 1;
         }
         if (strcmp(name, "open") == 0) {
-            if (argc < 1 || argc > 3) {
+            if (argc < 1 || argc > 4) {
                 *out = argc < 1
                      ? wrong_arg_count(ev, site, argc, 1)
                      : eval_raise_class(ev, site, "ArgumentError",
-                                        "wrong number of arguments (given %d, expected 1..3)", argc);
+                                        "wrong number of arguments (given %d, expected 1..4)", argc);
             } else if (args[0].kind != VAL_STRING) {
                 *out = implicit_string_conversion_error(ev, args[0], site);
             } else {
                 Value mode = (argc >= 2 && args[1].kind != VAL_NIL) ? args[1] : val_string(ev->arena, "r");
+                Value perm = val_nil();
+                Value options = val_nil();
                 if (mode.kind != VAL_STRING) {
                     *out = implicit_string_conversion_error(ev, mode, site);
                     return 1;
                 }
-                if (argc >= 3 && args[2].kind != VAL_NIL && args[2].kind != VAL_INT) {
-                    *out = implicit_integer_conversion_error(ev, args[2], site);
-                    return 1;
+                if (argc >= 3 && args[2].kind != VAL_NIL) {
+                    if (args[2].kind == VAL_INT) {
+                        perm = args[2];
+                    } else if (args[2].kind == VAL_HASH) {
+                        options = args[2];
+                    } else {
+                        *out = implicit_integer_conversion_error(ev, args[2], site);
+                        return 1;
+                    }
+                }
+                if (argc >= 4 && args[3].kind != VAL_NIL) {
+                    if (args[3].kind != VAL_HASH) {
+                        *out = eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into Hash",
+                                                value_class_name(ev, args[3]));
+                        return 1;
+                    }
+                    options = args[3];
                 }
                 Value opened = file_open_stream(ev, args[0].sval, mode.sval, site);
                 if (val_is_signal(opened)) {
@@ -2211,6 +2481,10 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 Value file_obj = val_object(ev->arena, recv);
                 val_object_set_ivar(ev->arena, file_obj, "path", args[0]);
                 val_object_set_ivar(ev->arena, file_obj, "mode", mode);
+                if (perm.kind != VAL_NIL)
+                    val_object_set_ivar(ev->arena, file_obj, "perm", perm);
+                if (options.kind != VAL_NIL)
+                    val_object_set_ivar(ev->arena, file_obj, "options", options);
                 val_object_set_ivar(ev->arena, file_obj, "closed", val_false());
                 val_object_set_ivar(ev->arena, file_obj, "sync", val_false());
                 file_obj.obj->native = opened.obj;
@@ -3199,6 +3473,22 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             if (strcmp(name, "named_captures") == 0)
                 { *out = val_hash_new(ev->arena); return 1; } /* stub: no named capture support yet */
 #undef MD_GROUP_STR
+        }
+
+        if (strcmp(kname, "Pathname::Stat") == 0) {
+            if (strcmp(name, "mode") == 0) {
+                if (argc != 0) {
+                    *out = wrong_arg_count(ev, site, argc, 0);
+                    return 1;
+                }
+                Value mode = val_nil();
+                if (val_object_get_ivar(recv, "mode", &mode)) {
+                    *out = mode;
+                    return 1;
+                }
+                *out = val_nil();
+                return 1;
+            }
         }
     }
 

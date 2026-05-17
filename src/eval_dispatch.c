@@ -1439,8 +1439,9 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             struct stat st;
             if (stat(p, &st) != 0)
                 return eval_raise_class(ev, site, errno_class_name(errno), "%s - %s", strerror(errno), p);
-            Value stat_obj = val_hash_new(ev->arena);
-            val_hash_set(stat_obj.hash, val_symbol("mode"), val_int((int64_t)st.st_mode));
+            Value stat_class = val_class(ev->arena, "Pathname::Stat", val_nil());
+            Value stat_obj = val_object(ev->arena, stat_class);
+            val_object_set_ivar(ev->arena, stat_obj, "mode", val_int((int64_t)st.st_mode));
             return stat_obj;
         }
         if (strcmp(name, "chmod") == 0) {
