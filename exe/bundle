@@ -143,6 +143,10 @@ def bundle_missing_dependencies(dsl, lockfile)
   end
 end
 
+def bundle_needs_remote_tools?(dsl)
+  dsl.dependencies.any? { |dep| !dep[:path] && !dep[:git] }
+end
+
 # ── Resolution ───────────────────────────────────────────────────────────────
 
 def check_tool(name)
@@ -283,11 +287,11 @@ when "install", "i"
     STDERR.puts "Could not locate Gemfile"
     exit 1
   end
-  unless check_tool("curl") && check_tool("tar")
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  if bundle_needs_remote_tools?(dsl) && !(check_tool("curl") && check_tool("tar"))
     STDERR.puts "curl and tar are required for bundle install"
     exit 1
   end
-  dsl = GemfileDSL.evaluate(GEMFILE)
   resolved = resolve_and_install(dsl, verbose: true)
   if resolved
     Lockfile.write(LOCKFILE, resolved)
@@ -319,7 +323,12 @@ when "exec"
     exit 1
   end
   setup_load_path(dsl, lf)
-  # Set RUBYOPT to wire load path for sub-processes
+  while !ARGV.empty?
+    ARGV.pop
+  end
+  (args[1..] || []).each do |arg|
+    ARGV << arg
+  end
   load File.expand_path(args[0]) if args[0].end_with?(".rb") && File.exist?(args[0])
 
 when "check"
