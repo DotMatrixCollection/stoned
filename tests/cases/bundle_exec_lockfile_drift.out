@@ -1,0 +1,7 @@
+Using demo (path: /tmp/stoned_bundle_exec_lockfile_drift_/demo_gem)
+Bundle complete! 1 gems now installed.
+--EXEC1--
+99
+--EXEC2--
+The following gems are missing:
+  * extra

@@ -307,7 +307,17 @@ when "exec"
     exit 1
   end
   dsl = GemfileDSL.evaluate(GEMFILE)
+  unless File.exist?(LOCKFILE)
+    STDERR.puts "Could not locate Gemfile.lock"
+    exit 1
+  end
   lf  = Lockfile.read(LOCKFILE)
+  missing = bundle_missing_dependencies(dsl, lf)
+  unless missing.empty?
+    STDERR.puts "The following gems are missing:"
+    missing.each { |d| STDERR.puts "  * #{d[:name]}" }
+    exit 1
+  end
   setup_load_path(dsl, lf)
   # Set RUBYOPT to wire load path for sub-processes
   load File.expand_path(args[0]) if args[0].end_with?(".rb") && File.exist?(args[0])
