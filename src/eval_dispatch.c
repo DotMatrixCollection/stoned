@@ -476,6 +476,7 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
             "raise", "fail", "exit", "abort", "lambda", "proc", "loop", "rand",
             "__method__", "__dir__", "__FILE__", "__LINE__",
             "sleep", "catch", "throw", "trap", "at_exit", "printf", "sprintf", "format",
+            "system", "spawn", "wait", "waitpid", "`",
             NULL
         };
         for (int ki = 0; kernel[ki]; ki++) {
@@ -921,6 +922,40 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         }
         return val_string(ev->arena, "");
     }
+    if (strcmp(name, "system") == 0) {
+        if (argc == 0) return val_false();
+        /* Build shell command from arguments. */
+        size_t total = 0;
+        for (int i = 0; i < argc; i++) {
+            if (args[i].kind != VAL_STRING) continue;
+            total += strlen(args[i].sval ? args[i].sval : "") + 2;
+        }
+        char *cmd = arena_alloc(ev->arena, total + 1);
+        cmd[0] = '\0';
+        for (int i = 0; i < argc; i++) {
+            if (i > 0) strcat(cmd, " ");
+            if (args[i].kind == VAL_STRING && args[i].sval)
+                strcat(cmd, args[i].sval);
+        }
+        int ret = system(cmd);
+        if (ret == -1) return val_nil();
+        return WIFEXITED(ret) && WEXITSTATUS(ret) == 0 ? val_true() : val_false();
+    }
+    if (strcmp(name, "spawn") == 0) {
+        if (argc == 0) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments (given 0, expected 1+)");
+        if (args[0].kind != VAL_STRING) return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into String", value_class_name(ev, args[0]));
+        pid_t pid = fork();
+        if (pid < 0) return eval_raise_class(ev, site, "SystemCallError", "%s", strerror(errno));
+        if (pid == 0) { execlp("sh", "sh", "-c", args[0].sval, (char *)NULL); _exit(127); }
+        return val_int((int64_t)pid);
+    }
+    if (strcmp(name, "wait") == 0 || strcmp(name, "waitpid") == 0) {
+        pid_t pid = argc > 0 && args[0].kind == VAL_INT ? (pid_t)args[0].ival : -1;
+        int status = 0;
+        pid_t result = waitpid(pid, &status, 0);
+        if (result < 0) return eval_raise_class(ev, site, "SystemCallError", "%s", strerror(errno));
+        return val_int((int64_t)result);
+    }
 
     if (strcmp(name, "puts") == 0) {
         if (argc == 0) { fprintf(ev->out, "\n"); return val_nil(); }
@@ -1170,8 +1205,6 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
             self.klass->included_modules = inc;
             /* Call Module.included(base) hook if defined */
             {
-                Value included_method; RubyClass *inc_owner = NULL;
-                /* Look for self.included in the module's class_env */
                 size_t ilen = strlen("included");
                 char *ikey = arena_alloc(ev->arena, ilen + 6);
                 memcpy(ikey, "self.", 5); memcpy(ikey + 5, "included", ilen + 1);
@@ -1820,29 +1853,11 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (strcmp(name, "inspect") == 0 && recv.kind != VAL_OBJECT && recv.kind != VAL_CLASS)
         return val_string(ev->arena, val_inspect(ev->arena, recv));
 
-    /* Proc/Lambda #curry — returns a curried lambda */
+    /* Proc/Lambda #curry — stub: returns self marked as lambda.
+       Full curry (partial application accumulation) requires first-class closures. */
     if (recv.kind == VAL_BLOCK && strcmp(name, "curry") == 0) {
-        int arity = proc_arity(recv.block.block_node ? recv.block.block_node->block.params : NULL,
-                               recv.block.is_lambda);
-        int n_required = arity < 0 ? -(arity + 1) : arity;
-        if (argc > 0 && args[0].kind == VAL_INT) n_required = (int)args[0].ival;
-        /* Wrap in a lambda that accumulates args until enough are collected */
-        static const char *curry_ruby =
-            "proc { |*collected|\n"
-            "  collected\n"
-            "}\n";
-        (void)curry_ruby;
-        /* Simple implementation: curry returns a proc that collects args */
-        /* We use a closure that captures the original block and collected args */
-        /* For now, implement via a native accumulator approach */
-        /* Store original block and arity, return a collecting lambda */
-        Value curry_obj = val_object(ev->arena, recv); /* use block as base */
-        /* Actually, implement using environment capture */
-        /* Return a lambda that takes one arg and applies if enough accumulated */
-        /* Minimal curry: just return the proc wrapped in curry semantics */
-        /* Full curry requires first-class partial application support */
-        Value curried = recv; /* shallow: just return self for zero-arity */
-        curried.block.is_lambda = 1; /* mark as lambda for curry */
+        Value curried = recv;
+        curried.block.is_lambda = 1;
         return curried;
     }
 
@@ -1885,7 +1900,8 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         static const char *kern_nil[] = {
             "puts", "print", "p", "pp", "warn", "require", "require_relative", "raise",
             "lambda", "proc", "loop", "rand", "exit", "format", "sprintf", "printf",
-            "sleep", "catch", "throw", "trap", "at_exit", "`", NULL
+            "sleep", "catch", "throw", "trap", "at_exit", "`",
+            "system", "spawn", "wait", "waitpid", NULL
         };
         for (int ki = 0; kern_nil[ki]; ki++) {
             if (strcmp(name, kern_nil[ki]) == 0)
@@ -2211,7 +2227,8 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload",
             "deprecate_constant", "private_constant", "public_constant",
             "__dir__", "__method__", "__FILE__", "__LINE__", "__callee__", "binding", "eval", "`",
-            "trap", "at_exit", "sleep", "catch", "throw", "method", NULL
+            "trap", "at_exit", "sleep", "catch", "throw", "method",
+            "system", "spawn", "wait", "waitpid", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
             if (strcmp(name, kernel_names[i]) == 0)

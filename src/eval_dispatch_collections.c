@@ -209,7 +209,8 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             if (beg < 0) beg += alen;
             if (end < 0) end += alen;
             if (!r->exclusive) end++;
-            if (beg < 0) beg = 0; if (end > alen) end = alen;
+            if (beg < 0) beg = 0;
+            if (end > alen) end = alen;
             /* Simple: rebuild array */
             Value repl = args[1].kind == VAL_ARRAY ? args[1] : val_array_new();
             if (args[1].kind != VAL_ARRAY) val_array_push(&repl, args[1]);

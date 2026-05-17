@@ -5,7 +5,9 @@
 #include "utf8.h"
 #include <math.h>
 
+#include <dirent.h>
 #include <fcntl.h>
+#include <glob.h>
 #include <limits.h>
 #include <errno.h>
 #include <stdio.h>
@@ -13,6 +15,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -85,6 +88,117 @@ static Value wrong_arg_count(Eval *ev, Node *site, int given, int expected) {
     return eval_raise_class(ev, site, "ArgumentError",
                             "wrong number of arguments (given %d, expected %d)",
                             given, expected);
+}
+
+#ifndef GLOB_BRACE
+#define GLOB_BRACE 0
+#endif
+
+/* Recursive glob for ** patterns — appends matches to result array. */
+static void glob_recursive(Arena *arena, const char *base, const char *rest,
+                           int sort, Value *result) {
+    DIR *d = opendir(base[0] ? base : ".");
+    if (!d) return;
+
+    char pattern[PATH_MAX];
+    const char *after_stars = rest;
+    while (*after_stars == '/') after_stars++;
+
+    struct dirent **entries = NULL;
+    size_t n = 0, cap = 0;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        if (de->d_name[0] == '.' &&
+            (de->d_name[1] == '\0' || (de->d_name[1] == '.' && de->d_name[2] == '\0')))
+            continue;
+        if (n >= cap) {
+            cap = cap ? cap * 2 : 16;
+            entries = realloc(entries, cap * sizeof(*entries));
+        }
+        size_t sz = offsetof(struct dirent, d_name) + strlen(de->d_name) + 1;
+        entries[n] = malloc(sz);
+        memcpy(entries[n], de, sz);
+        n++;
+    }
+    closedir(d);
+
+    if (sort && n > 1) {
+        for (size_t i = 0; i < n - 1; i++)
+            for (size_t j = i + 1; j < n; j++)
+                if (strcmp(entries[i]->d_name, entries[j]->d_name) > 0) {
+                    struct dirent *tmp = entries[i];
+                    entries[i] = entries[j];
+                    entries[j] = tmp;
+                }
+    }
+
+    for (size_t i = 0; i < n; i++) {
+        char child[PATH_MAX];
+        if (base[0])
+            snprintf(child, sizeof(child), "%s/%s", base, entries[i]->d_name);
+        else
+            snprintf(child, sizeof(child), "%s", entries[i]->d_name);
+
+        struct stat st;
+        int is_dir = (stat(child, &st) == 0 && S_ISDIR(st.st_mode));
+
+        if (*after_stars) {
+            if (snprintf(pattern, sizeof(pattern), "%s/%s", child, after_stars) >= (int)sizeof(pattern)) {
+                free(entries[i]); i++; continue;
+            }
+            glob_t gl;
+            memset(&gl, 0, sizeof(gl));
+            if (glob(pattern, GLOB_BRACE | GLOB_NOSORT, NULL, &gl) == 0) {
+                for (size_t k = 0; k < gl.gl_pathc; k++)
+                    val_array_push(result, val_string(arena, gl.gl_pathv[k]));
+            }
+            globfree(&gl);
+        } else {
+            val_array_push(result, val_string(arena, child));
+        }
+
+        if (is_dir)
+            glob_recursive(arena, child, rest, sort, result);
+
+        free(entries[i]);
+    }
+    free(entries);
+}
+
+static Value dir_glob(Arena *arena, const char *pattern, int sort) {
+    Value result = val_array_new();
+
+    const char *dstar = strstr(pattern, "**");
+    if (dstar) {
+        char base[PATH_MAX];
+        size_t prefix_len = (size_t)(dstar - pattern);
+        while (prefix_len > 0 && pattern[prefix_len - 1] == '/') prefix_len--;
+        if (prefix_len == 0) {
+            base[0] = '\0';
+        } else {
+            if (prefix_len >= sizeof(base)) prefix_len = sizeof(base) - 1;
+            memcpy(base, pattern, prefix_len);
+            base[prefix_len] = '\0';
+        }
+        const char *rest = dstar + 2;
+        glob_recursive(arena, base, rest, sort, &result);
+        if (*rest == '\0' && base[0]) {
+            struct stat st;
+            if (stat(base, &st) == 0)
+                val_array_push(&result, val_string(arena, base));
+        }
+    } else {
+        glob_t gl;
+        memset(&gl, 0, sizeof(gl));
+        int flags = GLOB_BRACE;
+        if (!sort) flags |= GLOB_NOSORT;
+        if (glob(pattern, flags, NULL, &gl) == 0) {
+            for (size_t i = 0; i < gl.gl_pathc; i++)
+                val_array_push(&result, val_string(arena, gl.gl_pathv[i]));
+        }
+        globfree(&gl);
+    }
+    return result;
 }
 
 static int tty_enable_reline_mode(int fd, struct termios *saved) {
@@ -189,7 +303,7 @@ static char *append_regexp_union_piece(char *dst, Value v) {
     return dst;
 }
 
-static Value default_console_winsize(Arena *arena) {
+static Value default_console_winsize(Arena *arena __attribute__((unused))) {
     Value size = val_array_new();
     val_array_push(&size, val_int(24));
     val_array_push(&size, val_int(80));
@@ -2016,6 +2130,83 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             *out = val_int(0);
             return 1;
         }
+        if (strcmp(name, "glob") == 0) {
+            if (argc < 1 || argc > 2) {
+                *out = eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 1..2)", argc);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            int sort = 1;
+            if (argc == 2 && args[1].kind == VAL_INT)
+                sort = (args[1].ival & 8 /* File::FNM_CASEFOLD or sort disable */) == 0;
+            *out = dir_glob(ev->arena, args[0].sval ? args[0].sval : "", sort);
+            if (blk) {
+                for (size_t i = 0; i < out->array->len; i++) {
+                    Value elem = out->array->elems[i];
+                    Value r = call_block(ev, env, *blk, &elem, 1, site);
+                    if (val_is_signal(r)) { *out = r; return 1; }
+                }
+                *out = val_nil();
+            }
+            return 1;
+        }
+        if (strcmp(name, "children") == 0 || strcmp(name, "entries") == 0) {
+            if (argc < 1 || argc > 2) {
+                *out = eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 1..2)", argc);
+                return 1;
+            }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            int include_dots = strcmp(name, "entries") == 0;
+            DIR *d = opendir(args[0].sval ? args[0].sval : ".");
+            if (!d) {
+                *out = eval_raise_class(ev, site, errno_class_name(errno), "%s - %s",
+                                        strerror(errno), args[0].sval);
+                return 1;
+            }
+            Value arr = val_array_new();
+            struct dirent *de;
+            while ((de = readdir(d)) != NULL) {
+                if (!include_dots &&
+                    (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0))
+                    continue;
+                val_array_push(&arr, val_string(ev->arena, de->d_name));
+            }
+            closedir(d);
+            *out = arr;
+            return 1;
+        }
+        if (strcmp(name, "exist?") == 0 || strcmp(name, "exists?") == 0) {
+            if (argc != 1) { *out = wrong_arg_count(ev, site, argc, 1); return 1; }
+            if (args[0].kind != VAL_STRING) {
+                *out = implicit_string_conversion_error(ev, args[0], site);
+                return 1;
+            }
+            struct stat st;
+            *out = (stat(args[0].sval, &st) == 0 && S_ISDIR(st.st_mode)) ? val_true() : val_false();
+            return 1;
+        }
+        if (strcmp(name, "home") == 0) {
+            if (argc > 1) {
+                *out = eval_raise_class(ev, site, "ArgumentError",
+                                        "wrong number of arguments (given %d, expected 0..1)", argc);
+                return 1;
+            }
+            const char *home = getenv("HOME");
+            if (!home || home[0] == '\0') {
+                *out = eval_raise_class(ev, site, "ArgumentError", "HOME not set");
+                return 1;
+            }
+            *out = val_string(ev->arena, home);
+            return 1;
+        }
     }
     if (strcmp(recv.klass->name, "File") == 0) {
         if (strcmp(name, "basename") == 0) {
@@ -2903,7 +3094,8 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                             if (arr.array->elems[ai].kind == VAL_SYMBOL && strcmp(arr.array->elems[ai].sval, mname) == 0) { dup = 1; break; }
                         if (!dup) val_array_push(&arr, val_symbol(mname));
                     }
-                    if (!end) break; p = end + 1;
+                    if (!end) break;
+                    p = end + 1;
                 }
             }
         }
@@ -2948,7 +3140,8 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             while (*p) {
                 const char *end = strchr(p, ','); size_t len = end ? (size_t)(end-p) : strlen(p);
                 if (strlen(mname) == len && strncmp(mname, p, len) == 0) { is_primitive = 1; break; }
-                if (!end) break; p = end + 1;
+                if (!end) break;
+                p = end + 1;
             }
         }
         if (!ruby_class_find_instance_method(recv.klass, mname, &method_val, &owner) && !is_primitive) {
@@ -3122,7 +3315,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     for (EnvEntry *e = scan->vars; e; e = e->next) {
                         const char *n2 = e->name;
                         size_t nlen = strlen(n2);
-                        if (nlen == 0 || n2[0] == '_' && n2[1] == '_') continue;
+                        if (nlen == 0 || (n2[0] == '_' && n2[1] == '_')) continue;
                         if (n2[0] != '@' && n2[0] != '$' && n2[0] != ':' &&
                             strcmp(n2, "self") != 0 && strcmp(n2, "true") != 0 &&
                             strcmp(n2, "false") != 0 && strcmp(n2, "nil") != 0 &&
