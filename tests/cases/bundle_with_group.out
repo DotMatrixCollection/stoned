@@ -1,0 +1,7 @@
+Using main (path: /tmp/stoned_bundle_with_group_/main_gem)
+Using opt (path: /tmp/stoned_bundle_with_group_/opt_gem)
+Bundle complete! 2 gems now installed.
+--LIST--
+Gems included by the bundle:
+  * main (path)
+  * opt (path)

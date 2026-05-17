@@ -130,11 +130,18 @@ def bundle_without_groups
   ENV["BUNDLE_WITHOUT"].to_s.split(/[:\s,]+/).map(&:strip).reject(&:empty?)
 end
 
+def bundle_with_groups
+  ENV["BUNDLE_WITH"].to_s.split(/[:\s,]+/).map(&:strip).reject(&:empty?)
+end
+
 def active_dependencies(dsl)
   excluded = bundle_without_groups
+  included = bundle_with_groups
   normalized_dependencies(dsl).reject do |dep|
     groups = dep[:groups] || []
-    groups.any? { |group| excluded.include?(group) }
+    excluded_hit = groups.any? { |group| excluded.include?(group) }
+    included_hit = groups.any? { |group| included.include?(group) }
+    excluded_hit && !included_hit
   end
 end
 

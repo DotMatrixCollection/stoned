@@ -1,0 +1,4 @@
+Using demo (path: /tmp/stoned_bundle_exec_missing_/demo_gem)
+Bundle complete! 1 gems now installed.
+--EXEC--
+Command not found: missing-tool
