@@ -2289,6 +2289,15 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         Value fn;
+        /* Check kernel-mangled name first (def Foo() when Foo is also a class constant) */
+        {
+            size_t nlen = strlen(name);
+            char *mkey = arena_alloc(ev->arena, nlen + 9);
+            memcpy(mkey, "__kern__", 8);
+            memcpy(mkey + 8, name, nlen + 1);
+            if (env_get(ev->top_env, mkey, &fn) && fn.kind == VAL_METHOD)
+                goto call_method;
+        }
         if (env_get(env, name, &fn) && fn.kind == VAL_METHOD)
             goto call_method;
 

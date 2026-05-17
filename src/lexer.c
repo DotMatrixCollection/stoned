@@ -423,8 +423,8 @@ static Token scan_symbol(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
     size_t sym_start = l->pos;
     if (isalpha(peek_ch(l)) || peek_ch(l) == '_') {
         while (isalnum(peek_ch(l)) || peek_ch(l) == '_') advance(l);
-        /* allow trailing ? or ! */
-        if (peek_ch(l) == '?' || peek_ch(l) == '!') advance(l);
+        /* allow trailing ?, !, or = (for setter method symbols like :name=) */
+        if (peek_ch(l) == '?' || peek_ch(l) == '!' || peek_ch(l) == '=') advance(l);
     } else if (peek_ch(l) == '@') {
         advance(l);
         if (peek_ch(l) == '@') advance(l);

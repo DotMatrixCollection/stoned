@@ -3,6 +3,7 @@
 #include "sema.h"
 #include "version.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <string.h>
@@ -986,8 +987,25 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                         }
                     }
                 } else {
-                    env_define(ev->arena, env, node->def.name,
-                               val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
+                    /* Don't overwrite existing class/module constants with top-level defs.
+                       In Ruby, def Foo() defines a kernel method that doesn't shadow the Foo constant. */
+                    int is_const_name = node->def.name && isupper((unsigned char)node->def.name[0]);
+                    Value existing_const = val_nil();
+                    int would_shadow = is_const_name &&
+                        env_get(ev->top_env, node->def.name, &existing_const) &&
+                        existing_const.kind == VAL_CLASS;
+                    if (!would_shadow) {
+                        env_define(ev->arena, env, node->def.name,
+                                   val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
+                    } else {
+                        /* Store as private kernel method under a mangled key that doesn't shadow the constant */
+                        size_t nlen = strlen(node->def.name);
+                        char *mkey = arena_alloc(ev->arena, nlen + 9);
+                        memcpy(mkey, "__kern__", 8);
+                        memcpy(mkey + 8, node->def.name, nlen + 1);
+                        env_define(ev->arena, ev->top_env, mkey,
+                                   val_method(node, ev->top_env, METHOD_PRIVATE, ev->current_file));
+                    }
                 }
             }
             return val_nil();
