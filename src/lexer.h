@@ -210,6 +210,9 @@ typedef struct {
     LexLocalVar *local_vars;
     int          had_space;   /* set by skip_whitespace; used by '/' scanner */
     int          prev_was_dot; /* previous meaningful token was DOT/ANDDOT */
+
+    /* close char for %(...) / %{...} / %[...] interpolated string literals */
+    char         percent_close[LEX_INTERP_DEPTH];
 } Lexer;
 
 void  lexer_init(Lexer *l, const char *src, size_t len, Arena *arena);

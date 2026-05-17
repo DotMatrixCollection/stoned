@@ -1,0 +1,339 @@
+#!/usr/bin/env ruby
+# bundle - stoned minimal Bundler implementation
+# Implements: install, exec, version, check, list
+
+require "rubygems"
+
+BUNDLE_VERSION = "2.5.0.stoned"
+GEM_SERVER = "https://rubygems.org"
+LOCKFILE   = "Gemfile.lock"
+GEMFILE    = ENV["BUNDLE_GEMFILE"] || "Gemfile"
+
+# ── Gemfile DSL ─────────────────────────────────────────────────────────────
+
+class GemfileDSL
+  attr_reader :dependencies, :sources, :ruby_version, :groups
+
+  def initialize
+    @dependencies = []
+    @sources      = ["https://rubygems.org"]
+    @ruby_version = nil
+    @groups       = {}
+    @current_group = nil
+  end
+
+  def source(url, &block)
+    @sources << url unless @sources.include?(url)
+    instance_eval(&block) if block_given?
+  end
+
+  def ruby(version, **opts)
+    @ruby_version = version
+  end
+
+  def gem(name, *reqs, **opts)
+    path    = opts.delete(:path)
+    git     = opts.delete(:git)
+    branch  = opts.delete(:branch)
+    groups  = [opts.delete(:group) || opts.delete(:groups) || @current_group].flatten.compact
+    require_opt = opts.delete(:require)
+
+    @dependencies << {
+      name:    name.to_s,
+      reqs:    reqs.map(&:to_s).reject(&:empty?),
+      path:    path,
+      git:     git,
+      branch:  branch,
+      groups:  groups.map(&:to_s),
+      require: require_opt,
+    }
+  end
+
+  def group(*names, &block)
+    @current_group = names.map(&:to_s)
+    instance_eval(&block) if block_given?
+    @current_group = nil
+  end
+
+  def gemspec(name: nil, path: ".", **opts)
+    root = File.expand_path(path)
+    specs = Dir.glob(File.join(root, "*.gemspec"))
+    specs.each do |s|
+      Gem::Specification.reset!
+      Gem::Specification._loading_spec = nil
+      load s
+      spec = Gem::Specification._loading_spec
+      next unless spec
+      @dependencies << {
+        name:   spec.name,
+        reqs:   [],
+        path:   root,
+        groups: [],
+        spec:   spec,
+      }
+      (spec.runtime_dependencies || []).each do |dep|
+        @dependencies << {
+          name:  dep.name,
+          reqs:  [dep.requirement.to_s],
+          groups: [],
+        }
+      end
+    end
+  end
+
+  def self.evaluate(gemfile_path)
+    dsl = new
+    dsl.instance_eval(File.read(gemfile_path), gemfile_path)
+    dsl
+  end
+end
+
+# ── Lockfile ─────────────────────────────────────────────────────────────────
+
+class Lockfile
+  attr_reader :gems
+
+  def initialize
+    @gems = {}
+  end
+
+  def self.read(path)
+    lf = new
+    return lf unless File.exist?(path)
+    File.readlines(path).each do |line|
+      if line =~ /^\s{4}(\S+)\s+\(([^)]+)\)/
+        lf.gems[$1] = $2
+      end
+    end
+    lf
+  end
+
+  def self.write(path, resolved)
+    lines = ["GEM", "  specs:"]
+    resolved.sort_by { |k, _| k }.each do |name, ver|
+      lines << "    #{name} (#{ver})"
+    end
+    lines << ""
+    lines << "BUNDLED WITH"
+    lines << "   #{BUNDLE_VERSION}"
+    lines << ""
+    File.write(path, lines.join("\n"))
+  end
+end
+
+# ── Resolution ───────────────────────────────────────────────────────────────
+
+def check_tool(name)
+  ENV["PATH"].to_s.split(":").any? do |dir|
+    path = File.join(dir, name)
+    File.file?(path) && File.executable?(path)
+  end
+end
+
+def fetch_url(url)
+  out = `curl -fsSL #{url} 2>/dev/null`
+  out.empty? ? nil : out
+end
+
+def fetch_version(gem_name, requirements)
+  Gem::Specification.reset!
+  local = Gem::Specification.find_by_name(gem_name)
+  return local.version.to_s if local
+
+  body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{gem_name}.json")
+  return nil unless body
+  body =~ /"version"\s*:\s*"([^"]+)"/ ? $1 : nil
+end
+
+def install_gem_from_server(gem_name, version)
+  gem_full = "#{gem_name}-#{version}"
+  url      = "#{GEM_SERVER}/gems/#{gem_full}.gem"
+  home     = Gem.home
+  gems_dir = File.join(home, "gems")
+  specs_dir = File.join(home, "specifications")
+  bin_dir  = File.join(home, "bin")
+  [home, gems_dir, specs_dir, bin_dir].each { |d| system("mkdir", "-p", d) unless File.directory?(d) }
+
+  tmp = "/tmp/stoned_bundle_install_#{gem_name}_#{$$}"
+  system("mkdir", "-p", tmp)
+  begin
+    gem_path = File.join(tmp, "#{gem_full}.gem")
+    return false unless system("curl", "-fsSL", "-o", gem_path, url)
+    return false unless system("tar", "-xf", gem_path, "-C", tmp)
+    install_dir = File.join(gems_dir, gem_full)
+    system("mkdir", "-p", install_dir)
+    data_tar = File.join(tmp, "data.tar.gz")
+    return false unless File.exist?(data_tar)
+    return false unless system("tar", "-xzf", data_tar, "-C", install_dir)
+    spec_path = File.join(specs_dir, "#{gem_full}.gemspec")
+    unless File.exist?(spec_path)
+      File.write(spec_path, "Gem::Specification.new do |s|\n  s.name = #{gem_name.inspect}\n  s.version = Gem::Version.new(#{version.inspect})\n  s.require_paths = [\"lib\"]\nend\n")
+    end
+    bin_src = File.join(install_dir, "bin")
+    if File.directory?(bin_src)
+      Dir.children(bin_src).each do |exe|
+        wrapper = File.join(bin_dir, exe)
+        exe_path = File.join(bin_src, exe)
+        File.write(wrapper, "#!/usr/bin/env ruby\nload #{exe_path.inspect}\n")
+        system("chmod", "+x", wrapper)
+      end
+    end
+    Gem::Specification.reset!
+    true
+  ensure
+    system("rm", "-rf", tmp)
+  end
+end
+
+def resolve_and_install(dsl, verbose: true)
+  resolved = {}
+  errors   = []
+
+  dsl.dependencies.each do |dep|
+    name = dep[:name]
+    next if resolved.key?(name)
+
+    if dep[:path]
+      # Path gem — add to load path directly
+      lib = File.join(File.expand_path(dep[:path]), "lib")
+      $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
+      resolved[name] = dep[:spec]&.version&.to_s || "path"
+      puts "Using #{name} (path: #{dep[:path]})" if verbose
+      next
+    end
+
+    if dep[:git]
+      puts "WARNING: git sources not yet supported — skipping #{name}" if verbose
+      next
+    end
+
+    Gem::Specification.reset!
+    spec = Gem::Specification.find_by_name(name)
+    if spec
+      resolved[name] = spec.version.to_s
+      puts "Using #{name} #{spec.version}" if verbose
+    else
+      version = fetch_version(name, dep[:reqs])
+      unless version
+        errors << "Could not find gem '#{name}'"
+        next
+      end
+      puts "Fetching #{name} #{version}..." if verbose
+      if install_gem_from_server(name, version)
+        resolved[name] = version
+        puts "Installed #{name} #{version}" if verbose
+      else
+        errors << "Failed to install #{name} #{version}"
+      end
+    end
+  end
+
+  errors.each { |e| STDERR.puts "ERROR: #{e}" }
+  errors.empty? ? resolved : nil
+end
+
+def setup_load_path(dsl, lockfile)
+  dsl.dependencies.each do |dep|
+    name = dep[:name]
+    if dep[:path]
+      lib = File.join(File.expand_path(dep[:path]), "lib")
+      $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
+      next
+    end
+    version = lockfile.gems[name]
+    next unless version
+    gem_dir = File.join(Gem.home, "gems", "#{name}-#{version}", "lib")
+    $LOAD_PATH.unshift(gem_dir) unless $LOAD_PATH.include?(gem_dir) || !File.directory?(gem_dir)
+  end
+end
+
+# ── Commands ─────────────────────────────────────────────────────────────────
+
+command = ARGV[0]
+args    = ARGV[1..]
+
+case command
+when "version", "-v", "--version"
+  puts "Bundler version #{BUNDLE_VERSION}"
+
+when "install", "i"
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  unless check_tool("curl") && check_tool("tar")
+    STDERR.puts "curl and tar are required for bundle install"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  resolved = resolve_and_install(dsl, verbose: true)
+  if resolved
+    Lockfile.write(LOCKFILE, resolved)
+    puts "Bundle complete! #{resolved.length} gems now installed."
+  else
+    STDERR.puts "Bundle install failed."
+    exit 1
+  end
+
+when "exec"
+  if args.empty?
+    STDERR.puts "Usage: bundle exec <command>"
+    exit 1
+  end
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  lf  = Lockfile.read(LOCKFILE)
+  setup_load_path(dsl, lf)
+  # Set RUBYOPT to wire load path for sub-processes
+  load File.expand_path(args[0]) if args[0].end_with?(".rb") && File.exist?(args[0])
+
+when "check"
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  missing = dsl.dependencies.reject do |dep|
+    dep[:path] || Gem::Specification.find_by_name(dep[:name])
+  end
+  if missing.empty?
+    puts "The Gemfile's dependencies are satisfied"
+  else
+    STDERR.puts "The following gems are missing:"
+    missing.each { |d| STDERR.puts "  * #{d[:name]}" }
+    exit 1
+  end
+
+when "list"
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  Gem::Specification.reset!
+  puts "Gems included by the bundle:"
+  dsl.dependencies.each do |dep|
+    spec = Gem::Specification.find_by_name(dep[:name])
+    puts "  * #{dep[:name]} (#{spec ? spec.version : "not installed"})"
+  end
+
+when "outdated", "update", "add", "remove", "open", "console"
+  STDERR.puts "bundle #{command}: not yet implemented"
+  exit 1
+
+when nil, "help", "--help", "-h"
+  puts "Usage: bundle COMMAND"
+  puts ""
+  puts "Commands:"
+  puts "  install    Install gems from Gemfile"
+  puts "  exec FILE  Run a Ruby file with bundled gems on the load path"
+  puts "  check      Verify Gemfile dependencies are satisfied"
+  puts "  list       List gems included in the bundle"
+  puts "  version    Print Bundler version"
+else
+  STDERR.puts "Unknown command: #{command}"
+  exit 1
+end

@@ -2244,9 +2244,34 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  SEPARATOR = '/'\n"
         "  PATH_SEPARATOR = ':'\n"
         "  ALT_SEPARATOR = nil\n"
+        "  FNM_NOESCAPE  = 0x01\n"
+        "  FNM_PATHNAME  = 0x02\n"
+        "  FNM_DOTMATCH  = 0x04\n"
+        "  FNM_CASEFOLD  = 0x08\n"
+        "  FNM_EXTGLOB   = 0x20\n"
         "end\n"
         "class IO\n"
         "  NULL = '/dev/null'\n"
+        "end\n";
+
+    static const char *prelude_signal =
+        "module Signal\n"
+        "  def self.trap(sig, *args, &blk); end\n"
+        "  def self.list\n"
+        "    {'HUP'=>1,'INT'=>2,'QUIT'=>3,'ILL'=>4,'TRAP'=>5,'ABRT'=>6,'IOT'=>6,\n"
+        "     'BUS'=>7,'FPE'=>8,'KILL'=>9,'USR1'=>10,'SEGV'=>11,'USR2'=>12,\n"
+        "     'PIPE'=>13,'ALRM'=>14,'TERM'=>15,'CHLD'=>17,'CONT'=>18,'STOP'=>19,\n"
+        "     'TSTP'=>20,'TTIN'=>21,'TTOU'=>22,'WINCH'=>28}\n"
+        "  end\n"
+        "end\n"
+        "module GC\n"
+        "  def self.compact; nil; end\n"
+        "  def self.start; nil; end\n"
+        "  def self.stat; {}; end\n"
+        "end\n"
+        "module ObjectSpace\n"
+        "  def self.each_object(klass = nil); end\n"
+        "  def self.count_objects; {}; end\n"
         "end\n";
 
     static const char *prelude_process_status =
@@ -2264,13 +2289,15 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
 
     size_t prelude_len =
         strlen(prelude_comparable) + strlen(prelude_enumerable) + strlen(prelude_core) +
-        strlen(prelude_file_constants) + strlen(prelude_process_status) + 2;
+        strlen(prelude_file_constants) + strlen(prelude_signal) +
+        strlen(prelude_process_status) + 2;
     char *prelude = arena_alloc(arena, prelude_len);
     prelude[0] = '\0';
     strcat(prelude, prelude_comparable);
     strcat(prelude, prelude_enumerable);
     strcat(prelude, prelude_core);
     strcat(prelude, prelude_file_constants);
+    strcat(prelude, prelude_signal);
     strcat(prelude, prelude_process_status);
 
     Parser parser;

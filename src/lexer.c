@@ -513,11 +513,18 @@ static Token scan_interp_str_content(Lexer *l) {
     size_t   start = l->pos;
     uint32_t sline = l->line;
     uint32_t scol  = col_of(l, start);
-    char close_ch = (imode_top(l) == LMODE_INTERP_BACKTICK) ? '`' : '"';
+    char close_ch;
+    if (imode_top(l) == LMODE_INTERP_BACKTICK)
+        close_ch = '`';
+    else if (l->percent_close[l->imode_depth - 1])
+        close_ch = l->percent_close[l->imode_depth - 1];
+    else
+        close_ch = '"';
 
     /* Closing delimiter or end-of-string before any chars → INTERP_END */
     if (at_end(l) || peek_ch(l) == close_ch) {
         if (!at_end(l)) advance(l);
+        if (l->imode_depth > 0) l->percent_close[l->imode_depth - 1] = '\0';
         imode_pop(l);
         Token t; memset(&t, 0, sizeof(t));
         t.kind = TOK_INTERP_END;
@@ -1005,6 +1012,48 @@ static Token scan(Lexer *l) {
             if (peek_ch(l) == 'w') return scan_percent_list(l, start, sline, scol, TOK_WORDS);
             if (peek_ch(l) == 'i') return scan_percent_list(l, start, sline, scol, TOK_SYMBOLS);
             if (peek_ch(l) == 'r') return scan_percent_regexp(l, start, sline, scol);
+            /* %() %{} %[] %<> and %Q() — interpolated string literals */
+            if ((l->state == LEX_EXPR_BEG || l->state == LEX_EXPR_MID ||
+                 l->state == LEX_EXPR_ARG) &&
+                (peek_ch(l) == '(' || peek_ch(l) == '{' || peek_ch(l) == '[' ||
+                 peek_ch(l) == '<' || peek_ch(l) == 'Q' || peek_ch(l) == 'q')) {
+                char c = advance(l);
+                int interp = (c != 'q');
+                if (c == 'Q' || c == 'q') { c = advance(l); } /* consume delimiter */
+                char close_ch;
+                switch (c) {
+                    case '(': close_ch = ')'; break;
+                    case '{': close_ch = '}'; break;
+                    case '[': close_ch = ']'; break;
+                    case '<': close_ch = '>'; break;
+                    default:  close_ch = c;   break;
+                }
+                if (!interp) {
+                    /* %q() — single-quoted, scan to close */
+                    size_t cs = l->pos;
+                    int depth = 1;
+                    while (!at_end(l) && depth > 0) {
+                        char ch = advance(l);
+                        if (ch == '\\' && !at_end(l)) { advance(l); continue; }
+                        if (ch == c) depth++;
+                        else if (ch == close_ch) depth--;
+                    }
+                    Token t = make_tok(l, TOK_STRING, start, sline, scol);
+                    size_t raw_len = l->pos - cs - (depth == 0 ? 1 : 0);
+                    char *buf = arena_alloc(l->arena, raw_len + 1);
+                    memcpy(buf, l->src + cs, raw_len);
+                    buf[raw_len] = '\0';
+                    t.sval = buf;
+                    l->state = LEX_EXPR_END;
+                    return t;
+                } else {
+                    /* %()/etc — interpolated string, enter LMODE_INTERP_STR with close_ch tracked */
+                    imode_push(l, LMODE_INTERP_STR);
+                    l->percent_close[l->imode_depth - 1] = close_ch;
+                    Token t = make_tok(l, TOK_INTERP_BEG, start, sline, scol);
+                    return t;
+                }
+            }
             l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_PERCENT);
         case '^':

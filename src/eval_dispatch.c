@@ -1700,6 +1700,26 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (!blk) return eval_raise_class(ev, site, "LocalJumpError", "no block given");
         return call_block(ev, env, *blk, &recv, 1, site);
     }
+    if (strcmp(name, "instance_eval") == 0 ||
+        strcmp(name, "class_eval") == 0 ||
+        strcmp(name, "module_eval") == 0) {
+        if (blk) {
+            /* Block form: evaluate block with self = receiver */
+            Env *ieval_env = env_new(ev->arena, blk->block.closure, 0);
+            env_set(ev->arena, ieval_env, "self", recv);
+            Value bargs[1] = { recv };
+            return call_block(ev, ieval_env, *blk, bargs, 1, site);
+        }
+        if (argc >= 1 && args[0].kind == VAL_STRING) {
+            /* String form: eval string with self = receiver */
+            Env *ieval_env = env_new(ev->arena, env, 0);
+            env_set(ev->arena, ieval_env, "self", recv);
+            const char *file = argc >= 2 && args[1].kind == VAL_STRING ? args[1].sval : ev->current_file;
+            int64_t line = argc >= 3 && args[2].kind == VAL_INT ? args[2].ival : 1;
+            return eval_string_in_context(ev, env, args[0].sval, ieval_env, file, line, site);
+        }
+        return val_nil();
+    }
     if (strcmp(name, "object_id") == 0) {
         if (recv.kind == VAL_OBJECT) return val_int((int64_t)(uintptr_t)recv.obj);
         if (recv.kind == VAL_INT) return val_int(recv.ival * 2 + 1);
@@ -1799,6 +1819,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             static const char *obj_builtins[] = {
                 "class", "nil?", "is_a?", "kind_of?", "instance_of?", "respond_to?",
                 "equal?", "==", "!=", "freeze", "frozen?", "itself", "tap", "then", "yield_self", "object_id",
+            "instance_eval", "class_eval", "module_eval",
                 "send", "__send__", "public_send", "extend", "methods", "public_methods",
                 "private_methods", "protected_methods", "method", "inspect", "to_s", NULL
             };
@@ -2256,12 +2277,22 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                 return builtin_kernel(ev, env, name, args, argc, blk, node);
         }
 
+        Value self;
+        if (!env_get(env, "self", &self)) self = val_nil();
+
+        /* Check if self has an instance method with this name — it takes
+           priority over top-level defs (e.g. instance_eval DSL patterns). */
+        if (self.kind == VAL_OBJECT && self.obj->klass.kind == VAL_CLASS) {
+            Value m; RubyClass *owner;
+            if (ruby_class_find_instance_method(self.obj->klass.klass, name, &m, &owner))
+                return dispatch_method(ev, env, self, name, args, argc, blk, node, 0, 0);
+        }
+
         Value fn;
         if (env_get(env, name, &fn) && fn.kind == VAL_METHOD)
             goto call_method;
 
-        Value self;
-        if (env_get(env, "self", &self)) {
+        if (self.kind != VAL_NIL) {
             return dispatch_method(ev, env, self, name, args, argc, blk, node, 0, 0);
         }
 

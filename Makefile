@@ -33,6 +33,7 @@ install: $(TARGET)
 	install -m 755 "$(TARGET)" "$(DESTDIR)$(PREFIX)/bin/stoned"
 	ln -sf stoned "$(DESTDIR)$(PREFIX)/bin/ruby"
 	install -m 755 exe/gem "$(DESTDIR)$(PREFIX)/bin/gem"
+	install -m 755 exe/bundle "$(DESTDIR)$(PREFIX)/bin/bundle"
 	install -m 644 rbconfig.rb "$(DESTDIR)$(PREFIX)/lib/ruby/$(STONED_RUBY_VERSION)/rbconfig.rb"
 
 mise-install: $(TARGET)
