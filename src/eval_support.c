@@ -1739,6 +1739,56 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "end\n";
         return eval_ruby_string(ev, monitor_shim, "monitor_shim", site);
     }
+    if (strcmp(path, "strscan") == 0 || strcmp(path, "strscan.rb") == 0) {
+        static const char *strscan_shim =
+"class StringScanner\n"
+"  def initialize(str)\n"
+"    @str = str.to_s\n"
+"    @pos = 0\n"
+"  end\n"
+"  def string; @str; end\n"
+"  def pos; @pos; end\n"
+"  def pos=(n); @pos = n.to_i; end\n"
+"  def eos?; @pos >= @str.length; end\n"
+"  def reset; @pos = 0; self; end\n"
+"  def rest; @str[@pos..]; end\n"
+"  def rest_size; @str.length - @pos; end\n"
+"  def peek(len); @str[@pos, len] || ''; end\n"
+"  def getch\n"
+"    return nil if eos?\n"
+"    c = @str[@pos]; @pos += 1; c\n"
+"  end\n"
+"  def get_byte; getch; end\n"
+"  def scan(pattern)\n"
+"    m = @str[@pos..].match(Regexp.new('\\A(?:' + pattern.source + ')'))\n"
+"    return nil unless m\n"
+"    @matched = m[0]; @pos += @matched.length; @matched\n"
+"  end\n"
+"  def scan_until(pattern)\n"
+"    m = @str[@pos..].match(pattern)\n"
+"    return nil unless m\n"
+"    end_pos = @pos + m.end(0)\n"
+"    @matched = @str[@pos...end_pos]; @pos = end_pos; @matched\n"
+"  end\n"
+"  def skip(pattern)\n"
+"    m = @str[@pos..].match(Regexp.new('\\A(?:' + pattern.source + ')'))\n"
+"    return nil unless m\n"
+"    @matched = m[0]; @pos += @matched.length; @matched.length\n"
+"  end\n"
+"  def check(pattern)\n"
+"    m = @str[@pos..].match(Regexp.new('\\A(?:' + pattern.source + ')'))\n"
+"    m ? m[0] : nil\n"
+"  end\n"
+"  def matched; @matched; end\n"
+"  def matched?; !@matched.nil?; end\n"
+"  def matched_size; @matched ? @matched.length : nil; end\n"
+"  def pre_match; @pos - (@matched || '').length >= 0 ? @str[0...(@pos - (@matched || '').length)] : nil; end\n"
+"  def post_match; @str[@pos..]; end\n"
+"  def [](n); @matched; end\n"
+"  def inspect; \"#<StringScanner #{@pos}/#{@str.length}>\"; end\n"
+"end\n";
+        return eval_ruby_string(ev, strscan_shim, "strscan_shim", site);
+    }
     if (strcmp(path, "rubygems") == 0 || strcmp(path, "rubygems.rb") == 0) {
         static const char *rubygems_shim =
 "module Gem\n"

@@ -1350,7 +1350,7 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         if (!env_get(env, "self", &self) || self.kind != VAL_CLASS || !self.klass->is_module)
             return eval_raise_class(ev, site, "TypeError", "module_function must be called in a module body");
         if (argc == 0)
-            return eval_raise_class(ev, site, "ArgumentError", "module_function requires at least one method name");
+            return val_nil(); /* no-arg form sets module_function mode for subsequent defs — stub */
         for (int i = 0; i < argc; i++) {
             const char *mname = (args[i].kind == VAL_SYMBOL || args[i].kind == VAL_STRING) ? args[i].sval : NULL;
             if (!mname) continue;

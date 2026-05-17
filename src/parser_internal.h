@@ -24,6 +24,7 @@ Node *parse_body(Parser *p, int stop_at_rbrace);
 Node *wrap_rescue_ensure(Parser *p, Span s, Node *body);
 NodeList *parse_args(Parser *p);
 NodeList *parse_params(Parser *p);
+NodeList *parse_params_unparen(Parser *p, uint32_t def_line);
 Node *parse_block(Parser *p);
 
 #endif

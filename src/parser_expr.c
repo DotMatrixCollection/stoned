@@ -416,8 +416,11 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
             BP bp = infix_bp(TOK_QUESTION);
             if (bp.lbp < min_bp) break;
             advance(p);
+            skip_terminators(p);  /* allow newline after ? */
             Node *then_expr = parse_expr(p, 0);
+            skip_terminators(p);  /* allow newline before : */
             expect(p, TOK_COLON, "expected ':' in ternary");
+            skip_terminators(p);  /* allow newline after : */
             Node *else_expr = parse_expr(p, bp.rbp);
             Node *n = node_new(p->arena, NODE_IF, left->span);
             n->cond.cond = left;
@@ -870,6 +873,23 @@ NodeList *parse_params(Parser *p) {
         Node *param = parse_param_node(p, 1);
         params = nodelist_append(p->arena, params, param);
         if (!match(p, TOK_COMMA)) break;
+    }
+    return params;
+}
+
+NodeList *parse_params_unparen(Parser *p, uint32_t def_line) {
+    NodeList *params = NULL;
+    Token nxt = peek(p);
+    while (nxt.line == def_line &&
+           !check(p, TOK_PIPE) && !check(p, TOK_RPAREN) &&
+           !check(p, TOK_NEWLINE) && !check(p, TOK_SEMICOLON) &&
+           !check(p, TOK_EOF)) {
+        Node *param = parse_param_node(p, 1);
+        params = nodelist_append(p->arena, params, param);
+        nxt = peek(p);
+        if (nxt.kind != TOK_COMMA || nxt.line != def_line) break;
+        advance(p); /* consume comma */
+        nxt = peek(p);
     }
     return params;
 }

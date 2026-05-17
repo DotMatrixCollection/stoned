@@ -102,6 +102,34 @@ static const char *method_name_from_token(Parser *p, Token tok) {
             }
             error(p, "expected ']' after '[' in method name", tok.line, tok.col);
             return NULL;
+        /* Keywords that can legally be used as method names in Ruby */
+        case TOK_ALIAS:     return "alias";
+        case TOK_BEGIN:     return "begin";
+        case TOK_CLASS:     return "class";
+        case TOK_DEF:       return "def";
+        case TOK_DO:        return "do";
+        case TOK_ELSE:      return "else";
+        case TOK_END:       return "end";
+        case TOK_FOR:       return "for";
+        case TOK_IF:        return "if";
+        case TOK_IN:        return "in";
+        case TOK_MODULE:    return "module";
+        case TOK_NEXT:      return "next";
+        case TOK_NIL:       return "nil";
+        case TOK_NOT:       return "not";
+        case TOK_OR:        return "or";
+        case TOK_RESCUE:    return "rescue";
+        case TOK_RETURN:    return "return";
+        case TOK_SELF:      return "self";
+        case TOK_SUPER:     return "super";
+        case TOK_THEN:      return "then";
+        case TOK_TRUE:      return "true";
+        case TOK_FALSE:     return "false";
+        case TOK_UNLESS:    return "unless";
+        case TOK_UNTIL:     return "until";
+        case TOK_WHEN:      return "when";
+        case TOK_WHILE:     return "while";
+        case TOK_YIELD:     return "yield";
         default:
             return NULL;
     }
@@ -368,16 +396,27 @@ Node *parse_stmt(Parser *p) {
 
         if (match(p, TOK_LPAREN)) {
             n->def.params = parse_params(p);
-            for (NodeList *pl = n->def.params; pl; pl = pl->next) {
-                if (!pl->node) continue;
-                if (pl->node->kind == NODE_PARAM && pl->node->param.name)
-                    lexer_mark_local(&p->lexer, pl->node->param.name);
-                else if (pl->node->kind == NODE_ARRAY)
-                    for (NodeList *el = pl->node->array.elements; el; el = el->next)
-                        if (el->node && el->node->kind == NODE_PARAM && el->node->param.name)
-                            lexer_mark_local(&p->lexer, el->node->param.name);
-            }
             expect(p, TOK_RPAREN, "expected ')'");
+        } else {
+            /* Unparenthesized param list: def foo x, y */
+            Token nxt = peek(p);
+            int same_line = (nxt.line == name_tok.line);
+            int looks_like_param = same_line && (
+                nxt.kind == TOK_IDENT || nxt.kind == TOK_CONST ||
+                nxt.kind == TOK_STAR  || nxt.kind == TOK_STAR2 ||
+                nxt.kind == TOK_AMP);
+            if (looks_like_param)
+                n->def.params = parse_params_unparen(p, name_tok.line);
+        }
+        /* Mark all param names as local variables in the lexer's scope */
+        for (NodeList *pl = n->def.params; pl; pl = pl->next) {
+            if (!pl->node) continue;
+            if (pl->node->kind == NODE_PARAM && pl->node->param.name)
+                lexer_mark_local(&p->lexer, pl->node->param.name);
+            else if (pl->node->kind == NODE_ARRAY)
+                for (NodeList *el = pl->node->array.elements; el; el = el->next)
+                    if (el->node && el->node->kind == NODE_PARAM && el->node->param.name)
+                        lexer_mark_local(&p->lexer, el->node->param.name);
         }
 
         if (match(p, TOK_EQ)) {
