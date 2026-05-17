@@ -70,6 +70,7 @@ class GemfileDSL
         path:   root,
         groups: [],
         spec:   spec,
+        from_gemspec: true,
       }
       (spec.runtime_dependencies || []).each do |dep|
         @dependencies << {
@@ -117,10 +118,46 @@ def normalized_dependencies(dsl)
         groups: (dep[:groups] || []).dup,
         require: dep[:require],
         spec: dep[:spec],
+        from_gemspec: dep[:from_gemspec],
       }
       ordered << copy
       by_name[name] = copy
     end
+  end
+
+  ordered
+end
+
+def expanded_dependencies(dsl)
+  ordered = normalized_dependencies(dsl)
+  by_name = {}
+  ordered.each { |dep| by_name[dep[:name]] = dep }
+
+  index = 0
+  while index < ordered.length
+    dep = ordered[index]
+    spec = dep[:spec] || bundle_load_path_spec(dep)
+    dep[:spec] = spec if spec
+
+    (spec&.runtime_dependencies || []).each do |runtime_dep|
+      existing = by_name[runtime_dep.name]
+      if existing
+        if existing[:reqs].empty?
+          existing[:reqs] = [runtime_dep.requirement.to_s]
+        end
+        next
+      end
+
+      injected = {
+        name: runtime_dep.name,
+        reqs: [runtime_dep.requirement.to_s],
+        groups: (dep[:groups] || []).dup,
+      }
+      ordered << injected
+      by_name[injected[:name]] = injected
+    end
+
+    index += 1
   end
 
   ordered
@@ -137,7 +174,7 @@ end
 def active_dependencies(dsl)
   excluded = bundle_without_groups
   included = bundle_with_groups
-  normalized_dependencies(dsl).reject do |dep|
+  expanded_dependencies(dsl).reject do |dep|
     groups = dep[:groups] || []
     excluded_hit = groups.any? { |group| excluded.include?(group) }
     included_hit = groups.any? { |group| included.include?(group) }
@@ -181,14 +218,14 @@ end
 def lockfile_resolved_dependencies(dsl, resolved)
   locked = resolved.dup
 
-  normalized_dependencies(dsl).each do |dep|
+  expanded_dependencies(dsl).each do |dep|
     next if locked.key?(dep[:name])
-    if dep[:spec] && dep[:spec].respond_to?(:version)
-      locked[dep[:name]] = dep[:spec].version.to_s
+    if dep[:path] && !dep[:from_gemspec]
+      locked[dep[:name]] = "path"
       next
     end
-    if dep[:path]
-      locked[dep[:name]] = "path"
+    if dep[:spec] && dep[:spec].respond_to?(:version)
+      locked[dep[:name]] = dep[:spec].version.to_s
     end
   end
 
@@ -210,6 +247,7 @@ def bundle_load_path_spec(dep)
 end
 
 def bundle_dep_display_version(dep, lockfile)
+  return "path" if dep[:path] && !dep[:from_gemspec]
   locked = lockfile.gems[dep[:name]]
   return locked if locked
   return dep[:spec].version.to_s if dep[:spec] && dep[:spec].respond_to?(:version)
@@ -344,7 +382,11 @@ def resolve_and_install(dsl, verbose: true)
       # Path gem — add to load path directly
       lib = File.join(File.expand_path(dep[:path]), "lib")
       $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
-      resolved[name] = dep[:spec]&.version&.to_s || "path"
+      resolved[name] = if dep[:from_gemspec] && dep[:spec]&.respond_to?(:version)
+        dep[:spec].version.to_s
+      else
+        "path"
+      end
       puts "Using #{name} (path: #{dep[:path]})" if verbose
       next
     end

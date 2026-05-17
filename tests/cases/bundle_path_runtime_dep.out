@@ -1,0 +1,23 @@
+Successfully built gem: dep-0.4.0.gem
+  Gem: /tmp/stoned_bundle_path_runtime_dep_/dep_pkg/dep-0.4.0.gem
+Successfully installed dep-0.4.0
+--INSTALL--
+Using main (path: /tmp/stoned_bundle_path_runtime_dep_/main_gem)
+Using dep 0.4.0
+Bundle complete! 2 gems now installed.
+--LOCK--
+GEM
+  specs:
+    dep (0.4.0)
+    main (path)
+
+BUNDLED WITH
+   2.5.0.stoned
+--LIST--
+Gems included by the bundle:
+  * main (path)
+  * dep (0.4.0)
+--CHECK--
+The Gemfile's dependencies are satisfied
+--EXEC--
+dep ok

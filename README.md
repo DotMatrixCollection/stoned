@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `380` tests are passing, birb's REPL fully evaluates expressions and echoes results, and a minimal RubyGems/Bundler bringup path now exists for compatibility probes. It is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `381` tests are passing, birb's REPL fully evaluates expressions and echoes results, and a minimal RubyGems/Bundler bringup path now exists for compatibility probes. It is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -67,7 +67,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `380 passed, 0 failed, 380 total`. Recent additions include the minimal RubyGems shim (`require "rubygems"` plus key sub-requires), `exe/gem` and `exe/bundle` bringup helpers, multiline `/.../x` regexp lexing, and newer Bundler bringup coverage around lockfile drift, `bundle exec` command resolution, `gemspec` path overrides, and `BUNDLE_WITH` / `BUNDLE_WITHOUT` group handling.
+Current coverage in the tree: `381 passed, 0 failed, 381 total`. Recent additions include the minimal RubyGems shim (`require "rubygems"` plus key sub-requires), `exe/gem` and `exe/bundle` bringup helpers, multiline `/.../x` regexp lexing, and newer Bundler bringup coverage around lockfile drift, `bundle exec` command resolution, `gemspec` path overrides, path-gem runtime dependency closure, and `BUNDLE_WITH` / `BUNDLE_WITHOUT` group handling.
 
 What is working today:
 
