@@ -1749,6 +1749,46 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "end\n";
         return eval_ruby_string(ev, monitor_shim, "monitor_shim", site);
     }
+    if (strcmp(path, "zlib") == 0 || strcmp(path, "zlib.rb") == 0) {
+        static const char *zlib_shim =
+"module Zlib\n"
+"  BEST_COMPRESSION = 9\n"
+"  BEST_SPEED = 1\n"
+"  DEFAULT_COMPRESSION = -1\n"
+"  NO_COMPRESSION = 0\n"
+"  def self.deflate(str, level = DEFAULT_COMPRESSION); str.to_s; end\n"
+"  def self.inflate(str); str.to_s; end\n"
+"  def self.adler32(str = '', adler = 1); adler.to_i; end\n"
+"  def self.crc32(str = '', crc = 0); crc.to_i; end\n"
+"  class Error < StandardError; end\n"
+"  class GzipError < Error; end\n"
+"  class GzipWriter\n"
+"    def initialize(io, level = nil, strategy = nil, **opts); @io = io; @buf = ''; end\n"
+"    def write(s); @buf << s.to_s; @io.write(s.to_s) if @io.respond_to?(:write); s.to_s.length; end\n"
+"    def <<(s); write(s); self; end\n"
+"    def flush; self; end\n"
+"    def close; self; end\n"
+"    def finish; @buf; end\n"
+"    def self.open(path, level = nil, **opts, &blk)\n"
+"      f = File.open(path, 'wb')\n"
+"      w = new(f, level)\n"
+"      blk ? (blk.call(w); w.close; nil) : w\n"
+"    end\n"
+"  end\n"
+"  class GzipReader\n"
+"    def initialize(io, **opts); @io = io; end\n"
+"    def read(n = nil); n ? @io.read(n) : @io.read; end\n"
+"    def each_line(&blk); @io.each_line(&blk); end\n"
+"    def close; @io.close if @io.respond_to?(:close); self; end\n"
+"    def self.open(path, **opts, &blk)\n"
+"      f = File.open(path, 'rb')\n"
+"      r = new(f)\n"
+"      blk ? (result = blk.call(r); r.close; result) : r\n"
+"    end\n"
+"  end\n"
+"end\n";
+        return eval_ruby_string(ev, zlib_shim, "zlib_shim", site);
+    }
     if (strcmp(path, "strscan") == 0 || strcmp(path, "strscan.rb") == 0) {
         static const char *strscan_shim =
 "class StringScanner\n"

@@ -2272,6 +2272,26 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  NULL = '/dev/null'\n"
         "end\n";
 
+    static const char *prelude_rbconfig =
+        "module RbConfig\n"
+        "  RUBY_API_VERSION = RUBY_VERSION\n"
+        "  CONFIG = {\n"
+        "    'ruby_version' => RUBY_VERSION,\n"
+        "    'arch' => RUBY_PLATFORM,\n"
+        "    'host_os' => 'linux',\n"
+        "    'MAJOR' => RUBY_VERSION.split('.')[0] || '4',\n"
+        "    'MINOR' => RUBY_VERSION.split('.')[1] || '0',\n"
+        "    'TEENY' => '0',\n"
+        "  }\n"
+        "end\n";
+
+    static const char *prelude_marshal =
+        "module Marshal\n"
+        "  def self.load(src, proc = nil); {}; end\n"
+        "  def self.restore(src); {}; end\n"
+        "  def self.dump(obj, port = nil, limit = nil); ''; end\n"
+        "end\n";
+
     static const char *prelude_signal =
         "module Signal\n"
         "  def self.trap(sig, *args, &blk); end\n"
@@ -2307,7 +2327,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
 
     size_t prelude_len =
         strlen(prelude_comparable) + strlen(prelude_enumerable) + strlen(prelude_core) +
-        strlen(prelude_file_constants) + strlen(prelude_signal) +
+        strlen(prelude_file_constants) + strlen(prelude_rbconfig) +
+        strlen(prelude_marshal) + strlen(prelude_signal) +
         strlen(prelude_process_status) + 2;
     char *prelude = arena_alloc(arena, prelude_len);
     prelude[0] = '\0';
@@ -2315,6 +2336,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
     strcat(prelude, prelude_enumerable);
     strcat(prelude, prelude_core);
     strcat(prelude, prelude_file_constants);
+    strcat(prelude, prelude_rbconfig);
+    strcat(prelude, prelude_marshal);
     strcat(prelude, prelude_signal);
     strcat(prelude, prelude_process_status);
 
