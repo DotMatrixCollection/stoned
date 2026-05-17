@@ -1,0 +1,20 @@
+Successfully built gem: demo-1.2.3.gem
+  Gem: /tmp/stoned_gem_cli_manage_/demo/demo-1.2.3.gem
+Successfully installed demo-1.2.3
+--LIST--
+*** LOCAL GEMS ***
+demo (1.2.3)
+--ENVHOME--
+/tmp/stoned_gem_cli_manage_/gemhome
+--ENVPATH--
+/tmp/stoned_gem_cli_manage_/gemhome
+--ENVVER--
+3.6.9
+--UNINSTALL--
+Removing demo-1.2.3...
+Successfully uninstalled demo-1.2.3
+false
+false
+--LIST2--
+*** LOCAL GEMS ***
+(no gems installed)
