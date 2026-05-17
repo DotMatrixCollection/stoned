@@ -1,0 +1,4 @@
+Using demo (path: /tmp/stoned_bundle_exec_command_/demo_gem)
+Bundle complete! 1 gems now installed.
+42
+["alpha", "beta"]

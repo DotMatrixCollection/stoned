@@ -171,6 +171,20 @@ class Lockfile
   end
 end
 
+def bundle_load_path_spec(dep)
+  return dep[:spec] if dep[:spec]
+  return nil unless dep[:path]
+  specs = Dir.glob(File.join(File.expand_path(dep[:path]), "*.gemspec"))
+  specs.each do |path|
+    Gem::Specification.reset!
+    Gem::Specification._loading_spec = nil
+    load path
+    spec = Gem::Specification._loading_spec
+    return spec if spec
+  end
+  nil
+end
+
 def bundle_dep_display_version(dep, lockfile)
   locked = lockfile.gems[dep[:name]]
   return locked if locked
@@ -178,6 +192,39 @@ def bundle_dep_display_version(dep, lockfile)
   spec = Gem::Specification.find_by_name(dep[:name])
   return spec.version.to_s if spec
   dep[:path] ? "path" : "not installed"
+end
+
+def bundle_exec_path_for(dep, command)
+  if dep[:path]
+    spec = bundle_load_path_spec(dep)
+    return nil unless spec
+    executables = spec.executables || []
+    return nil unless executables.include?(command)
+    bindir = spec.bindir || "bin"
+    candidate = File.join(File.expand_path(dep[:path]), bindir, command)
+    return candidate if File.exist?(candidate)
+    return nil
+  end
+
+  spec = Gem::Specification.find_by_name(dep[:name])
+  return nil unless spec
+  executables = spec.executables || []
+  return nil unless executables.include?(command)
+  bindir = spec.bindir || "bin"
+  candidate = File.join(spec.gem_dir, bindir, command)
+  return candidate if File.exist?(candidate)
+  nil
+end
+
+def bundle_exec_target(dsl, lockfile, command)
+  return File.expand_path(command) if command.end_with?(".rb") && File.exist?(command)
+
+  active_dependencies(dsl).each do |dep|
+    candidate = bundle_exec_path_for(dep, command)
+    return candidate if candidate
+  end
+
+  nil
 end
 
 def bundle_missing_dependencies(dsl, lockfile)
@@ -379,7 +426,12 @@ when "exec"
   (args[1..] || []).each do |arg|
     ARGV << arg
   end
-  load File.expand_path(args[0]) if args[0].end_with?(".rb") && File.exist?(args[0])
+  target = bundle_exec_target(dsl, lf, args[0])
+  unless target
+    STDERR.puts "Command not found: #{args[0]}"
+    exit 1
+  end
+  load target
 
 when "check"
   unless File.exist?(GEMFILE)
