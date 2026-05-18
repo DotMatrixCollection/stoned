@@ -48,7 +48,8 @@ definition = Bundler::Definition.build(Bundler.default_gemfile, Bundler.default_
 puts definition.gemfile.to_s == File.join(app, "Gemfile")
 puts definition.lockfile.to_s == File.join(app, "Gemfile.lock")
 puts definition.dependencies[0].name == "foo"
-puts definition.sources[0]
+puts definition.sources.is_a?(Bundler::SourceList)
+puts definition.sources.default_source.to_s
 puts definition.specs[0].name
 puts definition.specs[0].version
 puts definition.platforms[0]

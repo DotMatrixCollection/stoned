@@ -1,5 +1,7 @@
 require "bundler"
 require File.join(BUNDLER_RB_DIR, "bundler", "dependency")
+require File.join(BUNDLER_RB_DIR, "bundler", "source")
+require File.join(BUNDLER_RB_DIR, "bundler", "source_list")
 
 module Bundler
   class DSL
@@ -7,7 +9,7 @@ module Bundler
 
     def initialize
       @dependencies = []
-      @sources = []
+      @sources = Bundler::SourceList.new
       @group_stack = []
     end
 
@@ -18,13 +20,16 @@ module Bundler
     end
 
     def source(source)
-      @sources << source.to_s
+      rubygems = Bundler::Source::Rubygems.new(remote: source)
+      @sources.add_source(rubygems)
+      rubygems
     end
 
     def gem(name, *requirements)
       options = requirements.last.is_a?(Hash) ? requirements.pop : {}
       merged = options.dup
       merged[:groups] ||= current_groups
+      merged[:source] ||= source_for_options(merged)
       @dependencies << Bundler::Dependency.new(name, requirements.empty? ? ">= 0" : requirements, merged)
     end
 
@@ -73,6 +78,20 @@ module Bundler
       groups = []
       @group_stack.each { |entry| groups.concat(entry) }
       groups.empty? ? [:default] : groups
+    end
+
+    def source_for_options(options)
+      if options[:path]
+        source = Bundler::Source::Path.new(path: options[:path])
+        @sources.add_source(source)
+        source
+      elsif options[:git]
+        source = Bundler::Source::Git.new(git: options[:git], branch: options[:branch], ref: options[:ref])
+        @sources.add_source(source)
+        source
+      else
+        @sources.default_source
+      end
     end
   end
 end

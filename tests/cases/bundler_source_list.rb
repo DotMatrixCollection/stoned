@@ -8,5 +8,7 @@ source = Bundler::Source::Rubygems.new(remotes: ["https://rubygems.org", "https:
 list.add_source(source)
 
 puts list.all_sources.length
+puts list.size
+puts list.empty? == false
 puts list.rubygems_sources.length
 puts list.rubygems_sources[0].to_s

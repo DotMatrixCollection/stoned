@@ -15,6 +15,18 @@ module Bundler
       @sources
     end
 
+    def each(&block)
+      @sources.each(&block)
+    end
+
+    def size
+      @sources.length
+    end
+
+    def empty?
+      @sources.empty?
+    end
+
     def rubygems_sources
       @sources.select { |source| source.class.name == "Bundler::Source::Rubygems" }
     end
@@ -33,6 +45,10 @@ module Bundler
 
     def installed_source
       @sources.find { |source| source.class.name == "Bundler::Source::Installed" }
+    end
+
+    def default_source
+      rubygems_sources[0] || path_sources[0] || git_sources[0]
     end
   end
 end

@@ -18,14 +18,15 @@ GEMFILE
 
 require "bundler/dsl"
 dsl = Bundler::DSL.evaluate(File.join(app, "Gemfile"))
-puts dsl.sources[0]
+puts dsl.sources.size
+puts dsl.sources.default_source.to_s
 puts dsl.dependencies.length
 puts dsl.dependencies[0].name
 puts dsl.dependencies[0].groups[0]
 puts dsl.dependencies[0].autorequire.length
 puts dsl.dependencies[1].name
 puts dsl.dependencies[1].groups[0]
-puts dsl.dependencies[1].source
+puts dsl.dependencies[1].source.to_s
 puts dsl.dependencies[1].autorequire.join(",")
 
 system("rm", "-rf", root)

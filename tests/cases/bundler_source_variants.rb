@@ -18,6 +18,7 @@ puts list.all_sources.length
 puts list.rubygems_sources.length
 puts list.path_sources.length
 puts list.git_sources.length
+puts list.default_source.to_s
 puts list.path_sources[0].to_s
 puts list.git_sources[0].to_s
 puts list.git_sources[0].branch
