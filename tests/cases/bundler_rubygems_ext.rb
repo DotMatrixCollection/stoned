@@ -4,3 +4,4 @@ require "bundler/rubygems_ext"
 puts Bundler::VERSION
 puts Bundler.respond_to?(:definition)
 puts Bundler.respond_to?(:runtime)
+puts Bundler.respond_to?(:current_ruby)

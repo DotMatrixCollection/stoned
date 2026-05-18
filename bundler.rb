@@ -81,6 +81,11 @@ module Bundler
       @settings ||= Bundler::Settings.new
     end
 
+    def current_ruby
+      require File.join(BUNDLER_RB_DIR, "bundler", "current_ruby")
+      @current_ruby ||= Bundler::CurrentRuby.new
+    end
+
     def bundle_path
       pathname_for(Gem.home)
     end
