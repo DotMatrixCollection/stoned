@@ -1,0 +1,8 @@
+application failed
+AppError
+custom error
+application failed
+cannot connect to db.example.com
+cannot connect to unknown
+NetworkError
+true

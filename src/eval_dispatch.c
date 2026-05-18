@@ -1191,9 +1191,17 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
             return eval_raise_value(ev, site, args[0]);
         } else if (argc >= 1 && args[0].kind == VAL_CLASS) {
             class_name = args[0].klass->name;
-            msg = class_name;
-            if (argc >= 2)
-                msg = val_to_s(ev->arena, args[1]);
+            /* Route through ClassName.new(args) so user initialize is called */
+            Value new_args = argc >= 2 ? args[1] : val_nil();
+            Value exc_obj = dispatch_method(ev, env, args[0], "new",
+                                            argc >= 2 ? &args[1] : NULL,
+                                            argc >= 2 ? argc - 1 : 0,
+                                            NULL, site, 0, 1);
+            if (!val_is_signal(exc_obj) && exc_obj.kind == VAL_OBJECT &&
+                value_is_a_named_class(ev, exc_obj, "Exception"))
+                return eval_raise_value(ev, site, exc_obj);
+            (void)new_args;
+            msg = argc >= 2 ? val_to_s(ev->arena, args[1]) : class_name;
         } else if (argc >= 1) {
             msg = val_to_s(ev->arena, args[0]);
         }
