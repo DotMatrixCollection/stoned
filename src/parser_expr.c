@@ -1128,7 +1128,8 @@ Node *parse_primary(Parser *p) {
                              nxt.kind == TOK_SELF || nxt.kind == TOK_IVAR || nxt.kind == TOK_GVAR ||
                              nxt.kind == TOK_COLON2 ||
                              nxt.kind == TOK_CONST || nxt.kind == TOK_IDENT || nxt.kind == TOK_BANG ||
-                             nxt.kind == TOK_TILDE || unary_prefix_arg(t, nxt, sign_arg);
+                             nxt.kind == TOK_TILDE || nxt.kind == TOK_DEFINED ||
+                             unary_prefix_arg(t, nxt, sign_arg);
             if (can_be_arg && nxt.line == t.line) {
                 NodeList *args = parse_command_args(p);
                 Node *block = NULL;
