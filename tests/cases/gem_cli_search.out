@@ -1,0 +1,14 @@
+Successfully built gem: alpha-1.0.0.gem
+Successfully installed alpha-1.0.0
+Successfully built gem: beta-tool-2.1.0.gem
+Successfully installed beta-tool-2.1.0
+--SEARCH-ALL--
+*** LOCAL GEMS ***
+alpha (1.0.0)
+beta-tool (2.1.0)
+--SEARCH-BETA--
+*** LOCAL GEMS ***
+beta-tool (2.1.0)
+--SEARCH-MISS--
+*** LOCAL GEMS ***
+(no gems found)

@@ -1,0 +1,6 @@
+Successfully built gem: demo-1.2.3.gem
+  Gem: /tmp/stoned_gem_cli_contents_/demo/demo-1.2.3.gem
+Successfully installed demo-1.2.3
+--CONTENTS--
+/tmp/stoned_gem_cli_contents_/gemhome/gems/demo-1.2.3/demo.gemspec
+/tmp/stoned_gem_cli_contents_/gemhome/gems/demo-1.2.3/lib/demo.rb

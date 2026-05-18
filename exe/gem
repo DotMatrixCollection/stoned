@@ -78,6 +78,7 @@ def install_gem_file(gem_path)
     # Try to load the gemspec from the gem for a real spec, fall back to stub
     spec_path = File.join(specs_dir, "#{gem_full}.gemspec")
     unless File.exist?(spec_path)
+      wrapper_bindir = "bin"
       gemspec_src = File.join(install_dir, "#{gem_name}.gemspec")
       if File.exist?(gemspec_src)
         Gem::Specification.reset!
@@ -85,16 +86,19 @@ def install_gem_file(gem_path)
         load gemspec_src
         real_spec = Gem::Specification._loading_spec
         if real_spec && !real_spec.name.to_s.empty?
-          File.write(spec_path, build_gemspec_content(real_spec))
+          wrapper_bindir = real_spec.bindir || "bin"
+          File.write(spec_path, build_gemspec_content(real_spec, install_dir))
         else
           File.write(spec_path, gemspec_stub(gem_name, version, install_dir))
         end
       else
         File.write(spec_path, gemspec_stub(gem_name, version, install_dir))
       end
+    else
+      wrapper_bindir = "bin"
     end
 
-    bin_src = File.join(install_dir, "bin")
+    bin_src = File.join(install_dir, wrapper_bindir)
     if File.directory?(bin_src)
       Dir.children(bin_src).each do |exe|
         wrapper = File.join(bin_dir, exe)
@@ -111,7 +115,7 @@ def install_gem_file(gem_path)
   end
 end
 
-def build_gemspec_content(spec)
+def build_gemspec_content(spec, install_dir = nil)
   lines = ["Gem::Specification.new do |s|"]
   lines << "  s.name    = #{spec.name.inspect}"
   lines << "  s.version = Gem::Version.new(#{spec.version.to_s.inspect})"
@@ -122,6 +126,17 @@ def build_gemspec_content(spec)
   }
   (spec.runtime_dependencies || []).each do |dep|
     lines << "  s.add_runtime_dependency #{dep.name.inspect}, #{dep.requirement.to_s.inspect}"
+  end
+  executables = spec.executables || []
+  if executables.empty? && install_dir
+    bin_src = File.join(install_dir, "bin")
+    executables = Dir.children(bin_src) if File.directory?(bin_src)
+  end
+  unless executables.empty?
+    lines << "  s.executables = #{executables.inspect}"
+  end
+  if spec.bindir && spec.bindir != "bin"
+    lines << "  s.bindir = #{spec.bindir.inspect}"
   end
   lines << "end"
   lines.join("\n") + "\n"
@@ -323,6 +338,9 @@ def print_usage
   STDERR.puts "  build GEMSPEC    Build a gem from a gemspec"
   STDERR.puts "  install GEMNAME  Install a gem"
   STDERR.puts "  list             List installed gems"
+  STDERR.puts "  contents GEM     List files installed for a gem"
+  STDERR.puts "  search PATTERN   Search installed gems"
+  STDERR.puts "  specification GEM  Print an installed gemspec"
   STDERR.puts "  env              Display RubyGems environment"
   STDERR.puts "  version          Display RubyGems version"
 end
@@ -406,10 +424,67 @@ when "env"
 when "-v", "--version", "version"
   puts Gem::VERSION
 
+when "contents"
+  gem_name = ARGV[1]
+  if gem_name.nil? || gem_name.empty?
+    STDERR.puts "ERROR: Please specify a gem name"
+    exit 1
+  end
+
+  Gem::Specification.reset! if Gem::Specification.respond_to?(:reset!)
+  spec = Gem::Specification.find_by_name(gem_name)
+  unless spec
+    STDERR.puts "ERROR: gem '#{gem_name}' is not installed"
+    exit 1
+  end
+
+  entries = Dir.glob(File.join(spec.gem_dir, "**", "*")).select { |path| File.file?(path) }
+  entries.sort.each { |path| puts path }
+
+when "search"
+  specs = Gem::Specification.all
+  pattern = ARGV[1]
+  regex = pattern && !pattern.empty? ? Regexp.new(pattern) : nil
+
+  puts "*** LOCAL GEMS ***"
+  puts
+
+  matches = if regex
+    specs.select { |spec| spec.name =~ regex }
+  else
+    specs
+  end
+
+  if matches.empty?
+    puts "(no gems found)"
+  else
+    by_name = matches.group_by(&:name)
+    by_name.keys.sort.each do |name|
+      versions = by_name[name].map(&:version).map(&:to_s).sort.join(", ")
+      puts "#{name} (#{versions})"
+    end
+  end
+
+when "specification"
+  gem_name = ARGV[1]
+  if gem_name.nil? || gem_name.empty?
+    STDERR.puts "ERROR: Please specify a gem name"
+    exit 1
+  end
+
+  Gem::Specification.reset! if Gem::Specification.respond_to?(:reset!)
+  spec = Gem::Specification.find_by_name(gem_name)
+  unless spec
+    STDERR.puts "ERROR: gem '#{gem_name}' is not installed"
+    exit 1
+  end
+
+  print build_gemspec_content(spec)
+
 when "help", "-h", "--help", nil
   print_usage
 
-when "update", "push", "fetch", "open", "search", "pristine", "cleanup", "exec", "contents"
+when "update", "push", "fetch", "open", "pristine", "cleanup", "exec"
   STDERR.puts "gem #{command}: not yet implemented"
   exit 1
 

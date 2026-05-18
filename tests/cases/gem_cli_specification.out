@@ -1,0 +1,10 @@
+Successfully built gem: demo-1.2.3.gem
+Successfully installed demo-1.2.3
+--SPEC--
+Gem::Specification.new do |s|
+  s.name    = "demo"
+  s.version = Gem::Version.new("1.2.3")
+  s.summary = "demo gem"
+  s.require_paths = ["lib"]
+  s.add_runtime_dependency "dep", ">= 0.5"
+end
