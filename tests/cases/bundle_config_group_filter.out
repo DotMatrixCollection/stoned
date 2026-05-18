@@ -1,0 +1,20 @@
+Using core (path: /tmp/stoned_bundle_config_group_filter_/core_gem)
+Using dev (path: /tmp/stoned_bundle_config_group_filter_/dev_gem)
+Bundle complete! 2 gems now installed.
+--LIST-ALL--
+Gems included by the bundle:
+  * core (path)
+  * dev (path)
+--SET-WITHOUT--
+Set for your local app (.bundle/config): BUNDLE_WITHOUT=development
+--LIST-FILTERED--
+Gems included by the bundle:
+  * core (path)
+--CHECK--
+The Gemfile's dependencies are satisfied
+--UNSET--
+Unset for your local app (.bundle/config)
+--LIST-RESTORED--
+Gems included by the bundle:
+  * core (path)
+  * dev (path)

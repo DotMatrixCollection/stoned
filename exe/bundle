@@ -163,12 +163,20 @@ def expanded_dependencies(dsl)
   ordered
 end
 
+def bundle_config_value(key)
+  env_key = "BUNDLE_#{key.upcase}"
+  env_val = ENV[env_key]
+  return env_val if env_val && !env_val.empty?
+  cfg = merged_bundle_config()
+  cfg[env_key]
+end
+
 def bundle_without_groups
-  ENV["BUNDLE_WITHOUT"].to_s.split(/[:\s,]+/).map(&:strip).reject(&:empty?)
+  bundle_config_value("WITHOUT").to_s.split(/[:\s,]+/).map(&:strip).reject(&:empty?)
 end
 
 def bundle_with_groups
-  ENV["BUNDLE_WITH"].to_s.split(/[:\s,]+/).map(&:strip).reject(&:empty?)
+  bundle_config_value("WITH").to_s.split(/[:\s,]+/).map(&:strip).reject(&:empty?)
 end
 
 def active_dependencies(dsl)
@@ -459,6 +467,67 @@ def setup_load_path(dsl, lockfile)
   end
 end
 
+# ── Bundle config helpers ─────────────────────────────────────────────────────
+
+def bundle_local_config_path
+  File.join(".bundle", "config")
+end
+
+def bundle_global_config_path
+  File.join(ENV["HOME"] || "/", ".bundle", "config")
+end
+
+def read_bundle_config(path)
+  return {} unless File.exist?(path)
+  config = {}
+  File.readlines(path).each do |line|
+    line = line.chomp
+    next if line == "---" || line.strip.empty?
+    if line =~ /^(BUNDLE_\w+):\s*"([^"]*)"\s*$/
+      config[$1] = $2
+    elsif line =~ /^(BUNDLE_\w+):\s*(\S+)\s*$/
+      config[$1] = $2
+    end
+  end
+  config
+end
+
+def write_bundle_config(path, config)
+  dir = File.dirname(path)
+  Dir.mkdir(dir) unless File.directory?(dir)
+  lines = ["---"]
+  config.each { |k, v| lines << "#{k}: \"#{v}\"" }
+  File.write(path, lines.join("\n") + "\n")
+end
+
+def merged_bundle_config
+  global = read_bundle_config(bundle_global_config_path())
+  local  = read_bundle_config(bundle_local_config_path())
+  global.merge(local)
+end
+
+def config_env_key(key)
+  key.upcase.start_with?("BUNDLE_") ? key.upcase : "BUNDLE_#{key.upcase}"
+end
+
+def resolve_no_install(dsl)
+  resolved = {}
+  active_dependencies(dsl).each do |dep|
+    next if resolved.key?(dep[:name])
+    if dep[:path]
+      spec = bundle_load_path_spec(dep)
+      resolved[dep[:name]] = spec && spec.respond_to?(:version) ? spec.version.to_s : "path"
+    elsif dep[:git]
+      resolved[dep[:name]] = "git"
+    else
+      Gem::Specification.reset!
+      spec = Gem::Specification.find_by_name(dep[:name])
+      resolved[dep[:name]] = spec ? spec.version.to_s : nil
+    end
+  end
+  resolved.reject { |_, v| v.nil? }
+end
+
 # ── Commands ─────────────────────────────────────────────────────────────────
 
 command = ARGV[0]
@@ -602,6 +671,170 @@ when "show", "info", "open"
     puts path
   end
 
+when "config"
+  subcommand = args[0]
+  case subcommand
+  when nil, "list"
+    merged = merged_bundle_config()
+    if merged.empty?
+      puts "You have no settings"
+    else
+      merged.each { |k, v| puts "#{k}: \"#{v}\"" }
+    end
+
+  when "get"
+    key = args[1]
+    unless key
+      STDERR.puts "Usage: bundle config get KEY"
+      exit 1
+    end
+    env_key = config_env_key(key)
+    merged  = merged_bundle_config()
+    value   = merged[env_key] || ENV[env_key]
+    if value
+      puts "#{env_key}: \"#{value}\""
+    else
+      puts "#{env_key} is not set"
+    end
+
+  when "set"
+    is_global = args.include?("--global")
+    cleaned   = args.reject { |a| a.start_with?("--") }
+    key   = cleaned[1]
+    value = cleaned[2]
+    unless key && value
+      STDERR.puts "Usage: bundle config set [--local|--global] KEY VALUE"
+      exit 1
+    end
+    env_key  = config_env_key(key)
+    cfg_path = is_global ? bundle_global_config_path() : bundle_local_config_path()
+    cfg = read_bundle_config(cfg_path)
+    cfg[env_key] = value
+    write_bundle_config(cfg_path, cfg)
+    scope = is_global ? "the current user (#{cfg_path})" : "your local app (#{cfg_path})"
+    puts "Set for #{scope}: #{env_key}=#{value}"
+
+  when "unset"
+    is_global = args.include?("--global")
+    cleaned   = args.reject { |a| a.start_with?("--") }
+    key = cleaned[1]
+    unless key
+      STDERR.puts "Usage: bundle config unset [--global] KEY"
+      exit 1
+    end
+    env_key  = config_env_key(key)
+    cfg_path = is_global ? bundle_global_config_path() : bundle_local_config_path()
+    cfg = read_bundle_config(cfg_path)
+    if cfg.key?(env_key)
+      cfg.delete(env_key)
+      write_bundle_config(cfg_path, cfg)
+      scope = is_global ? "the current user (#{cfg_path})" : "your local app (#{cfg_path})"
+      puts "Unset for #{scope}"
+    else
+      puts "#{env_key} is not set for #{is_global ? "the current user" : "your local app"}"
+    end
+
+  else
+    # Legacy form: bundle config KEY [VALUE]
+    env_key  = config_env_key(subcommand)
+    cfg_path = bundle_local_config_path()
+    if args.length >= 2
+      value = args[1]
+      cfg   = read_bundle_config(cfg_path)
+      cfg[env_key] = value
+      write_bundle_config(cfg_path, cfg)
+      puts "Set for your local app (#{cfg_path}): #{env_key}=#{value}"
+    else
+      merged = merged_bundle_config()
+      value  = merged[env_key] || ENV[env_key]
+      if value
+        puts "#{env_key}: \"#{value}\""
+      else
+        puts "#{env_key} is not set"
+      end
+    end
+  end
+
+when "lock"
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  resolved = resolve_no_install(dsl)
+  Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
+  puts "Writing lockfile to #{File.expand_path(LOCKFILE)}"
+
+when "env"
+  puts "## Bundler"
+  puts ""
+  puts "Bundler version #{BUNDLE_VERSION}"
+  merged = merged_bundle_config()
+  unless merged.empty?
+    puts ""
+    puts "## Configuration"
+    puts ""
+    merged.sort.each { |k, v| puts "#{k}: \"#{v}\"" }
+  end
+  if File.exist?(GEMFILE)
+    puts ""
+    puts "## Gemfile"
+    puts ""
+    puts "Gemfile: #{File.expand_path(GEMFILE)}"
+  end
+
+when "binstubs"
+  if args.empty?
+    STDERR.puts "Usage: bundle binstubs GEM [GEM2 ...]"
+    exit 1
+  end
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  unless File.exist?(LOCKFILE)
+    STDERR.puts "Could not locate Gemfile.lock"
+    exit 1
+  end
+  lf = Lockfile.read(LOCKFILE)
+
+  bin_dir = "bin"
+  Dir.mkdir(bin_dir) unless File.directory?(bin_dir)
+
+  gem_names = args.reject { |a| a.start_with?("--") }
+  gem_names.each do |gem_name|
+    dep = bundle_find_active_dependency(dsl, gem_name)
+    unless dep
+      STDERR.puts "Could not find gem '#{gem_name}' in the current bundle"
+      next
+    end
+
+    if dep[:path]
+      spec      = bundle_load_path_spec(dep)
+      exes      = spec ? (spec.executables || []) : []
+      bin_base  = File.join(File.expand_path(dep[:path]), spec ? (spec.bindir || "bin") : "bin")
+    else
+      Gem::Specification.reset!
+      spec     = Gem::Specification.find_by_name(gem_name)
+      exes     = spec ? (spec.executables || []) : []
+      bin_base = spec ? File.join(spec.gem_dir, spec.bindir || "bin") : nil
+    end
+
+    if exes.empty?
+      puts "#{gem_name} has no executables"
+      next
+    end
+
+    exes.each do |exe|
+      exe_path  = bin_base ? File.join(bin_base, exe) : exe
+      stub_path = File.join(bin_dir, exe)
+      File.write(stub_path, "#!/usr/bin/env ruby\n# Binstub generated by stoned bundler\nload #{exe_path.inspect}\n")
+      system("chmod", "+x", stub_path)
+      puts "Wrote binstub for #{exe} to #{stub_path}"
+    end
+  end
+
 when "outdated", "update", "add", "remove", "console"
   STDERR.puts "bundle #{command}: not yet implemented"
   exit 1
@@ -610,14 +843,18 @@ when nil, "help", "--help", "-h"
   puts "Usage: bundle COMMAND"
   puts ""
   puts "Commands:"
-  puts "  install    Install gems from Gemfile"
-  puts "  exec FILE  Run a Ruby file with bundled gems on the load path"
-  puts "  check      Verify Gemfile dependencies are satisfied"
-  puts "  list       List gems included in the bundle"
-  puts "  show [GEM] Print bundle gem paths"
-  puts "  info GEM   Print the installed path for a bundle gem"
-  puts "  open GEM   Print the path for a bundle gem"
-  puts "  version    Print Bundler version"
+  puts "  install       Install gems from Gemfile"
+  puts "  exec FILE     Run a Ruby file with bundled gems on the load path"
+  puts "  check         Verify Gemfile dependencies are satisfied"
+  puts "  list          List gems included in the bundle"
+  puts "  show [GEM]    Print bundle gem paths"
+  puts "  info GEM      Print the installed path for a bundle gem"
+  puts "  open GEM      Print the path for a bundle gem"
+  puts "  config        Get/set bundler configuration"
+  puts "  lock          Write the lockfile without installing"
+  puts "  env           Print environment information"
+  puts "  binstubs GEM  Generate binstubs for a gem's executables"
+  puts "  version       Print Bundler version"
 else
   STDERR.puts "Unknown command: #{command}"
   exit 1

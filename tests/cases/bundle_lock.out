@@ -1,0 +1,13 @@
+Writing lockfile to /tmp/stoned_bundle_lock_/app/Gemfile.lock
+--EXISTS--
+true
+--LOCK--
+GEM
+  specs:
+    dep (1.1.0)
+    main (2.0.0)
+
+BUNDLED WITH
+   2.5.0.stoned
+--LOCK-AGAIN--
+Writing lockfile to /tmp/stoned_bundle_lock_/app/Gemfile.lock
