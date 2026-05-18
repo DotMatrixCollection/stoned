@@ -146,7 +146,34 @@ def build_gemspec_content(spec, install_dir = nil)
   lines.join("\n") + "\n"
 end
 
-def gem_install_remote_one(gem_name, version)
+def resolve_gem_version(gem_name, version_spec)
+  return nil unless version_spec
+  # If the version spec looks like an exact version (starts with a digit), use it directly
+  return version_spec if version_spec =~ /\A\d/
+
+  # It's a constraint like "~> 1.0" — query the versions endpoint
+  body = fetch_url("#{GEM_SERVER}/api/v1/versions/#{gem_name}.json")
+  if body
+    versions = body.scan(/"number"\s*:\s*"([^"]+)"/).flatten
+    req = Gem::Requirement.new(version_spec)
+    matching = versions.select do |v|
+      begin
+        req.satisfied_by?(Gem::Version.new(v))
+      rescue StandardError
+        false
+      end
+    end
+    best = matching.sort_by { |v| v.split(".").map(&:to_i) }.last
+    return best if best
+  end
+
+  # Fall back to latest via gems API
+  body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{gem_name}.json")
+  return nil unless body
+  body =~ /"version"\s*:\s*"([^"]+)"/ ? $1 : nil
+end
+
+def gem_install_remote_one(gem_name, version_spec)
   unless check_tool("curl") && check_tool("tar")
     STDERR.puts "ERROR: 'curl' and 'tar' are required for gem install"
     exit 1
@@ -158,6 +185,7 @@ def gem_install_remote_one(gem_name, version)
   bin_dir   = File.join(home, "bin")
   [home, gems_dir, specs_dir, bin_dir].each { |d| system("mkdir", "-p", d) unless File.directory?(d) }
 
+  version = resolve_gem_version(gem_name, version_spec)
   puts "Fetching #{gem_name}..."
   unless version
     body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{gem_name}.json")

@@ -1,0 +1,8 @@
+--CORRUPT--
+CORRUPTED
+--PRISTINE--
+Restoring bundled gems to pristine condition...
+Restoring pristgem-1.0.0
+Bundled gems restored to pristine condition.
+--RESTORED--
+module Pristgem; VALUE = 1; end

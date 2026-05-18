@@ -1220,6 +1220,34 @@ when "remove"
     end
   end
 
+when "pristine"
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  unless File.exist?(LOCKFILE)
+    STDERR.puts "Could not locate Gemfile.lock"
+    exit 1
+  end
+  unless check_tool("curl") && check_tool("tar")
+    STDERR.puts "curl and tar are required for bundle pristine"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  lf  = Lockfile.read(LOCKFILE)
+  puts "Restoring bundled gems to pristine condition..."
+  active_dependencies(dsl).each do |dep|
+    next if dep[:path] || dep[:git]
+    locked = lf.gems[dep[:name]]
+    next unless locked
+    Gem::Specification.reset!
+    spec = Gem::Specification.find_by_name(dep[:name])
+    next unless spec
+    puts "Restoring #{spec.full_name}"
+    install_gem_from_server(dep[:name], locked)
+  end
+  puts "Bundled gems restored to pristine condition."
+
 when "platform"
   puts "Your platform is: #{RUBY_PLATFORM}"
   puts "Your Ruby is:     #{RUBY_VERSION} (#{RUBY_PLATFORM})"
