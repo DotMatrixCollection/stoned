@@ -1,0 +1,20 @@
+Fetching tgema...
+Downloading file:///tmp/stoned_gem_install_transitive_/server/gems/tgema-1.0.0.gem...
+Successfully installed tgema-1.0.0
+Fetching tgemb...
+Downloading file:///tmp/stoned_gem_install_transitive_/server/gems/tgemb-1.0.0.gem...
+Successfully installed tgemb-1.0.0
+Fetching tgemc...
+Downloading file:///tmp/stoned_gem_install_transitive_/server/gems/tgemc-1.0.0.gem...
+Successfully installed tgemc-1.0.0
+--LIST--
+*** LOCAL GEMS ***
+tgema (1.0.0)
+tgemb (1.0.0)
+tgemc (1.0.0)
+--TGEMA-INSTALLED--
+true
+--TGEMB-INSTALLED--
+true
+--TGEMC-INSTALLED--
+true

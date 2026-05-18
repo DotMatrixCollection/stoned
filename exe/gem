@@ -146,68 +146,93 @@ def build_gemspec_content(spec, install_dir = nil)
   lines.join("\n") + "\n"
 end
 
+def gem_install_remote_one(gem_name, version)
+  unless check_tool("curl") && check_tool("tar")
+    STDERR.puts "ERROR: 'curl' and 'tar' are required for gem install"
+    exit 1
+  end
+
+  home      = Gem.home
+  gems_dir  = File.join(home, "gems")
+  specs_dir = File.join(home, "specifications")
+  bin_dir   = File.join(home, "bin")
+  [home, gems_dir, specs_dir, bin_dir].each { |d| system("mkdir", "-p", d) unless File.directory?(d) }
+
+  puts "Fetching #{gem_name}..."
+  unless version
+    body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{gem_name}.json")
+    unless body
+      STDERR.puts "ERROR: Could not fetch info for gem '#{gem_name}'"
+      return false
+    end
+    unless body =~ /"version"\s*:\s*"([^"]+)"/
+      STDERR.puts "ERROR: Could not parse version for gem '#{gem_name}'"
+      return false
+    end
+    version = $1
+  end
+
+  gem_full = "#{gem_name}-#{version}"
+  url      = "#{GEM_SERVER}/gems/#{gem_full}.gem"
+  tmp      = "/tmp/stoned_gem_install_#{gem_name}_#{$$}"
+  system("mkdir", "-p", tmp)
+  begin
+    gem_path = File.join(tmp, "#{gem_full}.gem")
+    puts "Downloading #{url}..."
+    unless system("curl", "-fsSL", "-o", gem_path, url)
+      STDERR.puts "ERROR: Download failed for #{gem_name} #{version}"
+      return false
+    end
+    install_gem_file(gem_path)
+    true
+  ensure
+    system("rm", "-rf", tmp)
+  end
+end
+
 def gem_install(names, opts = {})
+  done    = {}
+  pending = []
+
   names.each do |gem_name|
-    # Local .gem file?
     if gem_name.end_with?(".gem") && File.exist?(gem_name)
       install_gem_file(File.expand_path(gem_name))
+      # Mark as done; local file installs don't auto-fetch remote deps
+      Gem::Specification.reset!
+      base = File.basename(gem_name, ".gem").split("-")[0..-2].join("-")
+      done[base] = true
+    else
+      pending << gem_name unless done.key?(gem_name)
+    end
+  end
+
+  version_hint = opts[:version]
+
+  until pending.empty?
+    gem_name = pending.shift
+    next if done.key?(gem_name)
+
+    Gem::Specification.reset!
+    existing = Gem::Specification.find_by_name(gem_name)
+    if existing && !version_hint
+      done[gem_name] = true
       next
     end
 
-    unless check_tool("curl")
-      STDERR.puts "ERROR: 'curl' is required for gem install"
-      exit 1
+    ok = gem_install_remote_one(gem_name, version_hint)
+    version_hint = nil
+    done[gem_name] = true
+    next unless ok
+
+    Gem::Specification.reset!
+    installed = Gem::Specification.find_by_name(gem_name)
+    next unless installed
+    (installed.runtime_dependencies || []).each do |dep|
+      next if done.key?(dep.name)
+      Gem::Specification.reset!
+      next if Gem::Specification.find_by_name(dep.name)
+      pending << dep.name
     end
-    unless check_tool("tar")
-      STDERR.puts "ERROR: 'tar' is required for gem install"
-      exit 1
-    end
-
-    home = Gem.home
-    gems_dir = File.join(home, "gems")
-    specs_dir = File.join(home, "specifications")
-    bin_dir = File.join(home, "bin")
-    [home, gems_dir, specs_dir, bin_dir].each do |d|
-      system("mkdir", "-p", d) unless File.directory?(d)
-    end
-
-    version = opts[:version]
-    puts "Fetching #{gem_name}..."
-
-    unless version
-      body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{gem_name}.json")
-      unless body
-        STDERR.puts "ERROR: Could not fetch info for gem '#{gem_name}'"
-        next
-      end
-      if body =~ /"version"\s*:\s*"([^"]+)"/
-        version = $1
-      else
-        STDERR.puts "ERROR: Could not parse version for gem '#{gem_name}'"
-        next
-      end
-    end
-
-    gem_full = "#{gem_name}-#{version}"
-    gem_file = "#{gem_full}.gem"
-    url = "#{GEM_SERVER}/gems/#{gem_file}"
-
-    tmp = "/tmp/stoned_gem_install_#{gem_name}_#{$$}"
-    system("mkdir", "-p", tmp)
-
-    begin
-      gem_path = File.join(tmp, gem_file)
-      puts "Downloading #{url}..."
-      unless system("curl", "-fsSL", "-o", gem_path, url)
-        STDERR.puts "ERROR: Download failed for #{gem_name} #{version}"
-        next
-      end
-
-      install_gem_file(gem_path)
-    ensure
-      system("rm", "-rf", tmp)
-    end
-    version = nil
   end
 end
 
