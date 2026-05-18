@@ -18,5 +18,13 @@ module Bundler
     def rubygems_sources
       @sources.select { |source| source.class.name == "Bundler::Source::Rubygems" }
     end
+
+    def path_sources
+      @sources.select { |source| source.class.name == "Bundler::Source::Path" }
+    end
+
+    def git_sources
+      @sources.select { |source| source.class.name == "Bundler::Source::Git" }
+    end
   end
 end
