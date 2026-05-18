@@ -1,0 +1,12 @@
+parse failed
+/Gemfile
+true
+syntax error
+/app/Gemfile
+gem 'rails'
+oops
+2
+network timeout (code: 503)
+503
+network timeout
+DSLError

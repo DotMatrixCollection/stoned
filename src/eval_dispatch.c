@@ -552,7 +552,7 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
     {
         static const char *kernel[] = {
             "puts", "print", "p", "pp", "warn", "require", "require_relative",
-            "raise", "fail", "exit", "abort", "lambda", "proc", "loop", "rand", "srand", "open",
+            "raise", "fail", "exit", "exit!", "abort", "lambda", "proc", "loop", "rand", "srand", "open",
             "__method__", "__dir__", "__FILE__", "__LINE__",
             "sleep", "catch", "throw", "trap", "at_exit", "printf", "sprintf", "format",
             "system", "spawn", "wait", "waitpid", "`", "load",
@@ -1289,9 +1289,33 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         srand(seed);
         return val_int((int64_t)seed);
     }
-    if (strcmp(name, "exit") == 0) {
-        int code = argc > 0 ? (int)args[0].ival : 0;
-        exit(code);
+    if (strcmp(name, "exit") == 0 || strcmp(name, "exit!") == 0) {
+        int code = 0;
+        if (argc > 0) {
+            if (args[0].kind == VAL_BOOL) code = args[0].bval ? 0 : 1;
+            else if (args[0].kind == VAL_INT) code = (int)args[0].ival;
+        }
+        if (strcmp(name, "exit!") == 0) {
+            /* exit! bypasses rescue and at_exit — call C exit directly */
+            exit(code);
+        }
+        /* Raise SystemExit so it can be rescued; main.c extracts the status */
+        Value klass;
+        if (!env_get(ev->top_env, "SystemExit", &klass) || klass.kind != VAL_CLASS)
+            exit(code);
+        Value exc = build_exception_object(ev, klass, code == 0 ? "exit" : "exit");
+        val_object_set_ivar(ev->arena, exc, "status", val_int((int64_t)code));
+        return eval_raise_value(ev, site, exc);
+    }
+    if (strcmp(name, "abort") == 0) {
+        if (argc > 0 && args[0].kind == VAL_STRING)
+            fprintf(stderr, "%s\n", args[0].sval);
+        Value klass;
+        if (!env_get(ev->top_env, "SystemExit", &klass) || klass.kind != VAL_CLASS)
+            exit(1);
+        Value exc = build_exception_object(ev, klass, "abort");
+        val_object_set_ivar(ev->arena, exc, "status", val_int(1));
+        return eval_raise_value(ev, site, exc);
     }
     if (strcmp(name, "attr_reader") == 0 || strcmp(name, "attr_writer") == 0 ||
         strcmp(name, "attr_accessor") == 0) {
@@ -1853,6 +1877,15 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         }
         return val_nil();
     }
+    if (strcmp(name, "instance_exec") == 0) {
+        if (!blk) return eval_raise_class(ev, site, "LocalJumpError", "no block given (instance_exec)");
+        /* Like instance_eval block form but passes args to the block instead of recv */
+        Env *ieval_env = env_new(ev->arena, blk->block.closure, 0);
+        env_define(ev->arena, ieval_env, "self", recv);
+        Value ieval_block = *blk;
+        ieval_block.block.closure = ieval_env;
+        return call_block(ev, ieval_env, ieval_block, args, argc, site);
+    }
     if (strcmp(name, "object_id") == 0) {
         if (recv.kind == VAL_OBJECT) return val_int((int64_t)(uintptr_t)recv.obj);
         if (recv.kind == VAL_INT) return val_int(recv.ival * 2 + 1);
@@ -2089,7 +2122,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (recv.kind == VAL_NIL) {
         static const char *kern_nil[] = {
             "puts", "print", "p", "pp", "warn", "require", "require_relative", "raise",
-            "lambda", "proc", "loop", "rand", "srand", "open", "exit", "format", "sprintf", "printf",
+            "lambda", "proc", "loop", "rand", "srand", "open", "exit", "exit!", "abort", "format", "sprintf", "printf",
             "sleep", "catch", "throw", "trap", "at_exit", "`",
             "system", "spawn", "wait", "waitpid", "load", NULL
         };
@@ -2419,7 +2452,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "printf", "raise", "proc", "lambda", "loop", "rand", "srand", "open", "exit", "include", "prepend", "extend",
+            "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "printf", "raise", "proc", "lambda", "loop", "rand", "srand", "open", "exit", "exit!", "abort", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload",

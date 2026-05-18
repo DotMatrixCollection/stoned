@@ -128,11 +128,13 @@ This is the bridge from language/runtime correctness to running larger real prog
   - keep shim coverage focused on real compatibility callers rather than cloning all of RubyGems wholesale
   - document interpreter-driven Bundler gaps explicitly instead of hiding them by rewriting every regression into a `stoned`-specific DSL subset
 
-Bundler-facing Ruby edges that still need tightening:
+Bundler-facing Ruby edges recently fixed:
 
-- broader implicit-self DSL parity beyond the newly-covered direct `instance_eval` block cases; Bundler-style receiverless calls are now working in the focused regressions, but more metaprogrammed wrapper shapes still need scrutiny
-- library-wrapper rescue/control-flow patterns used by helpers like `Bundler::FriendlyErrors`; the broad exception model is much better now, but a few helper-style wrapper forms still do not behave MRI-cleanly enough to rely on them as compatibility surfaces
-- truthiness-sensitive helper code paths where MRI idioms like depending on raw regex-match return values are still risky enough that shims sometimes use more explicit predicates than upstream Ruby code would
+- `class_eval`/`module_eval` with a block now correctly registers `def` in the class instead of the block frame; `def` inside any block inside a class body also hoists correctly (both paths fixed by correcting the `__singleton_target__ = nil` fallthrough in `NODE_DEF`)
+- `instance_exec` added (like `instance_eval` but passes args to the block)
+- `exit` and `abort` now raise rescuable `SystemExit` exceptions instead of calling C's `exit()` directly; `exit!` still bypasses rescue; `SystemExit#status` and `SystemExit#success?` added; `SystemExit` and `IndexError` added to the builtin class hierarchy with correct superclass wiring (`SystemExit < Exception`, `IndexError < StandardError`, `KeyError < IndexError`)
+- Custom exception `initialize` with multiple parameters now works: the multi-arg check was rejecting all `new` calls with `argc > 1` before the user-defined `initialize` could run; fix hoists the user-init detection before the strict arity gate
+- `abort` added as a kernel method (prints msg to stderr, raises `SystemExit` with status 1)
 
 Recent Stage 5 progress already landed:
 
@@ -456,3 +458,9 @@ These were previously roadmap items and are now implemented in the current tree:
 - basic `Regexp` / `MatchData`: `Regexp.new(pattern)`, `Regexp#match`, `String#match`, `=~` (both orders), `MatchData#to_s`/`[]`/`begin`/`end`/`pre_match`/`post_match`, `Regexp#source`/`#inspect`, `RegexpError` on compile failure; backed by reginold (Onigmo via a stable opaque C API, no Ruby VM dependency)
 - `StopIteration` (subclass of `StandardError`); `loop{}` catches `StopIteration` silently and returns nil; `break value` inside `loop{}` returns that value
 - `val_equal` extended to handle `VAL_CLASS` (pointer identity) and `VAL_OBJECT` (pointer identity), enabling `ancestors.include?(SomeClass)` and similar checks to work correctly
+
+- `class_eval`/`module_eval` with a block now correctly registers `def` in the class as an instance method (not the block frame); `def` inside any block inside a class body also hoists to the class — root cause was `__singleton_target__ = nil` in the class env making the `if (env_get(...singleton_target...))` branch fire but fall through to `env_define(env, ...)` instead of the class env
+- `instance_exec` added: like `instance_eval` but passes the caller's args to the block instead of `recv`
+- `exit` / `abort` raise rescuable `SystemExit` instead of calling C `exit()` directly; `exit!` keeps the bypass behavior; `SystemExit#status` and `#success?` added; `SystemExit` and `IndexError` registered in the builtin class table with correct hierarchy (`SystemExit < Exception`, `IndexError < StandardError`, `KeyError < IndexError`)
+- Custom exception `initialize` with more than one parameter now works: the strict `argc > 1` guard in exception `new` was rejecting calls before the user `initialize` could run; detection of user-defined init now hoists before the arity gate and uses a relaxed message fallback
+- `abort` added as a kernel method: prints message to stderr and raises `SystemExit` with status 1

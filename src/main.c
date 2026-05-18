@@ -187,6 +187,27 @@ int main(int argc, char **argv) {
         return 1;
     }
     if (result.kind == VAL_EXCEPTION) {
+        /* SystemExit: run at_exit handlers and exit with stored status */
+        if (eval.current_exception.kind == VAL_OBJECT &&
+            eval.current_exception.obj->klass.kind == VAL_CLASS &&
+            strcmp(eval.current_exception.obj->klass.klass->name, "SystemExit") == 0) {
+            int exit_code = 0;
+            Value status;
+            if (val_object_get_ivar(eval.current_exception, "status", &status) &&
+                status.kind == VAL_INT)
+                exit_code = (int)status.ival;
+            /* Run at_exit handlers before exiting */
+            AtExitHandler *h = eval.at_exit_handlers;
+            while (h) {
+                eval.errored = 0;
+                call_block(&eval, eval.top_env, h->blk, NULL, 0, NULL);
+                h = h->next;
+            }
+            arena_free(&arena);
+            free(file_buf);
+            free(exec_path);
+            return exit_code;
+        }
         char buf[2048];
         snprintf(buf, sizeof(buf), "error: %u:%u: %s\n",
                  eval.exception_line, eval.exception_col, eval.exception_msg);

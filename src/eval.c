@@ -993,20 +993,36 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                             env_define(ev->arena, *slot, node->def.name,
                                        val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
                         } else {
-                            env_define(ev->arena, env, node->def.name,
+                            /* singleton_target is nil (class body) — hoist to self's class_env if in a class */
+                            Value self_val = val_nil();
+                            env_get(env, "self", &self_val);
+                            Env *def_target = env;
+                            if (self_val.kind == VAL_CLASS && self_val.klass && self_val.klass->class_env)
+                                def_target = self_val.klass->class_env;
+                            env_define(ev->arena, def_target, node->def.name,
                                        val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
                         }
                     }
                 } else {
+                    /* If self is a class (e.g. inside class_eval or a block inside a class body),
+                       register the instance method in the class's class_env rather than the
+                       local block frame.  This matches Ruby: def always hoists to the nearest
+                       class/module scope when one is in effect. */
+                    Value self_val = val_nil();
+                    env_get(env, "self", &self_val);
+                    Env *def_target = env;
+                    if (self_val.kind == VAL_CLASS && self_val.klass && self_val.klass->class_env)
+                        def_target = self_val.klass->class_env;
+
                     /* Don't overwrite existing class/module constants with top-level defs.
                        In Ruby, def Foo() defines a kernel method that doesn't shadow the Foo constant. */
                     int is_const_name = node->def.name && isupper((unsigned char)node->def.name[0]);
                     Value existing_const = val_nil();
-                    int would_shadow = is_const_name &&
+                    int would_shadow = is_const_name && def_target == env &&
                         env_get(ev->top_env, node->def.name, &existing_const) &&
                         existing_const.kind == VAL_CLASS;
                     if (!would_shadow) {
-                        env_define(ev->arena, env, node->def.name,
+                        env_define(ev->arena, def_target, node->def.name,
                                    val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
                     } else {
                         /* Store as private kernel method under a mangled key that doesn't shadow the constant */
@@ -1416,8 +1432,9 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "Exception", "StandardError", "RuntimeError",
         "ArgumentError", "TypeError", "NameError", "NoMethodError", "RegexpError",
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError", "StopIteration", "EOFError",
-        "SystemStackError", "IOError", "EncodingError", "FrozenError", "SystemCallError",
-        "SignalException", "Interrupt", "SyntaxError", "ScriptError", "NotImplementedError",
+        "IndexError", "SystemExit", "SystemStackError", "IOError", "EncodingError", "FrozenError",
+        "SystemCallError", "SignalException", "Interrupt", "SyntaxError", "ScriptError",
+        "NotImplementedError",
         NULL
     };
     for (int i = 0; builtins[i]; i++) {
@@ -1458,11 +1475,13 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
             {"ArgumentError","StandardError"},{"NameError","StandardError"},
             {"NoMethodError","NameError"},    {"StopIteration","StandardError"},
             {"RangeError","StandardError"},   {"IOError","StandardError"},
-            {"KeyError","StandardError"},     {"ZeroDivisionError","StandardError"},
+            {"ZeroDivisionError","StandardError"},
             {"NotImplementedError","StandardError"},
             {"EncodingError","StandardError"},{"FrozenError","RuntimeError"},
             {"LoadError","StandardError"},    {"SyntaxError","StandardError"},
             {"ScriptError","StandardError"},  {"NotImplementedError","ScriptError"},
+            {"SystemExit","Exception"},        {"IndexError","StandardError"},
+            {"KeyError","IndexError"},
             {"SignalException","Exception"},  {"Interrupt","SignalException"},
             {"BasicObject","Object"},
             {NULL, NULL}

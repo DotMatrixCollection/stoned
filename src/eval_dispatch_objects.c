@@ -2923,56 +2923,61 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             return 1;
         }
         if (class_is_a_named_class(ev, recv.klass, "Exception")) {
-            /* Build exception with message arg (or class name if none) */
-            int ok = 1;
-            Value message = exception_arg_message(ev, recv, args, argc, &ok, site);
-            if (!ok) { *out = message; return 1; }
-            Value obj = build_exception_object(ev, recv, message.sval);
-            /* If the class has a user-defined initialize (not inherited from a built-in
-               exception class), call it so custom default messages and super(msg) work */
-            {
-                Value init_method;
-                RubyClass *owner = NULL;
-                if (ruby_class_find_instance_method(recv.klass, "initialize", &init_method, &owner) &&
-                    owner && init_method.kind == VAL_METHOD && init_method.method.def_node) {
-                    /* Only invoke if not from the built-in Exception-level classes */
-                    static const char *builtin_exc_names[] = {
-                        "Exception","StandardError","RuntimeError","TypeError","ArgumentError",
-                        "NameError","NoMethodError","ZeroDivisionError","IndexError","KeyError",
-                        "RangeError","IOError","LoadError","SystemExit","NotImplementedError",
-                        "LocalJumpError","StopIteration","FrozenError","Errno::ENOENT",
-                        "Errno::EACCES","Errno::EEXIST","Errno::EBADF","Errno::EPERM",
-                        "SystemCallError","RegexpError","EncodingError","SystemStackError",
-                        "SyntaxError","SignalException","Interrupt","ScriptError",NULL
-                    };
-                    int is_builtin = 0;
-                    for (int bi = 0; builtin_exc_names[bi]; bi++) {
-                        if (strcmp(owner->name, builtin_exc_names[bi]) == 0) { is_builtin = 1; break; }
-                    }
-                    if (!is_builtin) {
-                        /* Call the user initialize on the already-built exception object */
-                        Env *ienv = env_new(ev->arena, init_method.method.closure, 1);
-                        env_set(ev->arena, ienv, "self", obj);
-                        env_set(ev->arena, ienv, "__method__", val_symbol("initialize"));
-                        Value kv; kv.kind = VAL_CLASS; kv.klass = owner;
-                        env_set(ev->arena, ienv, "__class__", kv);
-                        if (blk) ienv->block_arg = blk;
-                        bind_params(ev, ienv, init_method.method.def_node->def.params, args, argc);
-                        ev->call_depth++;
-                        if (ev->active_def_count < EVAL_MAX_DEPTH)
-                            ev->active_defs[ev->active_def_count++] = ienv;
-                        Value iresult = eval_node(ev, ienv, init_method.method.def_node->def.body);
-                        if (ev->active_def_count > 0) ev->active_def_count--;
-                        ev->call_depth--;
-                        (void)iresult;
-                        ev->errored = 0;
-                        /* Re-read message from @message ivar if initialize set it via super */
-                        Value msg_ivar;
-                        if (val_object_get_ivar(obj, "message", &msg_ivar) && msg_ivar.kind == VAL_STRING) {
-                            /* message was already set by build_exception_object, update if super was called */
-                        }
-                    }
+            static const char *builtin_exc_names[] = {
+                "Exception","StandardError","RuntimeError","TypeError","ArgumentError",
+                "NameError","NoMethodError","ZeroDivisionError","IndexError","KeyError",
+                "RangeError","IOError","LoadError","SystemExit","NotImplementedError",
+                "LocalJumpError","StopIteration","FrozenError","Errno::ENOENT",
+                "Errno::EACCES","Errno::EEXIST","Errno::EBADF","Errno::EPERM",
+                "SystemCallError","RegexpError","EncodingError","SystemStackError",
+                "SyntaxError","SignalException","Interrupt","ScriptError",NULL
+            };
+            /* Check for user-defined initialize first so we know how to validate args */
+            Value init_method;
+            RubyClass *owner = NULL;
+            int has_user_init = 0;
+            if (ruby_class_find_instance_method(recv.klass, "initialize", &init_method, &owner) &&
+                owner && init_method.kind == VAL_METHOD && init_method.method.def_node) {
+                int is_builtin = 0;
+                for (int bi = 0; builtin_exc_names[bi]; bi++) {
+                    if (strcmp(owner->name, builtin_exc_names[bi]) == 0) { is_builtin = 1; break; }
                 }
+                has_user_init = !is_builtin;
+            }
+            /* Build exception object. For user-defined initialize, accept any argc and use
+               the first string arg (or class name) as a placeholder — the user init will
+               call super(msg) to set the real message. For builtins, enforce argc <= 1. */
+            Value message;
+            if (has_user_init) {
+                if (argc >= 1 && args[0].kind == VAL_STRING)
+                    message = args[0];
+                else
+                    message = val_string(ev->arena, recv.klass->name);
+            } else {
+                int ok = 1;
+                message = exception_arg_message(ev, recv, args, argc, &ok, site);
+                if (!ok) { *out = message; return 1; }
+            }
+            Value obj = build_exception_object(ev, recv, message.sval);
+            if (has_user_init) {
+                /* Call the user initialize on the already-built exception object */
+                Env *ienv = env_new(ev->arena, init_method.method.closure, 1);
+                env_set(ev->arena, ienv, "self", obj);
+                env_set(ev->arena, ienv, "__method__", val_symbol("initialize"));
+                Value kv; kv.kind = VAL_CLASS; kv.klass = owner;
+                env_set(ev->arena, ienv, "__class__", kv);
+                if (blk) ienv->block_arg = blk;
+                bind_params(ev, ienv, init_method.method.def_node->def.params, args, argc);
+                ev->call_depth++;
+                if (ev->active_def_count < EVAL_MAX_DEPTH)
+                    ev->active_defs[ev->active_def_count++] = ienv;
+                eval_push_frame(ev, site ? site->span.line : 0, site ? site->span.col : 0, "initialize");
+                Value iresult = eval_node(ev, ienv, init_method.method.def_node->def.body);
+                eval_pop_frame(ev);
+                if (ev->active_def_count > 0) ev->active_def_count--;
+                ev->call_depth--;
+                if (val_is_signal(iresult)) { *out = iresult; return 1; }
+                ev->errored = 0;
             }
             *out = obj;
             return 1;
@@ -4798,6 +4803,27 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             }
             exception_set_backtrace(ev, recv, args[0]);
             *out = args[0];
+            return 1;
+        }
+        /* SystemExit#status / SystemExit#success? */
+        if (strcmp(name, "status") == 0 &&
+            recv.obj->klass.kind == VAL_CLASS &&
+            strcmp(recv.obj->klass.klass->name, "SystemExit") == 0) {
+            Value st;
+            if (val_object_get_ivar(recv, "status", &st) && st.kind == VAL_INT)
+                *out = st;
+            else
+                *out = val_int(0);
+            return 1;
+        }
+        if (strcmp(name, "success?") == 0 &&
+            recv.obj->klass.kind == VAL_CLASS &&
+            strcmp(recv.obj->klass.klass->name, "SystemExit") == 0) {
+            Value st;
+            int code = 0;
+            if (val_object_get_ivar(recv, "status", &st) && st.kind == VAL_INT)
+                code = (int)st.ival;
+            *out = val_bool(code == 0);
             return 1;
         }
     }
