@@ -1435,6 +1435,19 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = recv;
         return 1;
     }
+    if (strcmp(name, "each_with_index") == 0) {
+        if (!blk) { *out = recv; return 1; }
+        for (size_t i = 0; i < h->len; i++) {
+            Value pair = val_array_new();
+            val_array_push(&pair, h->keys[i]);
+            val_array_push(&pair, h->vals[i]);
+            Value block_args[2] = { pair, val_int((int64_t)i) };
+            Value r = call_block(ev, env, *blk, block_args, 2, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+        }
+        *out = recv; return 1;
+    }
     if (strcmp(name, "each_key") == 0 || strcmp(name, "each_value") == 0) {
         if (!blk) {
             Value arr = val_array_new();
@@ -1699,6 +1712,20 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             val_array_push(&arr, pair);
         }
         *out = arr; return 1;
+    }
+    if (strcmp(name, "flatten") == 0) {
+        /* h.flatten(n) = h.to_a.flatten(n); default depth = 1 */
+        int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : 1;
+        Value pairs = val_array_new();
+        for (size_t i = 0; i < h->len; i++) {
+            Value pair = val_array_new();
+            val_array_push(&pair, h->keys[i]);
+            val_array_push(&pair, h->vals[i]);
+            val_array_push(&pairs, pair);
+        }
+        Value result = val_array_new();
+        array_flatten_into(pairs, &result, depth);
+        *out = result; return 1;
     }
     if (strcmp(name, "invert") == 0) {
         Value result = val_hash_new(ev->arena);
