@@ -1112,9 +1112,14 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 if (args[j].kind == VAL_ARRAY && i < args[j].array->len) val_array_push(&pair, args[j].array->elems[i]);
                 else val_array_push(&pair, val_nil());
             }
-            val_array_push(&result, pair);
+            if (blk) {
+                Value r = call_block(ev, env, *blk, pair.array->elems, (int)pair.array->len, site);
+                if (ev->errored || val_is_signal(r)) { *out = r; return 1; }
+            } else {
+                val_array_push(&result, pair);
+            }
         }
-        *out = result;
+        *out = blk ? val_nil() : result;
         return 1;
     }
     return 0;
