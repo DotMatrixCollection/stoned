@@ -477,12 +477,18 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "<=>", NULL
     };
     static const char *str_methods[] = {
-        "to_s", "to_i", "to_f", "to_sym", "length", "size", "empty?", "upcase",
-        "downcase", "strip", "chars", "include?", "start_with?", "end_with?", "split",
-        "each_char", "reverse", "next", "succ", "replace", "inspect", "chomp", "chop",
-        "lstrip", "rstrip", "capitalize", "swapcase", "ljust", "rjust", "center", "ord",
-        "hex", "oct", "bytes", "<<", "index", "rindex", "[]", "slice", "lines",
-        "each_line", "tr", "count", "delete", "squeeze", "scan", "sub", "gsub", "match", "=~", "*", NULL
+        "to_s", "to_str", "to_i", "to_f", "to_sym", "to_r", "to_c", "length", "size", "empty?",
+        "upcase", "upcase!", "downcase", "downcase!", "strip", "strip!", "chars", "include?",
+        "start_with?", "end_with?", "split", "each_char", "reverse", "reverse!", "next", "succ",
+        "replace", "inspect", "chomp", "chomp!", "chop", "chop!", "lstrip", "rstrip", "lstrip!",
+        "rstrip!", "capitalize", "swapcase", "ljust", "rjust", "center", "ord", "hex", "oct",
+        "bytes", "bytesize", "<<", "index", "rindex", "[]", "[]=", "slice", "slice!", "lines",
+        "each_line", "tr", "tr!", "count", "delete", "delete!", "squeeze", "squeeze!", "scan",
+        "sub", "sub!", "gsub", "gsub!", "match", "match?", "=~", "*", "+", "encoding",
+        "encode", "force_encoding", "b", "freeze", "frozen?", "dup", "clone",
+        "delete_prefix", "delete_suffix", "insert", "prepend", "concat", "format",
+        "unpack", "unpack1", "setbyte", "getbyte", "byteslice", "hash",
+        NULL
     };
     static const char *arr_methods[] = {
         "length", "size", "count", "empty?", "first", "last", "push", "append", "pop",
@@ -494,10 +500,16 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     static const char *hash_methods[] = {
         "[]", "[]=", "fetch", "has_key?", "key?", "include?", "member?", "has_value?",
         "value?", "delete", "keys", "values", "length", "size", "count", "empty?",
-        "to_s", "inspect", "to_a", "merge", "merge!", "update", "each", "each_pair",
-        "each_key", "each_value", "map", "collect", "select", "filter", "reject", "any?",
-        "all?", "min_by", "max_by", "sort_by", "flat_map", "reduce", "inject", "store",
-        "clear", "dup", "nil?", NULL
+        "to_s", "inspect", "to_a", "to_h", "merge", "merge!", "update", "each", "each_pair",
+        "each_key", "each_value", "each_with_object", "map", "collect", "select", "filter",
+        "reject", "any?", "all?", "none?", "find", "detect",
+        "min_by", "max_by", "sort_by", "sort", "flat_map", "reduce", "inject", "store",
+        "clear", "dup", "nil?", "freeze", "frozen?", "transform_values", "transform_keys",
+        "transform_values!", "transform_keys!", "filter_map", "slice", "except",
+        "invert", "key", "assoc", "rassoc", "values_at", "fetch_values",
+        "group_by", "tally", "flat_map", "zip", "each_with_index", "min", "max",
+        "sum", "reduce", "inject", "first", "take", "drop",
+        NULL
     };
     static const char *proc_methods[] = {
         "call", "[]", "lambda?", "arity", "to_s", "inspect", NULL
@@ -511,7 +523,10 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "to_s", "inspect", NULL
     };
     static const char *nil_methods[] = {
-        "nil?", "to_s", "inspect", NULL
+        "nil?", "to_s", "to_str", "to_a", "to_h", "to_i", "to_f", "to_r", "to_c",
+        "inspect", "freeze", "frozen?", "dup", "class", "is_a?", "kind_of?",
+        "respond_to?", "send", "==", "!=", "!", "hash", "object_id",
+        NULL
     };
     static const char *bool_methods[] = {
         "to_s", "inspect", "!", "nil?", NULL
@@ -1295,11 +1310,24 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         }
     }
     if (strcmp(name, "rand") == 0) {
-        if (argc == 0) return val_float((double)rand() / ((double)RAND_MAX + 1.0));
-        if (args[0].kind == VAL_FLOAT) return val_float((double)rand() / ((double)RAND_MAX + 1.0));
-        int64_t n = argc > 0 ? args[0].ival : 1;
-        if (n <= 0) return val_float((double)rand() / ((double)RAND_MAX + 1.0));
-        return val_int((int64_t)(rand() % n));
+        double r01 = (double)rand() / ((double)RAND_MAX + 1.0);
+        if (argc == 0) return val_float(r01);
+        if (args[0].kind == VAL_FLOAT) {
+            double n = args[0].fval;
+            return n <= 0.0 ? val_float(r01) : val_float(r01 * n);
+        }
+        if (args[0].kind == VAL_RANGE) {
+            RubyRange *rng = args[0].range;
+            int64_t lo = rng->begin_val.kind == VAL_INT ? rng->begin_val.ival : 0;
+            int64_t hi = rng->end_val.kind == VAL_INT ? rng->end_val.ival :
+                         rng->end_val.kind == VAL_NIL ? lo + 1000000 : (int64_t)rng->end_val.fval;
+            if (rng->exclusive) hi--;
+            if (hi < lo) return val_nil();
+            return val_int(lo + (int64_t)(r01 * (double)(hi - lo + 1)));
+        }
+        int64_t n = args[0].kind == VAL_INT ? args[0].ival : 1;
+        if (n <= 0) return val_float(r01);
+        return val_int((int64_t)(r01 * (double)n));
     }
     if (strcmp(name, "open") == 0) {
         /* Kernel#open — opens a file like File.open */
@@ -2261,12 +2289,22 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
     CHECK(right);
 
         if (strcmp(op, "+") == 0 && left.kind == VAL_STRING) {
-        if (right.kind != VAL_STRING)
-            return eval_raise_class(ev, node, "TypeError", "String can only be concatenated with String");
-        size_t la = strlen(left.sval), lb = strlen(right.sval);
+        Value rhs = right;
+        if (rhs.kind != VAL_STRING) {
+            /* Try implicit to_str coercion */
+            Value coerced = dispatch_method(ev, env, rhs, "to_str", NULL, 0, NULL, node, 0, -1);
+            if (!val_is_signal(coerced) && coerced.kind == VAL_STRING) {
+                rhs = coerced;
+            } else {
+                ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+                return eval_raise_class(ev, node, "TypeError", "no implicit conversion of %s into String",
+                                        value_class_name(ev, right));
+            }
+        }
+        size_t la = strlen(left.sval), lb = strlen(rhs.sval);
         char *buf = arena_alloc(ev->arena, la + lb + 1);
         memcpy(buf, left.sval, la);
-        memcpy(buf + la, right.sval, lb + 1);
+        memcpy(buf + la, rhs.sval, lb + 1);
         return val_string(ev->arena, buf);
     }
 

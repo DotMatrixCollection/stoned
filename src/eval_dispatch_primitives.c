@@ -1223,8 +1223,18 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         if (argc < 1) { *out = recv; return 1; }
         if (strcmp(name, "<<") == 0 && recv.frozen)
             { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String"); return 1; }
-        if (strcmp(name, "+") == 0 && args[0].kind != VAL_STRING)
-            { *out = eval_raise_class(ev, site, "TypeError", "String#+ requires a String"); return 1; }
+        if (strcmp(name, "+") == 0 && args[0].kind != VAL_STRING) {
+            /* Try implicit to_str coercion */
+            Value coerced = dispatch_method(ev, env, args[0], "to_str", NULL, 0, NULL, site, 0, -1);
+            if (!val_is_signal(coerced) && coerced.kind == VAL_STRING) {
+                args[0] = coerced;
+            } else {
+                ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+                *out = eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into String",
+                                        value_class_name(ev, args[0]));
+                return 1;
+            }
+        }
         const char *rhs = val_to_s(ev->arena, args[0]);
         size_t slen = strlen(s), rlen = strlen(rhs);
         char *buf = arena_alloc(ev->arena, slen + rlen + 1);

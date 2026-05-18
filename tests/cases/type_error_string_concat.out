@@ -1,2 +1,2 @@
 TypeError
-String can only be concatenated with String
+no implicit conversion of Integer into String

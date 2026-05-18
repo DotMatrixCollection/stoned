@@ -1543,7 +1543,8 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         }
         *out = result; return 1;
     }
-    if (strcmp(name, "min_by") == 0 || strcmp(name, "max_by") == 0 || strcmp(name, "sort_by") == 0) {
+    if (strcmp(name, "sort") == 0 || strcmp(name, "sort_by") == 0 ||
+        strcmp(name, "min_by") == 0 || strcmp(name, "max_by") == 0) {
         Value as_arr = val_array_new();
         for (size_t i = 0; i < h->len; i++) {
             Value pair = val_array_new();
