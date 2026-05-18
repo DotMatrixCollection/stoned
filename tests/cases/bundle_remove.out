@@ -1,0 +1,19 @@
+--LIST-BEFORE--
+Gems included by the bundle:
+  * gem1 (path)
+  * gem2 (path)
+--REMOVE--
+gem1 was removed from your Gemfile
+0
+--GEMFILE--
+source "https://rubygems.org"
+gem "gem2", path: "/tmp/stoned_bundle_remove_/gem2"
+--LIST-AFTER--
+Gems included by the bundle:
+  * gem2 (path)
+--REMOVE-AGAIN--
+gem1 is not in your Gemfile
+1
+--NO-NAME--
+Usage: bundle remove GEM
+1

@@ -1,0 +1,29 @@
+--ADD--
+gem2 added to Gemfile
+Using gem1 (path: /tmp/stoned_bundle_add_/gem1)
+Using gem2 (path: /tmp/stoned_bundle_add_/gem2)
+Bundle complete! 2 gems now installed.
+0
+--GEMFILE-HAS-GEM2--
+true
+--LOCK--
+GEM
+  specs:
+    gem1 (path)
+    gem2 (path)
+
+BUNDLED WITH
+   2.5.0.stoned
+--ADD-GROUP--
+gem3 added to Gemfile
+Using gem1 (path: /tmp/stoned_bundle_add_/gem1)
+Using gem2 (path: /tmp/stoned_bundle_add_/gem2)
+Using gem3 (path: /tmp/stoned_bundle_add_/gem3)
+Bundle complete! 3 gems now installed.
+0
+--DUPLICATE--
+gem1 is already in your Gemfile
+1
+--NO-NAME--
+Usage: bundle add GEM [--version VERSION] [--group GROUP] [--path PATH]
+1

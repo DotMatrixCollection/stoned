@@ -1059,7 +1059,93 @@ when "outdated"
     end
   end
 
-when "add", "remove", "console"
+when "add"
+  positional = args.reject { |a| a.start_with?("-") }
+  gem_name   = positional.first
+  unless gem_name
+    STDERR.puts "Usage: bundle add GEM [--version VERSION] [--group GROUP] [--path PATH]"
+    exit 1
+  end
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+
+  ver_idx   = args.index("--version") || args.index("-v")
+  ver_opt   = ver_idx ? args[ver_idx + 1] : nil
+  grp_idx   = args.index("--group") || args.index("-g")
+  grp_opt   = grp_idx ? args[grp_idx + 1] : nil
+  path_idx  = args.index("--path")
+  path_opt  = path_idx ? args[path_idx + 1] : nil
+
+  content = File.read(GEMFILE)
+  already = content.lines.any? do |line|
+    stripped = line.strip
+    !stripped.start_with?("#") &&
+      (stripped.include?("gem #{gem_name.inspect}") || stripped.include?("gem '#{gem_name}'"))
+  end
+  if already
+    STDERR.puts "#{gem_name} is already in your Gemfile"
+    exit 1
+  end
+
+  gem_parts = ["gem #{gem_name.inspect}"]
+  gem_parts << ", #{ver_opt.inspect}" if ver_opt
+  gem_parts << ", path: #{path_opt.inspect}" if path_opt
+  gem_parts << ", group: :#{grp_opt}" if grp_opt
+  File.write(GEMFILE, content.chomp + "\n#{gem_parts.join}\n")
+  puts "#{gem_name} added to Gemfile"
+
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  if bundle_needs_remote_tools?(dsl) && !(check_tool("curl") && check_tool("tar"))
+    STDERR.puts "curl and tar are required for bundle install"
+    exit 1
+  end
+  resolved = resolve_and_install(dsl, verbose: true)
+  if resolved
+    Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
+    puts "Bundle complete! #{resolved.length} gems now installed."
+  else
+    STDERR.puts "Bundle install failed."
+    exit 1
+  end
+
+when "remove"
+  positional = args.reject { |a| a.start_with?("-") }
+  gem_name   = positional.first
+  unless gem_name
+    STDERR.puts "Usage: bundle remove GEM"
+    exit 1
+  end
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+
+  content = File.read(GEMFILE)
+  new_content = content.lines.reject { |line|
+    stripped = line.strip
+    !stripped.start_with?("#") &&
+      (stripped.include?("gem #{gem_name.inspect}") || stripped.include?("gem '#{gem_name}'"))
+  }.join
+
+  if new_content == content
+    STDERR.puts "#{gem_name} is not in your Gemfile"
+    exit 1
+  end
+
+  File.write(GEMFILE, new_content)
+  puts "#{gem_name} was removed from your Gemfile"
+
+  if File.exist?(LOCKFILE)
+    dsl = GemfileDSL.evaluate(GEMFILE)
+    resolved = resolve_and_install(dsl, verbose: false)
+    if resolved
+      Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
+    end
+  end
+
+when "console"
   STDERR.puts "bundle #{command}: not yet implemented"
   exit 1
 
@@ -1079,6 +1165,8 @@ when nil, "help", "--help", "-h"
   puts "  env           Print environment information"
   puts "  binstubs GEM  Generate binstubs for a gem's executables"
   puts "  update        Re-resolve and update all gems"
+  puts "  add GEM       Add a gem to the Gemfile and install"
+  puts "  remove GEM    Remove a gem from the Gemfile"
   puts "  outdated      List gems with newer versions available"
   puts "  version       Print Bundler version"
 else
