@@ -1,0 +1,12 @@
+Successfully built gem: demo-1.2.3.gem
+Successfully installed demo-1.2.3
+Successfully built gem: demo-2.0.0.gem
+Successfully installed demo-2.0.0
+--UNPACK-OLD--
+Unpacked gem: '/tmp/stoned_gem_cli_unpack_/work/demo-1.2.3'
+0
+true
+true
+--UNPACK-OLD-AGAIN--
+ERROR: demo-1.2.3 already exists
+1

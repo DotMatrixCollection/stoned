@@ -1,0 +1,19 @@
+Successfully built gem: demo-1.2.3.gem
+Successfully installed demo-1.2.3
+Successfully built gem: demo-2.0.0.gem
+Successfully installed demo-2.0.0
+--OPEN-OLD--
+/tmp/stoned_gem_cli_versioned_lookup_/gemhome/gems/demo-1.2.3
+0
+--CONTENTS-OLD--
+/tmp/stoned_gem_cli_versioned_lookup_/gemhome/gems/demo-1.2.3/demo.gemspec
+/tmp/stoned_gem_cli_versioned_lookup_/gemhome/gems/demo-1.2.3/lib/demo.rb
+0
+--SPEC-OLD--
+Gem::Specification.new do |s|
+  s.name    = "demo"
+  s.version = Gem::Version.new("1.2.3")
+  s.summary = "demo gem 1.2.3"
+  s.require_paths = ["lib"]
+end
+0

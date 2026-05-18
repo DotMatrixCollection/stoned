@@ -1,0 +1,9 @@
+Successfully built gem: demo-1.2.3.gem
+  Gem: /tmp/stoned_gem_cli_open_/demo/demo-1.2.3.gem
+Successfully installed demo-1.2.3
+--OPEN--
+/tmp/stoned_gem_cli_open_/gemhome/gems/demo-1.2.3
+0
+--OPEN-MISSING--
+ERROR: gem 'missing' is not installed
+1

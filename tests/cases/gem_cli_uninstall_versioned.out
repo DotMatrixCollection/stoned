@@ -1,0 +1,15 @@
+Successfully built gem: demo-1.2.3.gem
+Successfully installed demo-1.2.3
+Successfully built gem: demo-2.0.0.gem
+Successfully installed demo-2.0.0
+--LIST1--
+*** LOCAL GEMS ***
+demo (1.2.3, 2.0.0)
+--UNINSTALL-OLD--
+Removing demo-1.2.3...
+Successfully uninstalled demo-1.2.3
+false
+true
+--LIST2--
+*** LOCAL GEMS ***
+demo (2.0.0)

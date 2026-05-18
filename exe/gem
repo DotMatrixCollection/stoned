@@ -34,6 +34,10 @@ def print_gem_env
   puts "     - #{GEM_SERVER}"
 end
 
+def wrapper_script_for(exe_path)
+  "#!/usr/bin/env ruby\nload #{exe_path.inspect}\n"
+end
+
 def install_gem_file(gem_path)
   unless check_tool("tar")
     STDERR.puts "ERROR: 'tar' is required for gem install"
@@ -103,7 +107,7 @@ def install_gem_file(gem_path)
       Dir.children(bin_src).each do |exe|
         wrapper = File.join(bin_dir, exe)
         exe_path = File.join(bin_src, exe)
-        File.write(wrapper, "#!/usr/bin/env ruby\nload #{exe_path.inspect}\n")
+        File.write(wrapper, wrapper_script_for(exe_path))
         system("chmod", "+x", wrapper)
       end
     end
@@ -341,8 +345,99 @@ def print_usage
   STDERR.puts "  contents GEM     List files installed for a gem"
   STDERR.puts "  search PATTERN   Search installed gems"
   STDERR.puts "  specification GEM  Print an installed gemspec"
+  STDERR.puts "  open GEM         Print the installed path for a gem"
+  STDERR.puts "  unpack GEM       Copy an installed gem into the current directory"
+  STDERR.puts "  which FEATURE    Print the installed path for a require target"
   STDERR.puts "  env              Display RubyGems environment"
   STDERR.puts "  version          Display RubyGems version"
+end
+
+def option_value(flag_short, flag_long)
+  ARGV.each_with_index do |arg, i|
+    return ARGV[i + 1] if arg == flag_short || arg == flag_long
+  end
+  nil
+end
+
+def find_installed_spec(gem_name, version = nil)
+  Gem::Specification.reset! if Gem::Specification.respond_to?(:reset!)
+  if version && !version.empty?
+    Gem::Specification.find_by_name(gem_name, version)
+  else
+    Gem::Specification.find_by_name(gem_name)
+  end
+end
+
+def positional_args(args)
+  names = []
+  skip_next = false
+
+  args.each do |arg|
+    if skip_next
+      skip_next = false
+      next
+    end
+
+    if arg == "-v" || arg == "--version"
+      skip_next = true
+      next
+    end
+
+    next if arg.start_with?("-")
+    names << arg
+  end
+
+  names
+end
+
+def refresh_bin_wrappers_for(spec)
+  bin_dir = File.join(Gem.home, "bin")
+  executables = spec.executables || []
+  return if executables.empty?
+
+  executables.each do |exe|
+    wrapper = File.join(bin_dir, exe)
+    replacement = Gem::Specification.find_all_by_name(spec.name)
+      .sort_by(&:version)
+      .reverse
+      .find do |candidate|
+        next false if candidate.full_name == spec.full_name
+
+        candidate_exes = candidate.executables || []
+        candidate_exes.include?(exe) &&
+          File.exist?(File.join(candidate.gem_dir, candidate.bindir || "bin", exe))
+      end
+
+    if replacement
+      exe_path = File.join(replacement.gem_dir, replacement.bindir || "bin", exe)
+      File.write(wrapper, wrapper_script_for(exe_path))
+      system("chmod", "+x", wrapper)
+    elsif File.exist?(wrapper)
+      File.delete(wrapper)
+    end
+  end
+end
+
+def find_installed_feature(feature)
+  candidates = if feature.end_with?(".rb")
+    [feature]
+  else
+    ["#{feature}.rb", feature]
+  end
+
+  Gem::Specification.all
+    .sort_by(&:version)
+    .reverse
+    .each do |spec|
+      (spec.require_paths || ["lib"]).each do |require_path|
+        candidates.each do |candidate|
+          full_path = File.join(spec.gem_dir, require_path, candidate)
+          return full_path if File.file?(full_path)
+        end
+      end
+    end
+
+  nil
 end
 
 command = ARGV[0]
@@ -366,26 +461,29 @@ when "build"
   gem_build(gemspec)
 
 when "install", "i"
-  names = ARGV[1..].reject { |a| a.start_with?("-") }
+  names = positional_args(ARGV[1..])
   if names.empty?
     STDERR.puts "ERROR: Please specify a gem name"
     exit 1
   end
-  version = nil
-  ARGV.each_with_index do |arg, i|
-    version = ARGV[i + 1] if arg == "-v" || arg == "--version"
-  end
+  version = option_value("-v", "--version")
   gem_install(names, version: version)
 
 when "uninstall", "uni"
-  names = ARGV[1..].reject { |a| a.start_with?("-") }
+  names = positional_args(ARGV[1..])
+  if names.empty?
+    STDERR.puts "ERROR: Please specify a gem name"
+    exit 1
+  end
+  version = option_value("-v", "--version")
   names.each do |gem_name|
-    spec = Gem::Specification.find_by_name(gem_name)
+    spec = find_installed_spec(gem_name, version)
     unless spec
       STDERR.puts "ERROR: gem '#{gem_name}' is not installed"
       next
     end
     puts "Removing #{spec.full_name}..."
+    refresh_bin_wrappers_for(spec)
     system("rm", "-rf", spec.gem_dir)
     spec_file = File.join(Gem.home, "specifications", "#{spec.full_name}.gemspec")
     File.delete(spec_file) if File.exist?(spec_file)
@@ -394,9 +492,12 @@ when "uninstall", "uni"
   end
 
 when "list", "--list", "-l"
+  pattern = ARGV[1]
+  regex = pattern && !pattern.empty? ? Regexp.new(pattern) : nil
   puts "*** LOCAL GEMS ***"
   puts
   specs = Gem::Specification.all
+  specs = specs.select { |spec| spec.name =~ regex } if regex
   if specs.empty?
     puts "(no gems installed)"
   else
@@ -430,9 +531,9 @@ when "contents"
     STDERR.puts "ERROR: Please specify a gem name"
     exit 1
   end
+  version = option_value("-v", "--version")
 
-  Gem::Specification.reset! if Gem::Specification.respond_to?(:reset!)
-  spec = Gem::Specification.find_by_name(gem_name)
+  spec = find_installed_spec(gem_name, version)
   unless spec
     STDERR.puts "ERROR: gem '#{gem_name}' is not installed"
     exit 1
@@ -471,9 +572,9 @@ when "specification"
     STDERR.puts "ERROR: Please specify a gem name"
     exit 1
   end
+  version = option_value("-v", "--version")
 
-  Gem::Specification.reset! if Gem::Specification.respond_to?(:reset!)
-  spec = Gem::Specification.find_by_name(gem_name)
+  spec = find_installed_spec(gem_name, version)
   unless spec
     STDERR.puts "ERROR: gem '#{gem_name}' is not installed"
     exit 1
@@ -481,10 +582,67 @@ when "specification"
 
   print build_gemspec_content(spec)
 
+when "open"
+  gem_name = ARGV[1]
+  if gem_name.nil? || gem_name.empty?
+    STDERR.puts "ERROR: Please specify a gem name"
+    exit 1
+  end
+  version = option_value("-v", "--version")
+
+  spec = find_installed_spec(gem_name, version)
+  unless spec
+    STDERR.puts "ERROR: gem '#{gem_name}' is not installed"
+    exit 1
+  end
+
+  puts spec.gem_dir
+
+when "which"
+  feature = ARGV[1]
+  if feature.nil? || feature.empty?
+    STDERR.puts "ERROR: Please specify a feature name"
+    exit 1
+  end
+
+  path = find_installed_feature(feature)
+  unless path
+    STDERR.puts "ERROR: Can't find Ruby library file or shared library #{feature}"
+    exit 1
+  end
+
+  puts path
+
+when "unpack"
+  gem_name = ARGV[1]
+  if gem_name.nil? || gem_name.empty?
+    STDERR.puts "ERROR: Please specify a gem name"
+    exit 1
+  end
+  version = option_value("-v", "--version")
+
+  spec = find_installed_spec(gem_name, version)
+  unless spec
+    STDERR.puts "ERROR: gem '#{gem_name}' is not installed"
+    exit 1
+  end
+
+  target = File.expand_path(spec.full_name, Dir.pwd)
+  if File.exist?(target)
+    STDERR.puts "ERROR: #{spec.full_name} already exists"
+    exit 1
+  end
+
+  unless system("cp", "-R", spec.gem_dir, target)
+    STDERR.puts "ERROR: Failed to unpack #{spec.full_name}"
+    exit 1
+  end
+  puts "Unpacked gem: '#{target}'"
+
 when "help", "-h", "--help", nil
   print_usage
 
-when "update", "push", "fetch", "open", "pristine", "cleanup", "exec"
+when "update", "push", "fetch", "pristine", "cleanup", "exec"
   STDERR.puts "gem #{command}: not yet implemented"
   exit 1
 

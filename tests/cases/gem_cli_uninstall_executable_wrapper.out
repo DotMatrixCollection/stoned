@@ -1,0 +1,16 @@
+Successfully built gem: demo-1.2.3.gem
+Successfully installed demo-1.2.3
+Successfully built gem: demo-2.0.0.gem
+Successfully installed demo-2.0.0
+true
+--UNINSTALL-NEW--
+Removing demo-2.0.0...
+Successfully uninstalled demo-2.0.0
+true
+false
+true
+--UNINSTALL-OLD--
+Removing demo-1.2.3...
+Successfully uninstalled demo-1.2.3
+false
+false

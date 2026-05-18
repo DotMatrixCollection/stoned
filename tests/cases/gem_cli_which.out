@@ -1,0 +1,13 @@
+Successfully built gem: demo-1.2.3.gem
+Successfully installed demo-1.2.3
+Successfully built gem: demo-2.0.0.gem
+Successfully installed demo-2.0.0
+--WHICH-DEMO--
+/tmp/stoned_gem_cli_which_/gemhome/gems/demo-2.0.0/lib/demo.rb
+0
+--WHICH-NESTED--
+/tmp/stoned_gem_cli_which_/gemhome/gems/demo-2.0.0/lib/demo/version.rb
+0
+--WHICH-MISSING--
+ERROR: Can't find Ruby library file or shared library missing
+1

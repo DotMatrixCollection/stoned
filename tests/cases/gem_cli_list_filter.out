@@ -1,0 +1,10 @@
+Successfully built gem: demo-1.2.3.gem
+Successfully installed demo-1.2.3
+Successfully built gem: other-2.0.0.gem
+Successfully installed other-2.0.0
+--LIST-DEMO--
+*** LOCAL GEMS ***
+demo (1.2.3)
+--LIST-MISSING--
+*** LOCAL GEMS ***
+(no gems installed)
