@@ -17,11 +17,13 @@ BUNDLER_INLINE_STONED_ROOT = File.dirname(File.dirname(File.expand_path(__FILE__
 # interpreter because instance_eval-based DSLs are not yet implemented.
 
 class BundlerInlineDSL
-  attr_reader :deps, :gem_source
+  attr_reader :deps, :gem_source, :ruby_requirements
 
   def initialize
     @deps       = []
     @gem_source = "https://rubygems.org"
+    @ruby_requirements = []
+    @_gemfile_dir = Dir.pwd
   end
 
   def source(url, &block)
@@ -37,20 +39,40 @@ class BundlerInlineDSL
     @deps << { name: name.to_s, reqs: reqs.map(&:to_s), path: path }
   end
 
-  def ruby(*); end
+  def ruby(*requirements)
+    @ruby_requirements = requirements.map(&:to_s)
+  end
+
   def group(*, &block); yield self if block_given?; end
-  def eval_gemfile(path); end
+
+  def eval_gemfile(path)
+    full = File.expand_path(path, @_gemfile_dir)
+    previous_dir = @_gemfile_dir
+    @_gemfile_dir = File.dirname(full)
+    instance_eval(File.read(full), full) if File.exist?(full)
+  ensure
+    @_gemfile_dir = previous_dir
+  end
 end
 
 def gemfile(install: true, quiet: false, &block)
   dsl = BundlerInlineDSL.new
-  yield dsl if block_given?
+  if block_given?
+    if block.arity == 0
+      dsl.instance_eval(&block)
+    else
+      yield dsl
+    end
+  end
 
   tmp = "/tmp/bundler_inline_#{$$}_#{dsl.object_id}"
   system("mkdir", "-p", tmp)
   begin
     gemfile_path = File.join(tmp, "Gemfile")
     lines = ["source #{dsl.gem_source.inspect}"]
+    unless dsl.ruby_requirements.empty?
+      lines << "ruby #{dsl.ruby_requirements.map(&:inspect).join(', ')}"
+    end
     dsl.deps.each do |dep|
       line = "gem #{dep[:name].inspect}"
       dep[:reqs].each { |r| line += ", #{r.inspect}" }

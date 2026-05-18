@@ -19,13 +19,18 @@ File.write(File.join(gem_dir, "mygem.gemspec"), <<~GEMSPEC)
   end
 GEMSPEC
 File.write(File.join(lib_dir, "mygem.rb"), "INLINE_GEM_LOADED = true\n")
+shared_path = File.join(root, "Inline.shared")
+File.write(shared_path, <<~GEMFILE)
+  gem "mygem", path: #{gem_dir.inspect}
+GEMFILE
 
 script_path = File.join(root, "use_inline.rb")
 File.write(script_path, <<~RUBY)
   require "bundler/inline"
   gemfile(quiet: true) do |g|
     g.source "https://rubygems.org"
-    g.gem "mygem", path: #{gem_dir.inspect}
+    g.ruby #{RUBY_VERSION.inspect}
+    g.eval_gemfile #{shared_path.inspect}
   end
   require "mygem"
   puts INLINE_GEM_LOADED
