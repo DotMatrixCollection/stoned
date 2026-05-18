@@ -5,8 +5,13 @@ true
 https://rubygems.org
 foo
 1.0.0
+/tmp/stoned_bundler_definition_/foo
 ruby
+https://rubygems.org
 2.5.0.stoned
 foo
 1
+1
+1
+true
 true

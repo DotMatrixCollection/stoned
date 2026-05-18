@@ -29,7 +29,10 @@ puts parser.specs[0].name
 puts parser.specs[0].version
 puts parser.specs[1].name
 puts parser.specs[1].version
+puts parser.specs[0].source.remote
+puts parser.specs[1].source.type
 puts parser.platforms[0]
 puts parser.dependencies[0]
 puts parser.dependencies[1]
 puts parser.bundler_version
+puts parser.sources.length

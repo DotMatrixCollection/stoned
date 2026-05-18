@@ -54,12 +54,32 @@ module Bundler
       @lockfile_parser.platforms
     end
 
+    def source_requirements
+      @sources
+    end
+
     def locked_gems
       @lockfile_parser
     end
 
+    def locked_specs
+      @specs
+    end
+
     def lock(*_args)
       @lockfile_parser
+    end
+
+    def resolve
+      @specs
+    end
+
+    def resolve_remotely!
+      @specs
+    end
+
+    def missing_specs?
+      false
     end
 
     def nothing_changed?
