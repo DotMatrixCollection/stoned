@@ -1,6 +1,7 @@
-2
+true
 https://rubygems.org
-2
+4
+3.1.0
 alpha
 default
 0
@@ -8,3 +9,8 @@ beta
 tools
 /tmp/stoned_bundler_dsl_/vendor
 beta/core,beta/extra
+delta
+https://github.com/demo/repo.git
+main
+gamma
+/tmp/stoned_bundler_dsl_/vendor
