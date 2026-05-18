@@ -3260,15 +3260,25 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         if (argc < 1 || args[0].kind != VAL_CLASS)
             { *out = eval_raise_class(ev, site, "TypeError", "Class#include? requires a module"); return 1; }
         const char *mname = args[0].klass->name;
+        /* Recursive check: module may be transitively included */
+        int found = 0;
+        /* Use a simple depth-first search over the ancestor chain */
+        RubyClass *stack[256]; int sp = 0;
         RubyClass *k = recv.klass;
-        while (k) {
-            for (RubyModuleInclusion *m = k->included_modules; m; m = m->next)
-                if (strcmp(m->mod->name, mname) == 0) { *out = val_true(); return 1; }
-            for (RubyModuleInclusion *m = k->prepended_modules; m; m = m->next)
-                if (strcmp(m->mod->name, mname) == 0) { *out = val_true(); return 1; }
+        while (k && sp < 255) {
+            for (RubyModuleInclusion *m = k->prepended_modules; m && sp < 255; m = m->next)
+                stack[sp++] = m->mod;
+            for (RubyModuleInclusion *m = k->included_modules; m && sp < 255; m = m->next)
+                stack[sp++] = m->mod;
             k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL;
         }
-        *out = val_false(); return 1;
+        for (int i = 0; i < sp && !found; i++) {
+            if (strcmp(stack[i]->name, mname) == 0) { found = 1; break; }
+            /* Also check the module's own includes */
+            for (RubyModuleInclusion *m = stack[i]->included_modules; m && sp < 255; m = m->next)
+                stack[sp++] = m->mod;
+        }
+        *out = val_bool(found); return 1;
     }
 
     if (strcmp(name, "instance_methods") == 0 ||
