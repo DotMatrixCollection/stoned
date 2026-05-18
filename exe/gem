@@ -207,6 +207,8 @@ def gem_install(names, opts = {})
   end
 
   version_hint = opts[:version]
+  no_deps      = opts[:no_deps]
+  force        = opts[:force]
 
   until pending.empty?
     gem_name = pending.shift
@@ -214,15 +216,17 @@ def gem_install(names, opts = {})
 
     Gem::Specification.reset!
     existing = Gem::Specification.find_by_name(gem_name)
-    if existing && !version_hint
+    if existing && !version_hint && !force
       done[gem_name] = true
       next
     end
 
     ok = gem_install_remote_one(gem_name, version_hint)
     version_hint = nil
+    force = false
     done[gem_name] = true
     next unless ok
+    next if no_deps
 
     Gem::Specification.reset!
     installed = Gem::Specification.find_by_name(gem_name)
@@ -492,7 +496,9 @@ when "install", "i"
     exit 1
   end
   version = option_value("-v", "--version")
-  gem_install(names, version: version)
+  no_deps = ARGV.include?("--no-deps") || ARGV.include?("--ignore-dependencies")
+  force   = ARGV.include?("--force")
+  gem_install(names, version: version, no_deps: no_deps, force: force)
 
 when "uninstall", "uni"
   names = positional_args(ARGV[1..])
@@ -767,7 +773,29 @@ when "fetch"
   end
   puts "Downloaded #{gem_file}"
 
-when "push", "pristine", "exec"
+when "pristine"
+  names = positional_args(ARGV[1..])
+  if names.empty?
+    STDERR.puts "Usage: gem pristine GEM [GEM2 ...]"
+    exit 1
+  end
+  unless check_tool("curl") && check_tool("tar")
+    STDERR.puts "ERROR: 'curl' and 'tar' are required for gem pristine"
+    exit 1
+  end
+  puts "Restoring gems to pristine condition..."
+  names.each do |gem_name|
+    version = option_value("-v", "--version")
+    spec = find_installed_spec(gem_name, version)
+    unless spec
+      STDERR.puts "#{gem_name} is not installed"
+      next
+    end
+    puts "Restoring #{spec.full_name}"
+    gem_install([gem_name], version: spec.version.to_s, force: true, no_deps: true)
+  end
+
+when "push", "exec"
   STDERR.puts "gem #{command}: not yet implemented"
   exit 1
 

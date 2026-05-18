@@ -555,8 +555,9 @@ def install_gem_from_server(gem_name, version)
 end
 
 def resolve_and_install(dsl, verbose: true, force_update: false)
-  resolved = {}
-  errors   = []
+  resolved      = {}
+  errors        = []
+  new_installed = 0
   # Seed queue from Gemfile deps; track names to avoid duplicates
   queue   = active_dependencies(dsl).dup
   queued  = {}
@@ -611,6 +612,7 @@ def resolve_and_install(dsl, verbose: true, force_update: false)
       puts "Fetching #{name} #{version}..." if verbose
       if install_gem_from_server(name, version)
         resolved[name] = version
+        new_installed += 1
         puts "Installed #{name} #{version}" if verbose
         Gem::Specification.reset!
         installed = Gem::Specification.find_by_name(name)
@@ -622,7 +624,7 @@ def resolve_and_install(dsl, verbose: true, force_update: false)
   end
 
   errors.each { |e| STDERR.puts "ERROR: #{e}" }
-  errors.empty? ? resolved : nil
+  errors.empty? ? [resolved, new_installed] : nil
 end
 
 def enqueue_runtime_deps(spec, groups, queue, queued, resolved)
@@ -754,8 +756,9 @@ when "install", "i"
     exit 1
   end
   if frozen
-    resolved = resolve_and_install(dsl, verbose: false)
-    if resolved
+    result = resolve_and_install(dsl, verbose: false)
+    if result
+      resolved, _newly = result
       new_lock = lockfile_resolved_dependencies(dsl, resolved)
       existing = Lockfile.read(LOCKFILE)
       drift = new_lock.keys.any? { |k| existing.gems[k] != new_lock[k] } ||
@@ -770,10 +773,21 @@ when "install", "i"
       exit 1
     end
   else
-    resolved = resolve_and_install(dsl, verbose: true)
-    if resolved
-      Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
-      puts "Bundle complete! #{resolved.length} gems now installed."
+    lockfile_before = File.exist?(LOCKFILE)
+    old_lock = lockfile_before ? Lockfile.read(LOCKFILE) : nil
+    result = resolve_and_install(dsl, verbose: true)
+    if result
+      resolved, newly = result
+      new_lock = lockfile_resolved_dependencies(dsl, resolved)
+      Lockfile.write(LOCKFILE, new_lock)
+      lock_changed = !old_lock ||
+                     new_lock.any? { |k, v| old_lock.gems[k] != v } ||
+                     old_lock.gems.any? { |k, _| !new_lock.key?(k) }
+      if lockfile_before && !lock_changed && newly == 0
+        puts "Bundle up to date!"
+      else
+        puts "Bundle complete! #{resolved.length} gems now installed."
+      end
     else
       STDERR.puts "Bundle install failed."
       exit 1
@@ -1071,8 +1085,9 @@ when "update"
   end
   # Re-resolve fresh: delete lockfile so fetch_version skips local cache
   File.delete(LOCKFILE) if File.exist?(LOCKFILE)
-  resolved = resolve_and_install(dsl, verbose: true, force_update: true)
-  if resolved
+  result = resolve_and_install(dsl, verbose: true, force_update: true)
+  if result
+    resolved, _newly = result
     Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
     puts "Bundle updated!"
   else
@@ -1159,8 +1174,9 @@ when "add"
     STDERR.puts "curl and tar are required for bundle install"
     exit 1
   end
-  resolved = resolve_and_install(dsl, verbose: true)
-  if resolved
+  result = resolve_and_install(dsl, verbose: true)
+  if result
+    resolved, _newly = result
     Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
     puts "Bundle complete! #{resolved.length} gems now installed."
   else
@@ -1197,8 +1213,9 @@ when "remove"
 
   if File.exist?(LOCKFILE)
     dsl = GemfileDSL.evaluate(GEMFILE)
-    resolved = resolve_and_install(dsl, verbose: false)
-    if resolved
+    result = resolve_and_install(dsl, verbose: false)
+    if result
+      resolved, _newly = result
       Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
     end
   end

@@ -1,0 +1,9 @@
+--NO-DEPS--
+Fetching ndgema...
+Downloading file:///tmp/stoned_gem_install_no_deps_/server/gems/ndgema-1.0.0.gem...
+Successfully installed ndgema-1.0.0
+--LIST--
+*** LOCAL GEMS ***
+ndgema (1.0.0)
+--NDGEMB-ABSENT--
+false

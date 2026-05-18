@@ -1,0 +1,6 @@
+--FIRST-INSTALL--
+Using mygem (path: /tmp/stoned_bundle_install_up_to_date_/gem)
+Bundle complete! 1 gems now installed.
+--SECOND-INSTALL--
+Using mygem (path: /tmp/stoned_bundle_install_up_to_date_/gem)
+Bundle up to date!
