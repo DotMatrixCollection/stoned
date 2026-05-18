@@ -3719,6 +3719,23 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     *out = val_nil();
                     return 1;
                 }
+                /* Range index: return sub-array of groups */
+                if (args[0].kind == VAL_RANGE) {
+                    int total = (int)ncaps + 1;
+                    Value bv = args[0].range->begin_val;
+                    Value ev2 = args[0].range->end_val;
+                    int exclusive = args[0].range->exclusive;
+                    int64_t rb = bv.kind == VAL_INT ? bv.ival : 0;
+                    int64_t re = ev2.kind == VAL_INT ? ev2.ival : (int64_t)ncaps;
+                    if (rb < 0) rb += total;
+                    if (re < 0) re += total;
+                    if (exclusive) re--;
+                    Value arr = val_array_new();
+                    for (int64_t i = rb; i <= re && i <= ncaps; i++)
+                        val_array_push(&arr, i >= 0 ? MD_GROUP_STR(i) : val_nil());
+                    *out = arr;
+                    return 1;
+                }
                 *out = eval_raise_class(ev, site, "TypeError", "MatchData#[] index must be an Integer or Symbol");
                 return 1;
             }
@@ -3762,8 +3779,33 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 { *out = val_int(ncaps + 1); return 1; }
             if (strcmp(name, "string") == 0) { *out = string; return 1; }
             if (strcmp(name, "regexp") == 0) { *out = regexp; return 1; }
-            if (strcmp(name, "named_captures") == 0)
-                { *out = val_hash_new(ev->arena); return 1; } /* stub: no named capture support yet */
+            if (strcmp(name, "named_captures") == 0) {
+                Value h = val_hash_new(ev->arena);
+                Value names_v;
+                if (val_object_get_ivar(recv, "__cap_names__", &names_v) &&
+                    names_v.kind == VAL_ARRAY) {
+                    for (size_t ni = 0; ni < names_v.array->len; ni++) {
+                        Value nm = names_v.array->elems[ni];
+                        if (nm.kind != VAL_STRING) continue;
+                        Value cap = MD_GROUP_STR((int64_t)(ni + 1));
+                        val_hash_set(h.hash, nm, cap.kind == VAL_NIL ? val_nil() : cap);
+                    }
+                }
+                *out = h; return 1;
+            }
+            if (strcmp(name, "names") == 0) {
+                Value names_v;
+                Value arr = val_array_new();
+                if (val_object_get_ivar(recv, "__cap_names__", &names_v) &&
+                    names_v.kind == VAL_ARRAY) {
+                    for (size_t ni = 0; ni < names_v.array->len; ni++) {
+                        Value nm = names_v.array->elems[ni];
+                        if (nm.kind == VAL_STRING) /* skip nil (unnamed captures) */
+                            val_array_push(&arr, nm);
+                    }
+                }
+                *out = arr; return 1;
+            }
 #undef MD_GROUP_STR
         }
 
