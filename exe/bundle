@@ -352,12 +352,42 @@ def fetch_url(url)
 end
 
 def fetch_version(gem_name, requirements, force_remote: false)
+  reqs = (requirements || []).reject { |r| r.to_s.strip.empty? || r.to_s.strip == ">= 0" }
+
   unless force_remote
     Gem::Specification.reset!
     local = Gem::Specification.find_by_name(gem_name)
-    return local.version.to_s if local
+    if local
+      if reqs.empty?
+        return local.version.to_s
+      else
+        req = Gem::Requirement.new(reqs)
+        return local.version.to_s if req.satisfied_by?(Gem::Version.new(local.version.to_s))
+      end
+    end
   end
 
+  if reqs.any?
+    # Try the versions endpoint to find the best satisfying version
+    body = fetch_url("#{GEM_SERVER}/api/v1/versions/#{gem_name}.json")
+    if body
+      versions = body.scan(/"number"\s*:\s*"([^"]+)"/).flatten
+      req = Gem::Requirement.new(reqs)
+      matching = versions.select do |v|
+        begin
+          req.satisfied_by?(Gem::Version.new(v))
+        rescue StandardError
+          false
+        end
+      end
+      if matching.any?
+        best = matching.sort_by { |v| v.split(".").map(&:to_i) }.last
+        return best
+      end
+    end
+  end
+
+  # Fall back to latest via gems API
   body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{gem_name}.json")
   return nil unless body
   body =~ /"version"\s*:\s*"([^"]+)"/ ? $1 : nil
@@ -558,7 +588,16 @@ def resolve_and_install(dsl, verbose: true, force_update: false)
     end
 
     Gem::Specification.reset!
-    spec = force_update ? nil : Gem::Specification.find_by_name(name)
+    candidate = force_update ? nil : Gem::Specification.find_by_name(name)
+    # Verify locally installed version satisfies Gemfile requirements
+    if candidate
+      relevant = (dep[:reqs] || []).reject { |r| r.to_s.strip.empty? || r.to_s.strip == ">= 0" }
+      if relevant.any?
+        req = Gem::Requirement.new(relevant)
+        candidate = nil unless req.satisfied_by?(Gem::Version.new(candidate.version.to_s))
+      end
+    end
+    spec = candidate
     if spec
       resolved[name] = spec.version.to_s
       puts "Using #{name} #{spec.version}" if verbose

@@ -1,0 +1,22 @@
+--INSTALL--
+Fetching cver 1.5.0...
+Installed cver 1.5.0
+Bundle complete! 1 gems now installed.
+--LOCK--
+GEM
+  specs:
+    cver (1.5.0)
+
+BUNDLED WITH
+   2.5.0.stoned
+--INSTALL-EXACT--
+Fetching cver 1.0.0...
+Installed cver 1.0.0
+Bundle complete! 1 gems now installed.
+--LOCK-EXACT--
+GEM
+  specs:
+    cver (1.0.0)
+
+BUNDLED WITH
+   2.5.0.stoned
