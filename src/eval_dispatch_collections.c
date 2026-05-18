@@ -70,6 +70,34 @@ static void permutation_helper(Value *elems, size_t n, size_t k,
     }
 }
 
+static void repeated_combination_helper(Value *elems, size_t n, size_t k,
+                                        size_t start, Value *current, size_t depth, Value *result) {
+    if (depth == k) {
+        Value combo = val_array_new();
+        for (size_t i = 0; i < k; i++) val_array_push(&combo, current[i]);
+        val_array_push(result, combo);
+        return;
+    }
+    for (size_t i = start; i < n; i++) {
+        current[depth] = elems[i];
+        repeated_combination_helper(elems, n, k, i, current, depth + 1, result);
+    }
+}
+
+static void repeated_permutation_helper(Value *elems, size_t n, size_t k,
+                                         Value *current, size_t depth, Value *result) {
+    if (depth == k) {
+        Value perm = val_array_new();
+        for (size_t i = 0; i < k; i++) val_array_push(&perm, current[i]);
+        val_array_push(result, perm);
+        return;
+    }
+    for (size_t i = 0; i < n; i++) {
+        current[depth] = elems[i];
+        repeated_permutation_helper(elems, n, k, current, depth + 1, result);
+    }
+}
+
 static void product_helper(Value *arrays, int narrays, int idx,
                            Value *current, Value *result) {
     if (idx == narrays) {
@@ -1083,6 +1111,44 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         } else {
             *out = result;
         }
+        return 1;
+    }
+    if (strcmp(name, "repeated_combination") == 0) {
+        size_t n = recv.array->len;
+        size_t k = (argc > 0 && args[0].kind == VAL_INT) ? (size_t)args[0].ival : 0;
+        Value result = val_array_new();
+        if (k == 0) { val_array_push(&result, val_array_new()); }
+        else if (n > 0) {
+            Value current[64];
+            repeated_combination_helper(recv.array->elems, n, k, 0, current, 0, &result);
+        }
+        if (blk) {
+            for (size_t i = 0; i < result.array->len; i++) {
+                Value r = call_block(ev, env, *blk, &result.array->elems[i], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
+        } else { *out = result; }
+        return 1;
+    }
+    if (strcmp(name, "repeated_permutation") == 0) {
+        size_t n = recv.array->len;
+        size_t k = (argc > 0 && args[0].kind == VAL_INT) ? (size_t)args[0].ival : n;
+        Value result = val_array_new();
+        if (k == 0) { val_array_push(&result, val_array_new()); }
+        else if (n > 0) {
+            Value current[64];
+            repeated_permutation_helper(recv.array->elems, n, k, current, 0, &result);
+        }
+        if (blk) {
+            for (size_t i = 0; i < result.array->len; i++) {
+                Value r = call_block(ev, env, *blk, &result.array->elems[i], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
+        } else { *out = result; }
         return 1;
     }
     if (strcmp(name, "product") == 0) {
