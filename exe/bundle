@@ -1261,8 +1261,15 @@ when "platform"
   end
 
 when "console"
-  STDERR.puts "bundle #{command}: not yet implemented"
-  exit 1
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  lf  = File.exist?(LOCKFILE) ? Lockfile.read(LOCKFILE) : nil
+  setup_load_path(dsl, lf) if lf
+  require "irb"
+  IRB.start
 
 when nil, "help", "--help", "-h"
   puts "Usage: bundle COMMAND"
