@@ -1808,6 +1808,16 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         return val_true();
     if (strcmp(path, "fileutils") == 0 || strcmp(path, "fileutils.rb") == 0)
         return val_true();
+    if (strcmp(path, "timeout") == 0 || strcmp(path, "timeout.rb") == 0) {
+        static const char *timeout_shim =
+"module Timeout\n"
+"  class Error < RuntimeError; end\n"
+"  def self.timeout(sec, klass = nil, &block)\n"
+"    block.call\n"
+"  end\n"
+"end\n";
+        return eval_ruby_string(ev, timeout_shim, "timeout_shim", site);
+    }
     if (strcmp(path, "monitor") == 0 || strcmp(path, "monitor.rb") == 0) {
         static const char *monitor_shim =
 "class Monitor\n"

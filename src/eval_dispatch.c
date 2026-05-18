@@ -835,6 +835,17 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         return val_string_n(ev->arena, ev->current_file, (size_t)(slash - ev->current_file));
     }
 
+    if (strcmp(name, "caller") == 0 || strcmp(name, "caller_locations") == 0) {
+        int skip = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : 1;
+        Value arr = val_array_new();
+        for (int fi = ev->frame_count - 1 - skip; fi >= 0; fi--) {
+            char buf[512];
+            snprintf(buf, sizeof(buf), "%u:%u:in `%s'",
+                     ev->frames[fi].line, ev->frames[fi].col, ev->frames[fi].label);
+            val_array_push(&arr, val_string(ev->arena, buf));
+        }
+        return arr;
+    }
     if (strcmp(name, "binding") == 0) {
         if (argc != 0)
             return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
@@ -2478,7 +2489,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload",
             "deprecate_constant", "private_constant", "public_constant",
             "__dir__", "__method__", "__FILE__", "__LINE__", "__callee__", "binding", "eval", "`",
-            "trap", "at_exit", "sleep", "catch", "throw", "method",
+            "trap", "at_exit", "sleep", "catch", "throw", "method", "caller", "caller_locations",
             "system", "spawn", "wait", "waitpid", "load", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {

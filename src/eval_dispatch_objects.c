@@ -2261,6 +2261,34 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = val_string(ev->arena, buf);
         return 1;
     }
+    if (strcmp(recv.klass->name, "IO") == 0 && strcmp(name, "write") == 0) {
+        /* IO.write(path, content) — no offset support; File.write handles offsets separately */
+        if (argc < 2 || args[0].kind != VAL_STRING) { *out = wrong_arg_count(ev, site, argc, 2); return 1; }
+        const char *content = val_to_s(ev->arena, args[1]);
+        FILE *wf = fopen(args[0].sval, "w");
+        if (!wf) { *out = eval_raise_class(ev, site, errno_class_name(errno), "%s - %s", strerror(errno), args[0].sval); return 1; }
+        size_t len = strlen(content);
+        fwrite(content, 1, len, wf);
+        fclose(wf);
+        *out = val_int((int64_t)len);
+        return 1;
+    }
+    if ((strcmp(recv.klass->name, "IO") == 0 || strcmp(recv.klass->name, "File") == 0) &&
+        strcmp(name, "binread") == 0) {
+        /* Same as read for our purposes */
+        if (argc < 1 || args[0].kind != VAL_STRING) { *out = wrong_arg_count(ev, site, argc, 1); return 1; }
+        FILE *rf = fopen(args[0].sval, "rb");
+        if (!rf) { *out = eval_raise_class(ev, site, errno_class_name(errno), "%s - %s", strerror(errno), args[0].sval); return 1; }
+        fseek(rf, 0, SEEK_END);
+        long fsz = ftell(rf);
+        rewind(rf);
+        char *buf = arena_alloc(ev->arena, (size_t)fsz + 1);
+        fread(buf, 1, (size_t)fsz, rf);
+        buf[fsz] = '\0';
+        fclose(rf);
+        *out = val_string(ev->arena, buf);
+        return 1;
+    }
     /* IO.foreach / IO.readlines — same as File.foreach/readlines */
     if ((strcmp(recv.klass->name, "IO") == 0) &&
         (strcmp(name, "foreach") == 0 || strcmp(name, "readlines") == 0)) {
