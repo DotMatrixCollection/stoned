@@ -1,0 +1,10 @@
+--INSTALL--
+Fetching netexec 1.0.0...
+Installed netexec 1.0.0
+Bundle complete! 1 gems now installed.
+--EXEC--
+42
+foo,bar
+--LIST--
+Gems included by the bundle:
+  * netexec (1.0.0)

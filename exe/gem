@@ -677,7 +677,72 @@ when "update"
     gem_install([gem_name], version: latest)
   end
 
-when "push", "fetch", "pristine", "cleanup", "exec"
+when "cleanup"
+  Gem::Specification.reset!
+  all_specs = Gem::Specification.all
+  by_name   = {}
+  all_specs.each do |spec|
+    by_name[spec.name] ||= []
+    by_name[spec.name] << spec
+  end
+
+  removed = 0
+  by_name.each do |name, specs|
+    next if specs.length <= 1
+    # Sort ascending by version segments so the last element is the latest
+    sorted = specs.sort_by { |s| s.version.to_s.split(".").map(&:to_i) }
+    sorted[0..-2].each do |old_spec|
+      puts "Removing #{old_spec.full_name}"
+      refresh_bin_wrappers_for(old_spec)
+      system("rm", "-rf", old_spec.gem_dir)
+      spec_file = File.join(Gem.home, "specifications", "#{old_spec.full_name}.gemspec")
+      File.delete(spec_file) if File.exist?(spec_file)
+      removed += 1
+    end
+  end
+
+  if removed > 0
+    puts "Cleaned up #{removed} old gem version#{removed == 1 ? "" : "s"}"
+    Gem::Specification.reset!
+  else
+    puts "Nothing to clean up"
+  end
+
+when "fetch"
+  gem_name = positional_args(ARGV[1..]).first
+  if gem_name.nil? || gem_name.empty?
+    STDERR.puts "ERROR: Please specify a gem name"
+    exit 1
+  end
+  unless check_tool("curl")
+    STDERR.puts "ERROR: 'curl' is required for gem fetch"
+    exit 1
+  end
+
+  version = option_value("-v", "--version")
+  puts "Fetching #{gem_name}..."
+  unless version
+    body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{gem_name}.json")
+    unless body
+      STDERR.puts "ERROR: Could not fetch info for gem '#{gem_name}'"
+      exit 1
+    end
+    unless body =~ /"version"\s*:\s*"([^"]+)"/
+      STDERR.puts "ERROR: Could not parse version for gem '#{gem_name}'"
+      exit 1
+    end
+    version = $1
+  end
+
+  gem_file = "#{gem_name}-#{version}.gem"
+  url      = "#{GEM_SERVER}/gems/#{gem_file}"
+  unless system("curl", "-fsSL", "-o", gem_file, url)
+    STDERR.puts "ERROR: Failed to download #{gem_name} #{version}"
+    exit 1
+  end
+  puts "Downloaded #{gem_file}"
+
+when "push", "pristine", "exec"
   STDERR.puts "gem #{command}: not yet implemented"
   exit 1
 

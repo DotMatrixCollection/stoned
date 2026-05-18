@@ -1,0 +1,10 @@
+--INSTALL--
+Fetching currgem 1.0.0...
+Installed currgem 1.0.0
+Using pathgem (path: /tmp/stoned_bundle_outdated_/build/pathgem_1_0_0)
+Bundle complete! 2 gems now installed.
+--UP-TO-DATE--
+Bundle up to date!
+--OUTDATED--
+Outdated gems included in the bundle:
+  * currgem (newest 2.0.0, installed 1.0.0)

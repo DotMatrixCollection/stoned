@@ -1022,7 +1022,44 @@ when "update"
     exit 1
   end
 
-when "outdated", "add", "remove", "console"
+when "outdated"
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  unless File.exist?(LOCKFILE)
+    STDERR.puts "Could not locate Gemfile.lock"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  lf  = Lockfile.read(LOCKFILE)
+
+  outdated = []
+  active_dependencies(dsl).each do |dep|
+    next if dep[:path] || dep[:git]
+    locked = lf.gems[dep[:name]]
+    next unless locked
+
+    body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{dep[:name]}.json")
+    next unless body
+    next unless body =~ /"version"\s*:\s*"([^"]+)"/
+    latest = $1
+
+    if latest != locked
+      outdated << { name: dep[:name], current: locked, latest: latest }
+    end
+  end
+
+  if outdated.empty?
+    puts "Bundle up to date!"
+  else
+    puts "Outdated gems included in the bundle:"
+    outdated.each do |info|
+      puts "  * #{info[:name]} (newest #{info[:latest]}, installed #{info[:current]})"
+    end
+  end
+
+when "add", "remove", "console"
   STDERR.puts "bundle #{command}: not yet implemented"
   exit 1
 
@@ -1042,6 +1079,7 @@ when nil, "help", "--help", "-h"
   puts "  env           Print environment information"
   puts "  binstubs GEM  Generate binstubs for a gem's executables"
   puts "  update        Re-resolve and update all gems"
+  puts "  outdated      List gems with newer versions available"
   puts "  version       Print Bundler version"
 else
   STDERR.puts "Unknown command: #{command}"

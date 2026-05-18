@@ -1,0 +1,11 @@
+--FETCH-LATEST--
+Fetching fetchgem...
+Downloaded fetchgem-1.5.0.gem
+--FILE-EXISTS--
+true
+--FETCH-VERSION--
+Fetching fetchgem...
+Downloaded fetchgem-1.5.0.gem
+true
+--MISSING-ARG--
+ERROR: Please specify a gem name
