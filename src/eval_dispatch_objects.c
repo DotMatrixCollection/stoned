@@ -1260,6 +1260,26 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
 
+    /* Hash.[] — create hash from flat key/value pairs or array of pairs */
+    if (strcmp(recv.klass->name, "Hash") == 0 && strcmp(name, "[]") == 0) {
+        Value h = val_hash_new(ev->arena);
+        if (argc == 1 && args[0].kind == VAL_ARRAY) {
+            /* Hash[ [[k,v],[k,v]] ] */
+            for (size_t i = 0; i < args[0].array->len; i++) {
+                Value pair = args[0].array->elems[i];
+                if (pair.kind == VAL_ARRAY && pair.array->len >= 2)
+                    val_hash_set(h.hash, pair.array->elems[0], pair.array->elems[1]);
+            }
+        } else {
+            /* Hash["k", v, "k2", v2, ...] */
+            if (argc % 2 != 0) { *out = eval_raise_class(ev, site, "ArgumentError", "odd number of arguments for Hash"); return 1; }
+            for (int i = 0; i + 1 < argc; i += 2)
+                val_hash_set(h.hash, args[i], args[i+1]);
+        }
+        *out = h;
+        return 1;
+    }
+
     if (strcmp(recv.klass->name, "Struct") == 0 && strcmp(name, "new") == 0) {
         static int struct_counter = 0;
         char anon_name[64];

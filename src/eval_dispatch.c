@@ -1940,18 +1940,11 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             }
             return arr;
         }
+        /* curry is implemented in the Ruby prelude (eval_support.c) */
     }
 
     if (strcmp(name, "inspect") == 0 && recv.kind != VAL_OBJECT && recv.kind != VAL_CLASS)
         return val_string(ev->arena, val_inspect(ev->arena, recv));
-
-    /* Proc/Lambda #curry — stub: returns self marked as lambda.
-       Full curry (partial application accumulation) requires first-class closures. */
-    if (recv.kind == VAL_BLOCK && strcmp(name, "curry") == 0) {
-        Value curried = recv;
-        curried.block.is_lambda = 1;
-        return curried;
-    }
 
     if (dispatch_integer(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (dispatch_float(ev, env, recv, name, args, argc, blk, site, &out)) return out;

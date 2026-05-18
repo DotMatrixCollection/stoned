@@ -2255,6 +2255,20 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "end\n"
         "class Range\n"
         "  def lazy; Enumerator::Lazy.new(self); end\n"
+        "end\n"
+        "class Proc\n"
+        "  def curry(needed_arity = nil)\n"
+        "    original = self\n"
+        "    ar = original.arity\n"
+        "    needed = needed_arity ? needed_arity.to_i : (ar < 0 ? (-ar - 1) : ar)\n"
+        "    make_curried = lambda { |accum|\n"
+        "      lambda { |*args|\n"
+        "        na = accum + args\n"
+        "        na.length >= needed ? original.call(*na) : make_curried.(na)\n"
+        "      }\n"
+        "    }\n"
+        "    make_curried.([])\n"
+        "  end\n"
         "end\n";
 
     static const char *prelude_file_constants =

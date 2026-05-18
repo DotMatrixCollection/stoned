@@ -213,6 +213,14 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         *out = val_string(ev->arena, buf);
         return 1;
     }
+    if (strcmp(name, "[]") == 0) {
+        /* Bit indexing: n[i] returns the ith bit of n (LSB = 0) */
+        if (argc < 1 || args[0].kind != VAL_INT) { *out = val_int(0); return 1; }
+        int64_t idx = args[0].ival;
+        if (idx < 0) { *out = val_int(0); return 1; }
+        *out = val_int((n >> idx) & 1);
+        return 1;
+    }
     if (strcmp(name, "gcd") == 0) {
         if (argc < 1 || args[0].kind != VAL_INT) { *out = eval_raise_class(ev, site, "TypeError", "Integer#gcd requires an Integer"); return 1; }
         *out = val_int(int_gcd(n, args[0].ival));
