@@ -1,0 +1,10 @@
+Successfully built gem: demo-1.2.3.gem
+Successfully installed demo-1.2.3
+Successfully built gem: demo-2.0.0.gem
+Successfully installed demo-2.0.0
+/tmp/stoned_rubygems_bin_path_requirements_/gemhome/gems/demo-1.2.3/bin/demo-tool
+/tmp/stoned_rubygems_bin_path_requirements_/gemhome/gems/demo-2.0.0/bin/demo-tool
+/tmp/stoned_rubygems_bin_path_requirements_/gemhome/gems/demo-1.2.3/bin/demo-tool
+demo-1.2.3
+/tmp/stoned_rubygems_bin_path_requirements_/gemhome/gems/demo-2.0.0/bin/demo-tool
+demo-2.0.0

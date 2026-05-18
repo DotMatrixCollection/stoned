@@ -1,0 +1,8 @@
+true
+true
+false
+false
+Gem::MissingSpecVersionError
+Could not find gem 'demo' with requirement '= 9.9.9'
+Gem::MissingSpecError
+Could not find gem 'missing'
