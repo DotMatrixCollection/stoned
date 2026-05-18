@@ -2161,9 +2161,15 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
         if (strcmp(op, "%") == 0) {
             if (both_int) {
                 if (right.ival == 0) return eval_raise_class(ev, node, "ZeroDivisionError", "divided by 0");
-                return val_int(left.ival % right.ival);
+                /* Ruby modulo: result has same sign as divisor */
+                int64_t r = left.ival % right.ival;
+                if (r != 0 && (r < 0) != (right.ival < 0)) r += right.ival;
+                return val_int(r);
             }
-            return val_float(fmod(lf, rf));
+            /* Ruby fmod: result has same sign as divisor */
+            double r = fmod(lf, rf);
+            if (r != 0.0 && (r < 0) != (rf < 0)) r += rf;
+            return val_float(r);
         }
         if (strcmp(op, "**") == 0) {
             return both_int && right.ival >= 0
