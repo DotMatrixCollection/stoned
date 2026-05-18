@@ -3,7 +3,9 @@ require "rubygems"
 # bundler/setup — activate bundled gems by reading Gemfile.lock
 
 _bundler_gemfile  = ENV["BUNDLE_GEMFILE"] || "Gemfile"
-_bundler_lockfile = "Gemfile.lock"
+_bundler_gemfile  = File.expand_path(_bundler_gemfile)
+_bundler_root     = File.dirname(_bundler_gemfile)
+_bundler_lockfile = File.join(_bundler_root, "Gemfile.lock")
 
 unless File.exist?(_bundler_lockfile)
   raise LoadError, "Could not locate Gemfile.lock. Run `bundle install` first."
@@ -23,6 +25,9 @@ File.readlines(_bundler_lockfile).each do |line|
   end
   if _current_section == "PATH" && s =~ /^\s+remote:\s+(\S+)/
     _path_remote = $1
+    unless _path_remote.start_with?("/")
+      _path_remote = File.expand_path(_path_remote, _bundler_root)
+    end
     next
   end
   if s =~ /^\s{4}(\S+)\s+\(([^)]+)\)/

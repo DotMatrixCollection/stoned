@@ -49,6 +49,9 @@ Dir.chdir(app) do
   puts "--STUB-CONTENTS--"
   puts File.read("bin/demo-run").chomp
 
+  puts "--RUN-STUB--"
+  puts `#{ruby_cmd} bin/demo-run 2>&1`.chomp
+
   puts "--MISSING-GEM--"
   out = `#{ruby_cmd} #{bundle_exe.inspect} binstubs nosuchgem 2>&1`.chomp
   puts out

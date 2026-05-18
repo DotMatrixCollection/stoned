@@ -36,7 +36,8 @@ old_home     = ENV["HOME"]
 ENV["GEM_HOME"] = gem_home
 ENV["HOME"]     = root
 
-out = `#{RbConfig.ruby.inspect} #{script_path.inspect} 2>&1`.chomp
+rubylib = "RUBYLIB=#{Dir.pwd.inspect}"
+out = `#{rubylib} #{RbConfig.ruby.inspect} #{script_path.inspect} 2>&1`.chomp
 puts "--INLINE--"
 puts out
 
