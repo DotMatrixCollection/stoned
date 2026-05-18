@@ -16,7 +16,6 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  dep (>= 1.0)
   dep!
 
 BUNDLED WITH

@@ -309,7 +309,22 @@ def lockfile_write_args(dsl)
   expanded_dependencies(dsl).each do |dep|
     path_by_name[dep[:name]] = dep if dep[:path] && !dep[:from_gemspec]
   end
-  top_deps = dsl.dependencies.reject { |d| d[:from_gemspec] }
+  # Deduplicate top-level deps by name, preferring path-gem entries
+  raw_deps = dsl.dependencies.reject { |d| d[:from_gemspec] }
+  seen = {}
+  top_deps = []
+  raw_deps.each do |dep|
+    existing = seen[dep[:name]]
+    if existing.nil?
+      seen[dep[:name]] = dep
+      top_deps << dep
+    elsif dep[:path] && !existing[:path]
+      # Replace non-path entry with path entry
+      idx = top_deps.index(existing)
+      top_deps[idx] = dep
+      seen[dep[:name]] = dep
+    end
+  end
   { path_by_name: path_by_name, top_deps: top_deps }
 end
 
@@ -888,6 +903,7 @@ when "version", "-v", "--version"
 when "install", "i"
   frozen  = args.include?("--frozen") || args.include?("--deployment")
   local   = args.include?("--local")
+  quiet   = args.include?("--quiet") || args.include?("-q")
 
   # Persist --without / --with to .bundle/config
   without_idx  = args.index("--without")
@@ -957,7 +973,7 @@ when "install", "i"
   else
     lockfile_before = File.exist?(LOCKFILE)
     old_lock = lockfile_before ? Lockfile.read(LOCKFILE) : nil
-    result = resolve_and_install(dsl, verbose: true, local: local)
+    result = resolve_and_install(dsl, verbose: !quiet, local: local)
     if result
       resolved, newly = result
       new_lock = lockfile_resolved_dependencies(dsl, resolved)
@@ -965,10 +981,12 @@ when "install", "i"
       lock_changed = !old_lock ||
                      new_lock.any? { |k, v| old_lock.gems[k] != v } ||
                      old_lock.gems.any? { |k, _| !new_lock.key?(k) }
-      if lockfile_before && !lock_changed && newly == 0
-        puts "Bundle up to date!"
-      else
-        puts "Bundle complete! #{resolved.length} gems now installed."
+      unless quiet
+        if lockfile_before && !lock_changed && newly == 0
+          puts "Bundle up to date!"
+        else
+          puts "Bundle complete! #{resolved.length} gems now installed."
+        end
       end
     else
       STDERR.puts "Bundle install failed."
