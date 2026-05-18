@@ -1,5 +1,6 @@
 require "bundler"
 require File.join(BUNDLER_RB_DIR, "bundler", "lockfile_parser")
+require File.join(BUNDLER_RB_DIR, "bundler", "spec_set")
 
 module Bundler
   class Definition
@@ -21,6 +22,7 @@ module Bundler
       else
         Bundler::LockfileParser.new("")
       end
+      @specs = Bundler::SpecSet.new(@lockfile_parser.specs)
     end
 
     def gemfile
@@ -36,7 +38,7 @@ module Bundler
     end
 
     def specs
-      @lockfile_parser.specs
+      @specs
     end
 
     def platforms
