@@ -968,6 +968,36 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "setbyte") == 0) { *out = recv; return 1; }
+    if (strcmp(name, "upto") == 0) {
+        if (argc < 1 || args[0].kind != VAL_STRING) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "String#upto requires a string argument");
+            return 1;
+        }
+        Value arr = val_array_new();
+        Value current = recv;
+        const char *end_s = args[0].sval;
+        /* Iterate using succ until we reach or pass the end string */
+        for (int max_iter = 0; max_iter < 100000; max_iter++) {
+            const char *cur_s = current.sval;
+            /* Stop if current > end (lexicographic) */
+            if (strcmp(cur_s, end_s) > 0) break;
+            if (blk) {
+                Value r = call_block(ev, env, *blk, &current, 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            } else {
+                val_array_push(&arr, current);
+            }
+            if (strcmp(cur_s, end_s) == 0) break;
+            /* Advance to next using succ */
+            Value next_val = val_nil();
+            dispatch_string(ev, env, current, "succ", NULL, 0, NULL, NULL, &next_val);
+            if (next_val.kind != VAL_STRING) break;
+            current = next_val;
+        }
+        *out = blk ? recv : arr;
+        return 1;
+    }
     if (strcmp(name, "inspect") == 0) {
         size_t len = strlen(s);
         char *buf = arena_alloc(ev->arena, len * 2 + 3);

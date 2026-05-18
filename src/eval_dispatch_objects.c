@@ -2232,6 +2232,22 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             return 1;
         }
     }
+    /* IO.read — same as File.read */
+    if (strcmp(recv.klass->name, "IO") == 0 && strcmp(name, "read") == 0) {
+        /* Delegate to File class dispatch by changing class name temporarily — easier to just duplicate */
+        if (argc < 1 || args[0].kind != VAL_STRING) { *out = wrong_arg_count(ev, site, argc, 1); return 1; }
+        FILE *rf = fopen(args[0].sval, "r");
+        if (!rf) { *out = eval_raise_class(ev, site, errno_class_name(errno), "%s - %s", strerror(errno), args[0].sval); return 1; }
+        fseek(rf, 0, SEEK_END);
+        long fsz = ftell(rf);
+        rewind(rf);
+        char *buf = arena_alloc(ev->arena, (size_t)fsz + 1);
+        fread(buf, 1, (size_t)fsz, rf);
+        buf[fsz] = '\0';
+        fclose(rf);
+        *out = val_string(ev->arena, buf);
+        return 1;
+    }
     /* IO.foreach / IO.readlines — same as File.foreach/readlines */
     if ((strcmp(recv.klass->name, "IO") == 0) &&
         (strcmp(name, "foreach") == 0 || strcmp(name, "readlines") == 0)) {
@@ -2683,6 +2699,17 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             if (strcmp(name, "writable?") == 0) mode = W_OK;
             else if (strcmp(name, "executable?") == 0) mode = X_OK;
             *out = val_bool(access(args[0].sval, mode) == 0);
+            return 1;
+        }
+        if (strcmp(name, "size") == 0 || strcmp(name, "zero?") == 0) {
+            if (argc < 1 || args[0].kind != VAL_STRING) { *out = wrong_arg_count(ev, site, argc, 1); return 1; }
+            struct stat st;
+            if (stat(args[0].sval, &st) != 0) {
+                *out = eval_raise_class(ev, site, errno_class_name(errno), "%s - %s", strerror(errno), args[0].sval);
+                return 1;
+            }
+            if (strcmp(name, "zero?") == 0) { *out = val_bool(st.st_size == 0); }
+            else { *out = val_int((int64_t)st.st_size); }
             return 1;
         }
         if (strcmp(name, "mtime") == 0) {
