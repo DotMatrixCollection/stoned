@@ -1171,7 +1171,13 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "oct") == 0) {
-        *out = val_int((int64_t)strtoll(s, NULL, 0));
+        const char *p = s;
+        while (*p == ' ' || *p == '\t') p++;
+        int base = 8;
+        if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) { base = 16; p += 2; }
+        else if (p[0] == '0' && (p[1] == 'b' || p[1] == 'B')) { base = 2; p += 2; }
+        else if (p[0] == '0' && (p[1] == 'o' || p[1] == 'O')) { base = 8; p += 2; }
+        *out = val_int((int64_t)strtoll(p, NULL, base));
         return 1;
     }
     if (strcmp(name, "bytes") == 0) {
