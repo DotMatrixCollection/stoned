@@ -256,6 +256,24 @@ def bundle_dep_display_version(dep, lockfile)
   dep[:path] ? "path" : "not installed"
 end
 
+def bundle_find_active_dependency(dsl, gem_name)
+  active_dependencies(dsl).find { |dep| dep[:name] == gem_name }
+end
+
+def bundle_dep_path(dep, lockfile)
+  if dep[:path]
+    return File.expand_path(dep[:path])
+  end
+
+  locked = lockfile.gems[dep[:name]]
+  Gem::Specification.reset!
+  spec = Gem::Specification.find_by_name(dep[:name])
+  return nil unless spec
+  return nil if locked && spec.version.to_s != locked
+
+  spec.gem_dir
+end
+
 def bundle_exec_path_for(dep, command)
   if dep[:path]
     spec = bundle_load_path_spec(dep)
@@ -272,6 +290,11 @@ def bundle_exec_path_for(dep, command)
   return nil unless spec
   executables = spec.executables || []
   return nil unless executables.include?(command)
+  begin
+    candidate = Gem.bin_path(dep[:name], command, spec.version.to_s)
+    return candidate if candidate && File.exist?(candidate)
+  rescue StandardError
+  end
   bindir = spec.bindir || "bin"
   candidate = File.join(spec.gem_dir, bindir, command)
   return candidate if File.exist?(candidate)
@@ -532,7 +555,50 @@ when "list"
     puts "  * #{dep[:name]} (#{bundle_dep_display_version(dep, lf)})"
   end
 
-when "outdated", "update", "add", "remove", "open", "console"
+when "show", "info", "open"
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  unless File.exist?(LOCKFILE)
+    STDERR.puts "Could not locate Gemfile.lock"
+    exit 1
+  end
+  lf = Lockfile.read(LOCKFILE)
+  missing = bundle_missing_dependencies(dsl, lf)
+  unless missing.empty?
+    STDERR.puts "The following gems are missing:"
+    missing.each { |d| STDERR.puts "  * #{d[:name]}" }
+    exit 1
+  end
+
+  if command == "open" && args.empty?
+    STDERR.puts "Usage: bundle open GEM"
+    exit 1
+  end
+
+  if args.empty?
+    active_dependencies(dsl).each do |dep|
+      path = bundle_dep_path(dep, lf)
+      next unless path
+      puts "#{dep[:name]} => #{path}"
+    end
+  else
+    dep = bundle_find_active_dependency(dsl, args[0])
+    unless dep
+      STDERR.puts "Could not find gem '#{args[0]}' in the current bundle"
+      exit 1
+    end
+    path = bundle_dep_path(dep, lf)
+    unless path
+      STDERR.puts "Could not resolve gem '#{args[0]}'"
+      exit 1
+    end
+    puts path
+  end
+
+when "outdated", "update", "add", "remove", "console"
   STDERR.puts "bundle #{command}: not yet implemented"
   exit 1
 
@@ -544,6 +610,9 @@ when nil, "help", "--help", "-h"
   puts "  exec FILE  Run a Ruby file with bundled gems on the load path"
   puts "  check      Verify Gemfile dependencies are satisfied"
   puts "  list       List gems included in the bundle"
+  puts "  show [GEM] Print bundle gem paths"
+  puts "  info GEM   Print the installed path for a bundle gem"
+  puts "  open GEM   Print the path for a bundle gem"
   puts "  version    Print Bundler version"
 else
   STDERR.puts "Unknown command: #{command}"

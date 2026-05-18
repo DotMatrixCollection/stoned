@@ -1,0 +1,11 @@
+Using main (path: /tmp/stoned_bundle_open_/main_gem)
+Bundle complete! 1 gems now installed.
+--OPEN-MAIN--
+/tmp/stoned_bundle_open_/main_gem
+0
+--OPEN-OPT--
+Could not find gem 'opt' in the current bundle
+1
+--OPEN-USAGE--
+Usage: bundle open GEM
+1

@@ -1,0 +1,13 @@
+Using main (path: /tmp/stoned_bundle_show_/main_gem)
+Bundle complete! 1 gems now installed.
+--SHOW--
+main => /tmp/stoned_bundle_show_/main_gem
+--SHOW-MAIN--
+/tmp/stoned_bundle_show_/main_gem
+0
+--INFO-MAIN--
+/tmp/stoned_bundle_show_/main_gem
+0
+--SHOW-OPT--
+Could not find gem 'opt' in the current bundle
+1

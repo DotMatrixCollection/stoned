@@ -1,0 +1,7 @@
+Successfully built gem: demo-1.2.3.gem
+  Gem: /tmp/stoned_bundle_exec_installed_command_/demo/demo-1.2.3.gem
+Successfully installed demo-1.2.3
+Using demo 1.2.3
+Bundle complete! 1 gems now installed.
+42
+["alpha", "beta"]
