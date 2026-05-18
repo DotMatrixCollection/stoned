@@ -219,8 +219,19 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(name, "clear") == 0) { recv.array->len = 0; *out = recv; return 1; }
     if (strcmp(name, "shift") == 0) {
-        if (recv.array->len == 0) *out = val_nil();
-        else {
+        if (argc > 0 && args[0].kind == VAL_INT) {
+            /* shift(n) — remove first n elements and return them as array */
+            int64_t n2 = args[0].ival;
+            if (n2 < 0) { *out = eval_raise_class(ev, site, "ArgumentError", "negative array size"); return 1; }
+            if ((size_t)n2 > recv.array->len) n2 = (int64_t)recv.array->len;
+            Value result2 = val_array_new();
+            for (int64_t i = 0; i < n2; i++) val_array_push(&result2, recv.array->elems[i]);
+            memmove(recv.array->elems, recv.array->elems + n2, (recv.array->len - (size_t)n2) * sizeof(Value));
+            recv.array->len -= (size_t)n2;
+            *out = result2;
+        } else if (recv.array->len == 0) {
+            *out = val_nil();
+        } else {
             Value first = recv.array->elems[0];
             memmove(recv.array->elems, recv.array->elems + 1, (recv.array->len - 1) * sizeof(Value));
             recv.array->len--;

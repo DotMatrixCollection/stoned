@@ -728,6 +728,25 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         buf[slen + ilen] = '\0';
         *out = val_string(ev->arena, buf); return 1;
     }
+    if (strcmp(name, "prepend") == 0) {
+        /* In-place prepend: str.prepend("prefix") */
+        if (argc < 1) { *out = recv; return 1; }
+        size_t slen = strlen(s);
+        /* Concatenate all args in order, prepend the result */
+        size_t total_ins = 0;
+        for (int i = 0; i < argc; i++) total_ins += strlen(val_to_s(ev->arena, args[i]));
+        char *buf = arena_alloc(ev->arena, total_ins + slen + 1);
+        size_t pos = 0;
+        for (int i = 0; i < argc; i++) {
+            const char *part = val_to_s(ev->arena, args[i]);
+            size_t plen = strlen(part);
+            memcpy(buf + pos, part, plen);
+            pos += plen;
+        }
+        memcpy(buf + pos, s, slen);
+        buf[pos + slen] = '\0';
+        *out = val_string(ev->arena, buf); return 1;
+    }
     if (strcmp(name, "slice!") == 0) {
         if (argc < 1) { *out = val_nil(); return 1; }
         size_t slen = strlen(s);
