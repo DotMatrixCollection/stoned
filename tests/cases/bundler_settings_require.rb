@@ -16,6 +16,15 @@ puts settings["path"] == "vendor/bundle"
 puts settings["WITHOUT"] == "development:test"
 puts settings.key?("path")
 puts settings.path == "vendor/bundle"
+settings.set_local("jobs", 4)
+puts settings["jobs"] == "4"
+settings.set_command_option("retry", 2)
+puts settings["retry"] == "2"
+settings.temporary(path: "tmp/bundle") do
+  puts settings.path == "tmp/bundle"
+end
+puts settings.path == "vendor/bundle"
+puts settings.local_overrides["BUNDLE_JOBS"] == "4"
 all = settings.all
 puts all["BUNDLE_PATH"] == "vendor/bundle"
 puts all["BUNDLE_WITHOUT"] == "development:test"

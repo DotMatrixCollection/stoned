@@ -289,16 +289,22 @@ module Bundler
   class Settings
     def initialize(env = ENV)
       @env = env
+      @temporary = {}
+      @local_overrides = {}
+      @command_options = {}
     end
 
     def [](key)
       env_key = normalize_key(key)
+      return @temporary[env_key] if @temporary.key?(env_key)
+      return @command_options[env_key] if @command_options.key?(env_key)
+      return @local_overrides[env_key] if @local_overrides.key?(env_key)
       @env[env_key]
     end
 
     def key?(key)
       env_key = normalize_key(key)
-      !@env[env_key].nil?
+      !self[env_key].nil?
     end
 
     def all
@@ -306,6 +312,9 @@ module Bundler
       @env.to_h.each do |key, value|
         snapshot[key] = value if key.start_with?("BUNDLE_")
       end
+      @local_overrides.each { |key, value| snapshot[key] = value }
+      @command_options.each { |key, value| snapshot[key] = value }
+      @temporary.each { |key, value| snapshot[key] = value }
       snapshot
     end
 
@@ -313,11 +322,46 @@ module Bundler
       self["PATH"]
     end
 
+    def set_local(key, value)
+      @local_overrides[normalize_key(key)] = stringify(value)
+    end
+
+    def set_command_option(key, value)
+      @command_options[normalize_key(key)] = stringify(value)
+    end
+
+    def temporary(overrides = {})
+      old_values = {}
+      overrides.each do |key, value|
+        env_key = normalize_key(key)
+        old_values[env_key] = @temporary[env_key]
+        @temporary[env_key] = stringify(value)
+      end
+      yield if block_given?
+    ensure
+      overrides.each do |key, _value|
+        env_key = normalize_key(key)
+        if old_values[env_key].nil?
+          @temporary.delete(env_key)
+        else
+          @temporary[env_key] = old_values[env_key]
+        end
+      end
+    end
+
+    def local_overrides
+      @local_overrides
+    end
+
     private
 
     def normalize_key(key)
       str = key.to_s.upcase
       str.start_with?("BUNDLE_") ? str : "BUNDLE_#{str}"
+    end
+
+    def stringify(value)
+      value.nil? ? nil : value.to_s
     end
   end
 
