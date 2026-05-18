@@ -86,6 +86,11 @@ module Bundler
       @current_ruby ||= Bundler::CurrentRuby.new
     end
 
+    def rubygems
+      require File.join(BUNDLER_RB_DIR, "bundler", "rubygems_integration")
+      @rubygems ||= Bundler::RubygemsIntegration.new
+    end
+
     def bundle_path
       pathname_for(Gem.home)
     end
