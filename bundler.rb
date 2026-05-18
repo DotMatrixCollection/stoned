@@ -78,7 +78,7 @@ module Bundler
     end
 
     def settings
-      @settings ||= {}
+      @settings ||= Bundler::Settings.new
     end
 
     def bundle_path
@@ -228,6 +228,41 @@ module Bundler
       return token.scan(/['"]([^'"]+)['"]/).flatten if token.start_with?("[")
 
       token[1...-1]
+    end
+  end
+
+  class Settings
+    def initialize(env = ENV)
+      @env = env
+    end
+
+    def [](key)
+      env_key = normalize_key(key)
+      @env[env_key]
+    end
+
+    def key?(key)
+      env_key = normalize_key(key)
+      !@env[env_key].nil?
+    end
+
+    def all
+      snapshot = {}
+      @env.to_h.each do |key, value|
+        snapshot[key] = value if key.start_with?("BUNDLE_")
+      end
+      snapshot
+    end
+
+    def path
+      self["PATH"]
+    end
+
+    private
+
+    def normalize_key(key)
+      str = key.to_s.upcase
+      str.start_with?("BUNDLE_") ? str : "BUNDLE_#{str}"
     end
   end
 
