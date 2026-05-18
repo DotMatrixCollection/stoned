@@ -204,6 +204,16 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* Run at_exit handlers in LIFO order */
+    {
+        AtExitHandler *h = eval.at_exit_handlers;
+        while (h) {
+            eval.errored = 0;
+            call_block(&eval, eval.top_env, h->blk, NULL, 0, NULL);
+            h = h->next;
+        }
+    }
+
     arena_free(&arena);
     free(file_buf);
     free(exec_path);

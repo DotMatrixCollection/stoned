@@ -974,6 +974,12 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         return val_string(ev->arena, "DEFAULT");
     }
     if (strcmp(name, "at_exit") == 0) {
+        if (blk) {
+            AtExitHandler *h = arena_alloc(ev->arena, sizeof(AtExitHandler));
+            h->blk  = *blk;
+            h->next = ev->at_exit_handlers;
+            ev->at_exit_handlers = h;
+        }
         return val_nil();
     }
     if (strcmp(name, "sleep") == 0) {

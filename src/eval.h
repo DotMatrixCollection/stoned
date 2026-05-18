@@ -19,6 +19,12 @@ typedef struct LoadedFile {
     struct LoadedFile *next;
 } LoadedFile;
 
+/* at_exit handler list — singly linked, prepend on register, run in LIFO order */
+typedef struct AtExitHandler {
+    Value                  blk;
+    struct AtExitHandler  *next;
+} AtExitHandler;
+
 typedef struct {
     Arena       *arena;
     GlobalTable  globals;
@@ -41,6 +47,7 @@ typedef struct {
     const char  *exec_path;
     const char  *runtime_root;
     LoadedFile  *loaded_files;
+    AtExitHandler *at_exit_handlers;
 } Eval;
 
 void  eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, const char *exec_path,
