@@ -2048,8 +2048,31 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (strcmp(name, "step") == 0) {
         if (argc < 1)
             { *out = eval_raise_class(ev, site, "ArgumentError", "Range#step requires a step value"); return 1; }
+        /* Integer or Float range */
+        int use_float = (r->begin_val.kind == VAL_FLOAT || r->end_val.kind == VAL_FLOAT ||
+                         args[0].kind == VAL_FLOAT);
+        if (use_float) {
+            double lo = r->begin_val.kind == VAL_INT ? (double)r->begin_val.ival : r->begin_val.fval;
+            double hi = r->end_val.kind == VAL_INT ? (double)r->end_val.ival : r->end_val.fval;
+            double step = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
+            if (step <= 0.0) { *out = eval_raise_class(ev, site, "ArgumentError", "step must be positive"); return 1; }
+            Value arr = val_array_new();
+            int iter = 0;
+            for (double x = lo; r->exclusive ? x < hi : x <= hi + step * 1e-10; x = lo + (++iter) * step) {
+                if (r->exclusive ? x >= hi : x > hi + step * 1e-10) break;
+                Value arg = val_float(x);
+                if (blk) {
+                    Value res = call_block(ev, env, *blk, &arg, 1, site);
+                    if (ev->errored) { *out = val_nil(); return 1; }
+                    if (flow_signal_out(res, out)) return 1;
+                } else {
+                    val_array_push(&arr, arg);
+                }
+            }
+            *out = blk ? recv : arr; return 1;
+        }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT || args[0].kind != VAL_INT)
-            { *out = eval_raise_class(ev, site, "TypeError", "Range#step requires Integer range and step"); return 1; }
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#step requires numeric range and step"); return 1; }
         int64_t step = args[0].ival;
         if (step <= 0)
             { *out = eval_raise_class(ev, site, "ArgumentError", "step must be positive"); return 1; }
