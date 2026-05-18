@@ -1,0 +1,18 @@
+Fetching gema 1.0.0...
+Installed gema 1.0.0
+Fetching gemb 1.0.0...
+Installed gemb 1.0.0
+Fetching gemc 1.0.0...
+Installed gemc 1.0.0
+Bundle complete! 3 gems now installed.
+--LOCK--
+GEM
+  specs:
+    gema (1.0.0)
+    gemb (1.0.0)
+    gemc (1.0.0)
+
+BUNDLED WITH
+   2.5.0.stoned
+--CHECK--
+The Gemfile's dependencies are satisfied

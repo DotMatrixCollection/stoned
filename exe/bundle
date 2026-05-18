@@ -5,7 +5,7 @@
 require "rubygems"
 
 BUNDLE_VERSION = "2.5.0.stoned"
-GEM_SERVER = "https://rubygems.org"
+GEM_SERVER = ENV["STONED_GEM_SERVER"] || "https://rubygems.org"
 LOCKFILE   = "Gemfile.lock"
 GEMFILE    = ENV["BUNDLE_GEMFILE"] || "Gemfile"
 
@@ -351,23 +351,122 @@ def fetch_url(url)
   out.empty? ? nil : out
 end
 
-def fetch_version(gem_name, requirements)
-  Gem::Specification.reset!
-  local = Gem::Specification.find_by_name(gem_name)
-  return local.version.to_s if local
+def fetch_version(gem_name, requirements, force_remote: false)
+  unless force_remote
+    Gem::Specification.reset!
+    local = Gem::Specification.find_by_name(gem_name)
+    return local.version.to_s if local
+  end
 
   body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{gem_name}.json")
   return nil unless body
   body =~ /"version"\s*:\s*"([^"]+)"/ ? $1 : nil
 end
 
+# Build a loadable gemspec string from a loaded Gem::Specification object.
+def spec_to_gemspec_str(spec, install_dir = nil)
+  lines = ["Gem::Specification.new do |s|"]
+  lines << "  s.name    = #{spec.name.inspect}"
+  lines << "  s.version = Gem::Version.new(#{spec.version.to_s.inspect})"
+  lines << "  s.summary = #{spec.summary.to_s.inspect}"
+  rp = spec.require_paths || ["lib"]
+  lines << "  s.require_paths = #{rp.inspect}"
+  (spec.runtime_dependencies || []).each do |dep|
+    lines << "  s.add_runtime_dependency #{dep.name.inspect}, #{dep.requirement.to_s.inspect}"
+  end
+  exes = spec.executables || []
+  if exes.empty? && install_dir
+    bd  = File.join(install_dir, spec.bindir || "bin")
+    exes = Dir.children(bd) if File.directory?(bd)
+  end
+  lines << "  s.executables = #{exes.inspect}" unless exes.empty?
+  bd = spec.bindir
+  lines << "  s.bindir = #{bd.inspect}" if bd && bd != "bin"
+  lines << "end"
+  lines.join("\n") + "\n"
+end
+
+# Parse a metadata.gz file from a .gem archive into a plain Hash.
+def parse_gem_metadata(metadata_gz_path)
+  return nil unless File.exist?(metadata_gz_path)
+  text = `gzip -dc #{metadata_gz_path.inspect} 2>/dev/null`
+  return nil if text.empty?
+
+  result = {}
+  result[:name]    = $1.strip if text =~ /^name:\s*(.+)$/
+  if text =~ /^version:.*\n\s+version:\s*'([^']+)'/
+    result[:version] = $1
+  elsif text =~ /^version:.*\n\s+version:\s*"([^"]+)"/
+    result[:version] = $1
+  elsif text =~ /^version:.*\n\s+version:\s*(\S+)/
+    result[:version] = $1
+  end
+  result[:bindir] = $1.strip if text =~ /^bindir:\s*(.+)$/
+  if text =~ /^require_paths:\n((?:- \S[^\n]*\n)+)/
+    result[:require_paths] = $1.scan(/^- (\S[^\n]*)$/).flatten.map(&:strip)
+  else
+    result[:require_paths] = ["lib"]
+  end
+  if text =~ /^executables:\n((?:- \S[^\n]*\n)+)/
+    result[:executables] = $1.scan(/^- (\S[^\n]*)$/).flatten.map(&:strip)
+  else
+    result[:executables] = []
+  end
+
+  # Walk dependencies line-by-line (handles both rubygems.org and our own format)
+  runtime_deps = []
+  dep_name = nil
+  dep_type = nil
+  text.each_line do |line|
+    if line =~ /!ruby\/object:Gem::Dependency/
+      if dep_name && dep_type == ":runtime"
+        runtime_deps << dep_name
+      end
+      dep_name = nil
+      dep_type = nil
+    elsif dep_name.nil? && line =~ /^\s+name:\s*(.+)$/
+      dep_name = $1.strip
+    elsif line =~ /^\s+type:\s*(.+)$/
+      dep_type = $1.strip
+    end
+  end
+  if dep_name && dep_type == ":runtime"
+    runtime_deps << dep_name
+  end
+  result[:runtime_deps] = runtime_deps
+  result
+end
+
+# Build a loadable gemspec string from parsed metadata hash.
+def meta_to_gemspec_str(meta, gem_name, version, install_dir = nil)
+  name    = meta[:name] || gem_name
+  bindir  = meta[:bindir] || "bin"
+  rp      = meta[:require_paths] || ["lib"]
+  exes    = meta[:executables] || []
+  if exes.empty? && install_dir
+    bd   = File.join(install_dir, bindir)
+    exes = Dir.children(bd) if File.directory?(bd)
+  end
+  lines = ["Gem::Specification.new do |s|"]
+  lines << "  s.name    = #{name.inspect}"
+  lines << "  s.version = Gem::Version.new(#{version.inspect})"
+  lines << "  s.require_paths = #{rp.inspect}"
+  (meta[:runtime_deps] || []).each do |dep_name|
+    lines << "  s.add_runtime_dependency #{dep_name.inspect}, \">= 0\""
+  end
+  lines << "  s.executables = #{exes.inspect}" unless exes.empty?
+  lines << "  s.bindir = #{bindir.inspect}" if bindir != "bin"
+  lines << "end"
+  lines.join("\n") + "\n"
+end
+
 def install_gem_from_server(gem_name, version)
-  gem_full = "#{gem_name}-#{version}"
-  url      = "#{GEM_SERVER}/gems/#{gem_full}.gem"
-  home     = Gem.home
-  gems_dir = File.join(home, "gems")
+  gem_full  = "#{gem_name}-#{version}"
+  url       = "#{GEM_SERVER}/gems/#{gem_full}.gem"
+  home      = Gem.home
+  gems_dir  = File.join(home, "gems")
   specs_dir = File.join(home, "specifications")
-  bin_dir  = File.join(home, "bin")
+  bin_dir   = File.join(home, "bin")
   [home, gems_dir, specs_dir, bin_dir].each { |d| system("mkdir", "-p", d) unless File.directory?(d) }
 
   tmp = "/tmp/stoned_bundle_install_#{gem_name}_#{$$}"
@@ -381,14 +480,38 @@ def install_gem_from_server(gem_name, version)
     data_tar = File.join(tmp, "data.tar.gz")
     return false unless File.exist?(data_tar)
     return false unless system("tar", "-xzf", data_tar, "-C", install_dir)
+
     spec_path = File.join(specs_dir, "#{gem_full}.gemspec")
     unless File.exist?(spec_path)
-      File.write(spec_path, "Gem::Specification.new do |s|\n  s.name = #{gem_name.inspect}\n  s.version = Gem::Version.new(#{version.inspect})\n  s.require_paths = [\"lib\"]\nend\n")
+      wrapper_bindir = "bin"
+      gemspec_src = File.join(install_dir, "#{gem_name}.gemspec")
+      if File.exist?(gemspec_src)
+        Gem::Specification.reset!
+        Gem::Specification._loading_spec = nil
+        load gemspec_src
+        real_spec = Gem::Specification._loading_spec
+        if real_spec && !real_spec.name.to_s.empty?
+          wrapper_bindir = real_spec.bindir || "bin"
+          File.write(spec_path, spec_to_gemspec_str(real_spec, install_dir))
+        end
+      end
+      unless File.exist?(spec_path)
+        meta = parse_gem_metadata(File.join(tmp, "metadata.gz"))
+        if meta && meta[:name]
+          wrapper_bindir = meta[:bindir] || "bin"
+          File.write(spec_path, meta_to_gemspec_str(meta, gem_name, version, install_dir))
+        else
+          File.write(spec_path, "Gem::Specification.new do |s|\n  s.name = #{gem_name.inspect}\n  s.version = Gem::Version.new(#{version.inspect})\n  s.require_paths = [\"lib\"]\nend\n")
+        end
+      end
+    else
+      wrapper_bindir = "bin"
     end
-    bin_src = File.join(install_dir, "bin")
+
+    bin_src = File.join(install_dir, wrapper_bindir)
     if File.directory?(bin_src)
       Dir.children(bin_src).each do |exe|
-        wrapper = File.join(bin_dir, exe)
+        wrapper  = File.join(bin_dir, exe)
         exe_path = File.join(bin_src, exe)
         File.write(wrapper, "#!/usr/bin/env ruby\nload #{exe_path.inspect}\n")
         system("chmod", "+x", wrapper)
@@ -401,24 +524,31 @@ def install_gem_from_server(gem_name, version)
   end
 end
 
-def resolve_and_install(dsl, verbose: true)
+def resolve_and_install(dsl, verbose: true, force_update: false)
   resolved = {}
   errors   = []
+  # Seed queue from Gemfile deps; track names to avoid duplicates
+  queue   = active_dependencies(dsl).dup
+  queued  = {}
+  queue.each { |d| queued[d[:name]] = true }
 
-  active_dependencies(dsl).each do |dep|
+  until queue.empty?
+    dep  = queue.shift
     name = dep[:name]
     next if resolved.key?(name)
 
     if dep[:path]
-      # Path gem — add to load path directly
       lib = File.join(File.expand_path(dep[:path]), "lib")
       $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
-      resolved[name] = if dep[:from_gemspec] && dep[:spec]&.respond_to?(:version)
-        dep[:spec].version.to_s
+      spec = bundle_load_path_spec(dep)
+      dep[:spec] = spec if spec
+      resolved[name] = if dep[:from_gemspec] && spec&.respond_to?(:version)
+        spec.version.to_s
       else
         "path"
       end
       puts "Using #{name} (path: #{dep[:path]})" if verbose
+      enqueue_runtime_deps(spec, dep[:groups], queue, queued, resolved)
       next
     end
 
@@ -428,12 +558,13 @@ def resolve_and_install(dsl, verbose: true)
     end
 
     Gem::Specification.reset!
-    spec = Gem::Specification.find_by_name(name)
+    spec = force_update ? nil : Gem::Specification.find_by_name(name)
     if spec
       resolved[name] = spec.version.to_s
       puts "Using #{name} #{spec.version}" if verbose
+      enqueue_runtime_deps(spec, dep[:groups], queue, queued, resolved)
     else
-      version = fetch_version(name, dep[:reqs])
+      version = fetch_version(name, dep[:reqs], force_remote: force_update)
       unless version
         errors << "Could not find gem '#{name}'"
         next
@@ -442,6 +573,9 @@ def resolve_and_install(dsl, verbose: true)
       if install_gem_from_server(name, version)
         resolved[name] = version
         puts "Installed #{name} #{version}" if verbose
+        Gem::Specification.reset!
+        installed = Gem::Specification.find_by_name(name)
+        enqueue_runtime_deps(installed, dep[:groups], queue, queued, resolved)
       else
         errors << "Failed to install #{name} #{version}"
       end
@@ -450,6 +584,15 @@ def resolve_and_install(dsl, verbose: true)
 
   errors.each { |e| STDERR.puts "ERROR: #{e}" }
   errors.empty? ? resolved : nil
+end
+
+def enqueue_runtime_deps(spec, groups, queue, queued, resolved)
+  return unless spec
+  (spec.runtime_dependencies || []).each do |rdep|
+    next if resolved.key?(rdep.name) || queued.key?(rdep.name)
+    queued[rdep.name] = true
+    queue << { name: rdep.name, reqs: [rdep.requirement.to_s], groups: (groups || []).dup }
+  end
 end
 
 def setup_load_path(dsl, lockfile)
@@ -858,7 +1001,28 @@ when "binstubs"
     end
   end
 
-when "outdated", "update", "add", "remove", "console"
+when "update"
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  if bundle_needs_remote_tools?(dsl) && !(check_tool("curl") && check_tool("tar"))
+    STDERR.puts "curl and tar are required for bundle update"
+    exit 1
+  end
+  # Re-resolve fresh: delete lockfile so fetch_version skips local cache
+  File.delete(LOCKFILE) if File.exist?(LOCKFILE)
+  resolved = resolve_and_install(dsl, verbose: true, force_update: true)
+  if resolved
+    Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
+    puts "Bundle updated!"
+  else
+    STDERR.puts "Bundle update failed."
+    exit 1
+  end
+
+when "outdated", "add", "remove", "console"
   STDERR.puts "bundle #{command}: not yet implemented"
   exit 1
 
@@ -877,6 +1041,7 @@ when nil, "help", "--help", "-h"
   puts "  lock          Write the lockfile without installing"
   puts "  env           Print environment information"
   puts "  binstubs GEM  Generate binstubs for a gem's executables"
+  puts "  update        Re-resolve and update all gems"
   puts "  version       Print Bundler version"
 else
   STDERR.puts "Unknown command: #{command}"

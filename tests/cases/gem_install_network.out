@@ -1,0 +1,12 @@
+Fetching netgem...
+Downloading file:///tmp/stoned_gem_install_network_/server/gems/netgem-2.3.0.gem...
+Successfully installed netgem-2.3.0
+--SPEC-EXISTS--
+true
+--GEM-DIR--
+true
+--BIN-EXISTS--
+true
+--LIST--
+*** LOCAL GEMS ***
+netgem (2.3.0)

@@ -4,7 +4,7 @@
 require "rubygems"
 require "open3"
 
-GEM_SERVER = "https://rubygems.org"
+GEM_SERVER = ENV["STONED_GEM_SERVER"] || "https://rubygems.org"
 
 def run_cmd(*args)
   system(*args)
@@ -642,7 +642,42 @@ when "unpack"
 when "help", "-h", "--help", nil
   print_usage
 
-when "update", "push", "fetch", "pristine", "cleanup", "exec"
+when "update"
+  names = positional_args(ARGV[1..])
+  if names.empty?
+    STDERR.puts "Usage: gem update GEM [GEM2 ...]"
+    exit 1
+  end
+  unless check_tool("curl") && check_tool("tar")
+    STDERR.puts "ERROR: 'curl' and 'tar' are required for gem update"
+    exit 1
+  end
+  names.each do |gem_name|
+    current_spec = find_installed_spec(gem_name)
+    current_ver  = current_spec ? current_spec.version.to_s : nil
+
+    puts "Fetching latest version info for #{gem_name}..."
+    body = fetch_url("#{GEM_SERVER}/api/v1/gems/#{gem_name}.json")
+    unless body
+      STDERR.puts "ERROR: Could not fetch info for gem '#{gem_name}'"
+      next
+    end
+    unless body =~ /"version"\s*:\s*"([^"]+)"/
+      STDERR.puts "ERROR: Could not parse version for gem '#{gem_name}'"
+      next
+    end
+    latest = $1
+
+    if current_ver && current_ver == latest
+      puts "#{gem_name} #{current_ver} is already the latest version"
+      next
+    end
+
+    puts "Updating #{gem_name} from #{current_ver || "(not installed)"} to #{latest}..."
+    gem_install([gem_name], version: latest)
+  end
+
+when "push", "fetch", "pristine", "cleanup", "exec"
   STDERR.puts "gem #{command}: not yet implemented"
   exit 1
 

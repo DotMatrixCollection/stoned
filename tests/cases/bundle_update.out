@@ -1,0 +1,21 @@
+Fetching bgem 1.0.0...
+Installed bgem 1.0.0
+Bundle complete! 1 gems now installed.
+--LOCK-V1--
+GEM
+  specs:
+    bgem (1.0.0)
+
+BUNDLED WITH
+   2.5.0.stoned
+--UPDATE--
+Fetching bgem 2.0.0...
+Installed bgem 2.0.0
+Bundle updated!
+--LOCK-V2--
+GEM
+  specs:
+    bgem (2.0.0)
+
+BUNDLED WITH
+   2.5.0.stoned

@@ -301,7 +301,8 @@ Latest compatibility probe:
 - 2026-05-16: `define_singleton_method` block now actually executes — `call_method_value` was reading `NODE_BLOCK` fields through the `def` union member (wrong offsets); fixed by dispatching on `node->kind` to use `block.params`/`block.body` vs `def.params`/`def.body`
 - 2026-05-16: RubyGems bringup expanded — `require "rubygems"` now exposes a much broader compatibility shim, direct `rubygems/specification`/`platform`/`name_tuple`/`command` sub-requires resolve through it, and fixture coverage now exercises the shim explicitly
 - 2026-05-16: multiline extended-mode regexp literals now lex across embedded newlines, with a regression covering `/.../x` patterns split across lines and comments
-- 2026-05-17: Bundler local workflow complete — `bundle config`, `bundle lock`, `bundle env`, `bundle binstubs`, `bundle install --frozen`, config-driven group filtering, `BUNDLE_GEMFILE` override, and all key error paths covered; 421 regressions green; networking bring-up is next
+- 2026-05-17: Bundler local workflow complete — `bundle config`, `bundle lock`, `bundle env`, `bundle binstubs`, `bundle install --frozen`, config-driven group filtering, `BUNDLE_GEMFILE` override, and all key error paths covered; 421 regressions green
+- 2026-05-17: Networking bring-up — `STONED_GEM_SERVER` env override enables fake file:// server for tests; `install_gem_from_server` now reads real gemspec from gem data (with runtime deps) and falls back to metadata.gz parsing; `resolve_and_install` refactored to BFS queue with transitive dep discovery after each install; `force_update: true` path bypasses local cache for `bundle update`; `bundle update` and `gem update` commands added; four new regressions: transitive dep chain install via fake server, `gem install` from fake server with bin wrapper, `gem update` old→new with already-at-latest path, `bundle update` version bump; 425 regressions green
 
 ## Stage gap survey (2026-04-22)
 
