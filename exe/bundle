@@ -721,6 +721,25 @@ when "version", "-v", "--version"
 
 when "install", "i"
   frozen = args.include?("--frozen") || args.include?("--deployment")
+
+  # Persist --without / --with to .bundle/config
+  without_idx  = args.index("--without")
+  with_idx     = args.index("--with")
+  without_flag = without_idx ? args[without_idx + 1] : nil
+  with_flag    = with_idx    ? args[with_idx + 1]    : nil
+  if without_flag
+    cfg_path = bundle_local_config_path()
+    cfg = read_bundle_config(cfg_path)
+    cfg["BUNDLE_WITHOUT"] = without_flag
+    write_bundle_config(cfg_path, cfg)
+  end
+  if with_flag
+    cfg_path = bundle_local_config_path()
+    cfg = read_bundle_config(cfg_path)
+    cfg["BUNDLE_WITH"] = with_flag
+    write_bundle_config(cfg_path, cfg)
+  end
+
   unless File.exist?(GEMFILE)
     STDERR.puts "Could not locate Gemfile"
     exit 1
@@ -1182,6 +1201,18 @@ when "remove"
     if resolved
       Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
     end
+  end
+
+when "platform"
+  puts "Your platform is: #{RUBY_PLATFORM}"
+  puts "Your Ruby is:     #{RUBY_VERSION} (#{RUBY_PLATFORM})"
+  puts "Your Bundler is:  #{BUNDLE_VERSION}"
+  if File.exist?(GEMFILE)
+    merged = merged_bundle_config()
+    without = merged["BUNDLE_WITHOUT"] || ENV["BUNDLE_WITHOUT"]
+    puts "BUNDLE_WITHOUT:   #{without}" if without && !without.empty?
+    with_cfg = merged["BUNDLE_WITH"] || ENV["BUNDLE_WITH"]
+    puts "BUNDLE_WITH:      #{with_cfg}" if with_cfg && !with_cfg.empty?
   end
 
 when "console"

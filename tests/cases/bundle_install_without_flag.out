@@ -1,0 +1,11 @@
+Using core (path: /tmp/stoned_bundle_install_without_flag_/core_gem)
+Bundle complete! 1 gems now installed.
+0
+--LIST--
+Gems included by the bundle:
+  * core (path)
+--CONFIG--
+BUNDLE_WITHOUT: "development:test"
+--REINSTALL--
+Gems included by the bundle:
+  * core (path)
