@@ -286,13 +286,23 @@ static void assign_target(Eval *ev, Env *env, Node *target, Value val) {
         assign_lvar(ev, env, target->sval, val);
     } else if (target->kind == NODE_IVAR) {
         Value self;
-        if (env_get(env, "self", &self) && self.kind == VAL_OBJECT) {
-            if (self.obj->frozen) {
-                const char *kname = self.obj->klass.kind == VAL_CLASS ? self.obj->klass.klass->name : "Object";
-                eval_raise_class(ev, target, "FrozenError", "can't modify frozen %s", kname);
-                return;
+        if (env_get(env, "self", &self)) {
+            if (self.kind == VAL_OBJECT) {
+                if (self.obj->frozen) {
+                    const char *kname = self.obj->klass.kind == VAL_CLASS ? self.obj->klass.klass->name : "Object";
+                    eval_raise_class(ev, target, "FrozenError", "can't modify frozen %s", kname);
+                    return;
+                }
+                val_object_set_ivar(ev->arena, self, target->sval, val);
+            } else if (self.kind == VAL_CLASS && self.klass && self.klass->class_env) {
+                /* Class instance variable: store in class_env with @ prefix */
+                size_t nlen = strlen(target->sval);
+                char *key = arena_alloc(ev->arena, nlen + 2);
+                key[0] = '@'; memcpy(key + 1, target->sval, nlen + 1);
+                env_define(ev->arena, self.klass->class_env, key, val);
+            } else {
+                global_set(ev->arena, &ev->globals, target->sval, val);
             }
-            val_object_set_ivar(ev->arena, self, target->sval, val);
         } else {
             global_set(ev->arena, &ev->globals, target->sval, val);
         }
@@ -556,10 +566,21 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         }
         case NODE_IVAR: {
             Value self;
-            if (env_get(env, "self", &self) && self.kind == VAL_OBJECT) {
-                Value v;
-                if (!val_object_get_ivar(self, node->sval, &v)) return val_nil();
-                return v;
+            if (env_get(env, "self", &self)) {
+                if (self.kind == VAL_OBJECT) {
+                    Value v;
+                    if (!val_object_get_ivar(self, node->sval, &v)) return val_nil();
+                    return v;
+                }
+                if (self.kind == VAL_CLASS && self.klass && self.klass->class_env) {
+                    /* Class instance variable: stored in class_env with @ prefix */
+                    size_t nlen = strlen(node->sval);
+                    char *key = arena_alloc(ev->arena, nlen + 2);
+                    key[0] = '@'; memcpy(key + 1, node->sval, nlen + 1);
+                    Value v;
+                    if (!env_get(self.klass->class_env, key, &v)) return val_nil();
+                    return v;
+                }
             }
             Value v;
             if (!global_get(&ev->globals, node->sval, &v)) return val_nil();
@@ -656,16 +677,10 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             Node *target = node->binop.left;
             if (target->kind == NODE_LVAR)
                 assign_lvar(ev, env, target->sval, val);
-            else if (target->kind == NODE_IVAR) {
-                Value self;
-                if (env_get(env, "self", &self) && self.kind == VAL_OBJECT)
-                    val_object_set_ivar(ev->arena, self, target->sval, val);
-                else
-                    global_set(ev->arena, &ev->globals, target->sval, val);
-            } else if (target->kind == NODE_GVAR) {
-                global_set(ev->arena, &ev->globals, target->sval, val);
+            else if (target->kind == NODE_IVAR || target->kind == NODE_GVAR ||
+                     target->kind == NODE_CVAR) {
+                assign_target(ev, env, target, val);
             } else {
-                /* handles NODE_CVAR and other targets via assign_target */
                 assign_target(ev, env, target, val);
             }
             return val;

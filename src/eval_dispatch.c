@@ -1809,26 +1809,51 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         const char *raw = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
         if (!raw) return eval_raise_class(ev, site, "TypeError", "instance_variable_get requires a Symbol or String");
         const char *ivar = raw[0] == '@' ? raw + 1 : raw; /* strip leading @ */
-        if (recv.kind != VAL_OBJECT) return val_nil();
-        Value v;
-        return val_object_get_ivar(recv, ivar, &v) ? v : val_nil();
+        if (recv.kind == VAL_OBJECT) {
+            Value v;
+            return val_object_get_ivar(recv, ivar, &v) ? v : val_nil();
+        }
+        if (recv.kind == VAL_CLASS && recv.klass && recv.klass->class_env) {
+            size_t nlen = strlen(ivar);
+            char *key = arena_alloc(ev->arena, nlen + 2);
+            key[0] = '@'; memcpy(key + 1, ivar, nlen + 1);
+            Value v;
+            return env_get(recv.klass->class_env, key, &v) ? v : val_nil();
+        }
+        return val_nil();
     }
     if (strcmp(name, "instance_variable_set") == 0) {
         if (argc < 2) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         const char *raw = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
         if (!raw) return eval_raise_class(ev, site, "TypeError", "instance_variable_set requires a Symbol or String");
         const char *ivar = raw[0] == '@' ? raw + 1 : raw;
-        if (recv.kind != VAL_OBJECT) return val_nil();
-        val_object_set_ivar(ev->arena, recv, ivar, args[1]);
-        return args[1];
+        if (recv.kind == VAL_OBJECT) {
+            val_object_set_ivar(ev->arena, recv, ivar, args[1]);
+            return args[1];
+        }
+        if (recv.kind == VAL_CLASS && recv.klass && recv.klass->class_env) {
+            size_t nlen = strlen(ivar);
+            char *key = arena_alloc(ev->arena, nlen + 2);
+            key[0] = '@'; memcpy(key + 1, ivar, nlen + 1);
+            env_define(ev->arena, recv.klass->class_env, key, args[1]);
+            return args[1];
+        }
+        return val_nil();
     }
     if (strcmp(name, "instance_variable_defined?") == 0) {
         if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         const char *raw = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
-        if (!raw || recv.kind != VAL_OBJECT) return val_false();
+        if (!raw) return val_false();
         const char *ivar = raw[0] == '@' ? raw + 1 : raw;
-        Value v;
-        return val_bool(val_object_get_ivar(recv, ivar, &v));
+        if (recv.kind == VAL_OBJECT) { Value v; return val_bool(val_object_get_ivar(recv, ivar, &v)); }
+        if (recv.kind == VAL_CLASS && recv.klass && recv.klass->class_env) {
+            size_t nlen = strlen(ivar);
+            char *key = arena_alloc(ev->arena, nlen + 2);
+            key[0] = '@'; memcpy(key + 1, ivar, nlen + 1);
+            Value v;
+            return val_bool(env_get(recv.klass->class_env, key, &v));
+        }
+        return val_false();
     }
     if (strcmp(name, "instance_variables") == 0) {
         Value arr = val_array_new();
