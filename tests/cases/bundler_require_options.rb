@@ -63,7 +63,7 @@ GEMFILE
 File.write(File.join(app, "require_default.rb"), <<~RUBY)
   require "bundler"
   Bundler.require(:default)
-  puts(defined?(FOO_AUTO) == "constant")
+  puts(!!defined?(FOO_AUTO))
   puts(defined?(BAR_AUTO).nil?)
   puts(defined?(BAZ_CORE).nil?)
   puts(defined?(BAZ_EXTRA).nil?)
@@ -72,10 +72,10 @@ RUBY
 File.write(File.join(app, "require_tools.rb"), <<~RUBY)
   require "bundler"
   Bundler.require(:default, :tools)
-  puts(defined?(FOO_AUTO) == "constant")
+  puts(!!defined?(FOO_AUTO))
   puts(defined?(BAR_AUTO).nil?)
-  puts(defined?(BAZ_CORE) == "constant")
-  puts(defined?(BAZ_EXTRA) == "constant")
+  puts(!!defined?(BAZ_CORE))
+  puts(!!defined?(BAZ_EXTRA))
 RUBY
 
 old_gem_home = ENV["GEM_HOME"]

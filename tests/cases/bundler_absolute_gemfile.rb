@@ -31,8 +31,10 @@ GEMFILE
 File.write(File.join(work, "use_absolute.rb"), <<~RUBY)
   ENV["BUNDLE_GEMFILE"] = #{File.join(app, "Gemfile").inspect}
   require "bundler"
-  puts Bundler.root == #{app.inspect}
+  puts Bundler.root.to_s == #{app.inspect}
   puts Bundler.gemfile == #{File.join(app, "Gemfile").inspect}
+  puts Bundler.default_gemfile.to_s == #{File.join(app, "Gemfile").inspect}
+  puts Bundler.default_lockfile.to_s == #{File.join(app, "Gemfile.lock").inspect}
   require "bundler/setup"
   require "mygem"
   puts MYGEM_ABSOLUTE_OK

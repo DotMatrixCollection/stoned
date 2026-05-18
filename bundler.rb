@@ -14,19 +14,7 @@ module Bundler
 
   class << self
     def root
-      gemfile_name = ENV["BUNDLE_GEMFILE"]
-      if gemfile_name && !gemfile_name.empty?
-        return File.dirname(File.expand_path(gemfile_name))
-      end
-
-      dir = Dir.pwd
-      loop do
-        return dir if File.exist?(File.join(dir, "Gemfile"))
-        parent = File.dirname(dir)
-        break if parent == dir
-        dir = parent
-      end
-      raise GemfileNotFound, "Could not locate Gemfile"
+      pathname_for(root_path)
     end
 
     def gemfile
@@ -34,12 +22,20 @@ module Bundler
       if gemfile_name && !gemfile_name.empty?
         File.expand_path(gemfile_name)
       else
-        File.join(root, "Gemfile")
+        File.join(root_path, "Gemfile")
       end
     end
 
     def lockfile
-      File.join(root, "Gemfile.lock")
+      File.join(root_path, "Gemfile.lock")
+    end
+
+    def default_gemfile
+      pathname_for(gemfile)
+    end
+
+    def default_lockfile
+      pathname_for(lockfile)
     end
 
     def setup(*groups)
@@ -66,11 +62,11 @@ module Bundler
         req_setting = dep[:require]
         next if req_setting == false
         if req_setting.is_a?(Array)
-          req_setting.each { |r| require r rescue nil }
+          req_setting.each { |r| Kernel.send(:require, r) rescue nil }
         elsif req_setting.is_a?(String)
-          require req_setting rescue nil
+          Kernel.send(:require, req_setting) rescue nil
         else
-          require dep[:name] rescue nil
+          Kernel.send(:require, dep[:name]) rescue nil
         end
       end
 
@@ -86,7 +82,19 @@ module Bundler
     end
 
     def bundle_path
-      Gem.home
+      pathname_for(Gem.home)
+    end
+
+    def app_config_path
+      pathname_for(File.join(root_path, ".bundle"))
+    end
+
+    def app_cache
+      pathname_for(File.join(root_path, "vendor", "cache"))
+    end
+
+    def user_home
+      pathname_for(ENV["HOME"] || Dir.pwd)
     end
 
     def with_unbundled_env(&block)
@@ -109,6 +117,28 @@ module Bundler
     end
 
     private
+
+    def root_path
+      gemfile_name = ENV["BUNDLE_GEMFILE"]
+      if gemfile_name && !gemfile_name.empty?
+        return File.dirname(File.expand_path(gemfile_name))
+      end
+
+      dir = Dir.pwd
+      loop do
+        return dir if File.exist?(File.join(dir, "Gemfile"))
+        parent = File.dirname(dir)
+        break if parent == dir
+        dir = parent
+      end
+      raise GemfileNotFound, "Could not locate Gemfile"
+    end
+
+    def pathname_for(path)
+      Pathname.new(path)
+    rescue Exception
+      path
+    end
 
     def parse_gemfile_dependencies(gemfile_path)
       deps = []
