@@ -26,5 +26,13 @@ module Bundler
     def git_sources
       @sources.select { |source| source.class.name == "Bundler::Source::Git" }
     end
+
+    def metadata_source
+      @sources.find { |source| source.class.name == "Bundler::Source::Metadata" }
+    end
+
+    def installed_source
+      @sources.find { |source| source.class.name == "Bundler::Source::Installed" }
+    end
   end
 end
