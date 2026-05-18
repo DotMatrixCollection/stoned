@@ -18,6 +18,10 @@ puts specs.empty? == false
 puts specs[0].name
 puts specs[1].version
 puts specs.to_a.length
+puts specs.names.join(",")
+alpha_only = specs.for([Struct.new(:name).new("alpha")])
+puts alpha_only.length
+puts specs.to_hash["beta"].version
 names = []
 specs.each { |spec| names << spec.name }
 puts names.join(",")

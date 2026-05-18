@@ -19,6 +19,10 @@ module Bundler
       @specs.empty?
     end
 
+    def names
+      @specs.map(&:name)
+    end
+
     def search(dependency)
       @specs.select do |spec|
         next false unless spec.name == dependency.name
@@ -32,6 +36,11 @@ module Bundler
 
     def each(&block)
       @specs.each(&block)
+    end
+
+    def use(other)
+      other.each { |spec| self << spec }
+      self
     end
   end
 end
