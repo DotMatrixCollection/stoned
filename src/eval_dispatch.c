@@ -1147,6 +1147,11 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
             else base = 10;
             char *end = NULL;
             int64_t result = (int64_t)strtoll(s, &end, base);
+            /* Validate the whole string was consumed (skip trailing spaces) */
+            while (end && (*end == ' ' || *end == '\t')) end++;
+            if (!end || *end != '\0')
+                return eval_raise_class(ev, site, "ArgumentError",
+                    "invalid value for Integer(): \"%s\"", v.sval ? v.sval : "");
             return val_int(result);
         }
         if (!val_responds_to(ev, v, "to_i", 1))
@@ -1161,7 +1166,17 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         Value v = args[0];
         if (v.kind == VAL_FLOAT) return v;
         if (v.kind == VAL_INT) return val_float((double)v.ival);
-        if (v.kind == VAL_STRING) return val_float(atof(v.sval ? v.sval : ""));
+        if (v.kind == VAL_STRING) {
+            const char *s = v.sval ? v.sval : "";
+            while (*s == ' ' || *s == '\t') s++;
+            char *end = NULL;
+            double fval = strtod(s, &end);
+            while (end && (*end == ' ' || *end == '\t')) end++;
+            if (!end || *end != '\0' || end == s)
+                return eval_raise_class(ev, site, "ArgumentError",
+                    "invalid value for Float(): \"%s\"", v.sval ? v.sval : "");
+            return val_float(fval);
+        }
         if (!val_responds_to(ev, v, "to_f", 1))
             return eval_raise_class(ev, site, "TypeError", "can't convert %s into Float", val_kind_name(v.kind));
         Value converted = dispatch_method(ev, env, v, "to_f", NULL, 0, NULL, site, 0, -1);
