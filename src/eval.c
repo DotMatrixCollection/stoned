@@ -1016,6 +1016,16 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                                 def_target = self_val.klass->class_env;
                             env_define(ev->arena, def_target, node->def.name,
                                        val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
+                            /* module_function: also add self.name as a public module method */
+                            if (self_val.kind == VAL_CLASS && self_val.klass &&
+                                self_val.klass->is_module && is_module_function_mode(env)) {
+                                size_t nlen = strlen(node->def.name);
+                                char *key = arena_alloc(ev->arena, nlen + 6);
+                                memcpy(key, "self.", 5);
+                                memcpy(key + 5, node->def.name, nlen + 1);
+                                env_define(ev->arena, def_target, key,
+                                           val_method(node, ev->top_env, METHOD_PUBLIC, ev->current_file));
+                            }
                         }
                     }
                 } else {
@@ -1039,6 +1049,16 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     if (!would_shadow) {
                         env_define(ev->arena, def_target, node->def.name,
                                    val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
+                        /* module_function: also add self.name as a public module method */
+                        if (self_val.kind == VAL_CLASS && self_val.klass &&
+                            self_val.klass->is_module && is_module_function_mode(env)) {
+                            size_t nlen = strlen(node->def.name);
+                            char *key = arena_alloc(ev->arena, nlen + 6);
+                            memcpy(key, "self.", 5);
+                            memcpy(key + 5, node->def.name, nlen + 1);
+                            env_define(ev->arena, def_target, key,
+                                       val_method(node, ev->top_env, METHOD_PUBLIC, ev->current_file));
+                        }
                     } else {
                         /* Store as private kernel method under a mangled key that doesn't shadow the constant */
                         size_t nlen = strlen(node->def.name);

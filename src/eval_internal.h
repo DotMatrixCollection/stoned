@@ -87,6 +87,7 @@ int has_kwarg_params(NodeList *params);
 int has_kwrest_param(NodeList *params);
 Value extract_kwargs(Eval *ev, NodeList *params, Value *args, int *argc);
 MethodVisibility current_method_visibility(Env *env);
+int is_module_function_mode(Env *env);
 void set_current_method_visibility(Arena *a, Env *env, MethodVisibility visibility);
 void update_method_visibility(Env *env, const char *name, MethodVisibility visibility, int singleton_only);
 int method_visibility_allows_call(Eval *ev, Env *env, Value recv, RubyClass *owner,

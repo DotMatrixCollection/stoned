@@ -1554,8 +1554,10 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         Value self;
         if (!env_get(env, "self", &self) || self.kind != VAL_CLASS || !self.klass->is_module)
             return eval_raise_class(ev, site, "TypeError", "module_function must be called in a module body");
-        if (argc == 0)
-            return val_nil(); /* no-arg form sets module_function mode for subsequent defs — stub */
+        if (argc == 0) {
+            env_define(ev->arena, self.klass->class_env, "__visibility__", val_symbol("module_function"));
+            return val_nil();
+        }
         for (int i = 0; i < argc; i++) {
             const char *mname = (args[i].kind == VAL_SYMBOL || args[i].kind == VAL_STRING) ? args[i].sval : NULL;
             if (!mname) continue;

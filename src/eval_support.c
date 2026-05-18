@@ -623,8 +623,16 @@ MethodVisibility current_method_visibility(Env *env) {
     if (env_get(env, "__visibility__", &visibility) && visibility.kind == VAL_SYMBOL) {
         if (strcmp(visibility.sval, "private") == 0) return METHOD_PRIVATE;
         if (strcmp(visibility.sval, "protected") == 0) return METHOD_PROTECTED;
+        if (strcmp(visibility.sval, "module_function") == 0) return METHOD_PRIVATE;
     }
     return METHOD_PUBLIC;
+}
+
+int is_module_function_mode(Env *env) {
+    Value visibility;
+    return env_get(env, "__visibility__", &visibility) &&
+           visibility.kind == VAL_SYMBOL &&
+           strcmp(visibility.sval, "module_function") == 0;
 }
 
 void set_current_method_visibility(Arena *a, Env *env, MethodVisibility visibility) {
@@ -1830,8 +1838,15 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "  def self.included(base)\n"
 "    base.instance_eval { def new_cond; Object.new; end }\n"
 "  end\n"
+"  def initialize(*args)\n"
+"    mon_initialize\n"
+"  end\n"
 "  def mon_initialize; end\n"
 "  def synchronize; yield; end\n"
+"  def mon_enter; end\n"
+"  def mon_exit; end\n"
+"  def try_enter; true; end\n"
+"  def new_cond; Object.new; end\n"
 "end\n";
         return eval_ruby_string(ev, monitor_shim, "monitor_shim", site);
     }
