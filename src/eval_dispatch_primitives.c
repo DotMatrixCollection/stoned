@@ -848,7 +848,29 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         Value arr = val_array_new();
-        const char *sep = argc > 0 ? val_to_s(ev->arena, args[0]) : " ";
+        /* Special case: no arg, nil arg, or " " literal → Ruby whitespace split
+           (strip leading/trailing, split on any whitespace run, no empty fields) */
+        int ws_split = (argc == 0) || (args[0].kind == VAL_NIL) ||
+                       (args[0].kind == VAL_STRING && strcmp(args[0].sval, " ") == 0);
+        if (ws_split) {
+            const char *p = s;
+            /* skip leading whitespace */
+            while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
+            int64_t count = 0;
+            while (*p) {
+                if (limit > 0 && count >= limit - 1) {
+                    /* last field: rest of string (trimmed leading whitespace already done) */
+                    val_array_push(&arr, val_string(ev->arena, p));
+                    break;
+                }
+                const char *start = p;
+                while (*p && !(*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
+                if (p > start) { val_array_push(&arr, val_string_n(ev->arena, start, (size_t)(p - start))); count++; }
+                while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
+            }
+            *out = arr; return 1;
+        }
+        const char *sep = val_to_s(ev->arena, args[0]);
         size_t seplen = strlen(sep);
         if (seplen == 0) {
             size_t chars = utf8_char_count(s);

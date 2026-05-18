@@ -552,7 +552,7 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
     {
         static const char *kernel[] = {
             "puts", "print", "p", "pp", "warn", "require", "require_relative",
-            "raise", "fail", "exit", "abort", "lambda", "proc", "loop", "rand", "srand",
+            "raise", "fail", "exit", "abort", "lambda", "proc", "loop", "rand", "srand", "open",
             "__method__", "__dir__", "__FILE__", "__LINE__",
             "sleep", "catch", "throw", "trap", "at_exit", "printf", "sprintf", "format",
             "system", "spawn", "wait", "waitpid", "`", "load",
@@ -1269,6 +1269,18 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         int64_t n = argc > 0 ? args[0].ival : 1;
         if (n <= 0) return val_float((double)rand() / ((double)RAND_MAX + 1.0));
         return val_int((int64_t)(rand() % n));
+    }
+    if (strcmp(name, "open") == 0) {
+        /* Kernel#open — opens a file like File.open */
+        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        const char *path = val_to_s(ev->arena, args[0]);
+        const char *mode = argc >= 2 ? val_to_s(ev->arena, args[1]) : "r";
+        Value file_class;
+        if (!env_get(ev->top_env, "File", &file_class) || file_class.kind != VAL_CLASS)
+            return eval_raise_class(ev, site, "NameError", "uninitialized constant File");
+        Value file_args[2] = { args[0], argc >= 2 ? args[1] : val_string(ev->arena, "r") };
+        return dispatch_method(ev, env, file_class, "open", file_args, argc >= 2 ? 2 : 1, blk, site, 0, 1);
+        (void)path; (void)mode;
     }
     if (strcmp(name, "srand") == 0) {
         unsigned int seed = argc > 0 && args[0].kind == VAL_INT
@@ -2075,7 +2087,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (recv.kind == VAL_NIL) {
         static const char *kern_nil[] = {
             "puts", "print", "p", "pp", "warn", "require", "require_relative", "raise",
-            "lambda", "proc", "loop", "rand", "srand", "exit", "format", "sprintf", "printf",
+            "lambda", "proc", "loop", "rand", "srand", "open", "exit", "format", "sprintf", "printf",
             "sleep", "catch", "throw", "trap", "at_exit", "`",
             "system", "spawn", "wait", "waitpid", "load", NULL
         };
@@ -2405,7 +2417,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "printf", "raise", "proc", "lambda", "loop", "rand", "srand", "exit", "include", "prepend", "extend",
+            "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "printf", "raise", "proc", "lambda", "loop", "rand", "srand", "open", "exit", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload",
