@@ -1132,19 +1132,27 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         return eval_format_string(ev, env, fmt, args + 1, argc - 1, site);
     }
     if (strcmp(name, "Integer") == 0) {
-        if (argc != 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        if (argc < 1 || argc > 2) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         Value v = args[0];
+        int explicit_base = (argc == 2 && args[1].kind == VAL_INT) ? (int)args[1].ival : 0;
         if (v.kind == VAL_INT) return v;
-        if (v.kind == VAL_FLOAT) return val_int((int64_t)v.fval);
+        if (v.kind == VAL_FLOAT && explicit_base == 0) return val_int((int64_t)v.fval);
         if (v.kind == VAL_STRING) {
             const char *s = v.sval ? v.sval : "";
             while (*s == ' ' || *s == '\t') s++;
-            int base = 0;
-            if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) { base = 16; s += 2; }
-            else if (s[0] == '0' && (s[1] == 'b' || s[1] == 'B')) { base = 2;  s += 2; }
-            else if (s[0] == '0' && (s[1] == 'o' || s[1] == 'O')) { base = 8;  s += 2; }
-            else if (s[0] == '0' && s[1] >= '0' && s[1] <= '7')   { base = 8; }
-            else base = 10;
+            int base = explicit_base;
+            if (base == 0) {
+                if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) { base = 16; s += 2; }
+                else if (s[0] == '0' && (s[1] == 'b' || s[1] == 'B')) { base = 2;  s += 2; }
+                else if (s[0] == '0' && (s[1] == 'o' || s[1] == 'O')) { base = 8;  s += 2; }
+                else if (s[0] == '0' && s[1] >= '0' && s[1] <= '7')   { base = 8; }
+                else base = 10;
+            } else {
+                /* explicit base: strip optional prefix if it matches */
+                if (base == 16 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+                else if (base == 2  && s[0] == '0' && (s[1] == 'b' || s[1] == 'B')) s += 2;
+                else if (base == 8  && s[0] == '0' && (s[1] == 'o' || s[1] == 'O')) s += 2;
+            }
             char *end = NULL;
             int64_t result = (int64_t)strtoll(s, &end, base);
             /* Validate the whole string was consumed (skip trailing spaces) */
@@ -1206,6 +1214,18 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         Value arr = val_array_new();
         val_array_push(&arr, v);
         return arr;
+    }
+    if (strcmp(name, "Hash") == 0) {
+        if (argc != 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        Value v = args[0];
+        if (v.kind == VAL_HASH) return v;
+        if (v.kind == VAL_NIL) return val_hash_new(ev->arena);
+        if (v.kind == VAL_ARRAY && v.array && v.array->len == 0) return val_hash_new(ev->arena);
+        /* Try to_hash */
+        Value converted = dispatch_method(ev, env, v, "to_hash", NULL, 0, NULL, site, 0, -1);
+        if (!val_is_signal(converted) && converted.kind == VAL_HASH) return converted;
+        ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+        return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into Hash", value_class_name(ev, v));
     }
     if (strcmp(name, "raise") == 0) {
         const char *class_name = "RuntimeError";
@@ -2452,7 +2472,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "format", "sprintf", "printf", "raise", "proc", "lambda", "loop", "rand", "srand", "open", "exit", "exit!", "abort", "include", "prepend", "extend",
+            "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "Hash", "format", "sprintf", "printf", "raise", "proc", "lambda", "loop", "rand", "srand", "open", "exit", "exit!", "abort", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload",

@@ -105,6 +105,7 @@ static Node *parse_jump_value(Parser *p, Node *first, Span s) {
 static int kernel_const_call_name(const char *name) {
     return strcmp(name, "Integer") == 0 || strcmp(name, "Float") == 0 ||
            strcmp(name, "String") == 0 || strcmp(name, "Array") == 0 ||
+           strcmp(name, "Hash") == 0 ||
            strcmp(name, "Complex") == 0 || strcmp(name, "Rational") == 0;
 }
 

@@ -14,6 +14,7 @@ module Bundler
       @group_stack = []
       @source_stack = []
       @ruby_version = nil
+      @gemfile_dir_stack = []
     end
 
     def self.evaluate(gemfile, _lockfile = nil, _unlock = nil)
@@ -22,8 +23,8 @@ module Bundler
       dsl
     end
 
-    def source(source)
-      rubygems = Bundler::Source::Rubygems.new(remote: source)
+    def source(url, &_block)
+      rubygems = Bundler::Source::Rubygems.new(remote: url)
       @sources.add_source(rubygems)
       rubygems
     end
@@ -32,99 +33,63 @@ module Bundler
       @ruby_version = Bundler::RubyVersion.new(requirements)
     end
 
-    def path(path)
-      source = Bundler::Source::Path.new(path: path)
+    def path(p, &blk)
+      expanded = File.expand_path(p, _current_gemfile_dir)
+      source = Bundler::Source::Path.new(path: expanded)
       @sources.add_source(source)
       @source_stack << source
-      yield self if block_given?
+      if blk
+        instance_eval(&blk)
+        @source_stack.pop
+      end
       source
-    ensure
-      @source_stack.pop if block_given?
     end
 
-    def git(uri, options = {})
+    def git(uri, options = {}, &blk)
       source = Bundler::Source::Git.new(options.merge(git: uri))
       @sources.add_source(source)
       @source_stack << source
-      yield self if block_given?
+      if blk
+        instance_eval(&blk)
+        @source_stack.pop
+      end
       source
-    ensure
-      @source_stack.pop if block_given?
     end
 
     def gem(name, *requirements)
       options = requirements.last.is_a?(Hash) ? requirements.pop : {}
+      # Inline path/git options expand relative to current gemfile dir
+      if options[:path]
+        options[:path] = File.expand_path(options[:path], _current_gemfile_dir)
+      end
       merged = options.dup
       merged[:groups] ||= current_groups
       merged[:source] ||= source_for_options(merged)
       @dependencies << Bundler::Dependency.new(name, requirements.empty? ? ">= 0" : requirements, merged)
     end
 
-    def group(*groups)
+    def group(*groups, &blk)
       @group_stack << groups
-      yield self if block_given?
-    ensure
+      instance_eval(&blk) if blk
       @group_stack.pop
     end
 
     def eval_gemfile(path)
-      full = File.expand_path(path)
-      root = File.dirname(full)
-      File.readlines(full).each do |line|
-        stripped = line.strip
-        next if stripped.empty? || stripped.start_with?("#")
-
-        if stripped =~ /^source\s+['"]([^'"]+)['"]/
-          source($1)
-        elsif stripped =~ /^ruby\s+['"]([^'"]+)['"]/
-          ruby($1)
-        elsif stripped =~ /^eval_gemfile\s+['"]([^'"]+)['"]/
-          eval_gemfile(File.expand_path($1, root))
-        elsif stripped =~ /^path\s+['"]([^'"]+)['"]\s+do\s*$/
-          source = Bundler::Source::Path.new(path: File.expand_path($1, root))
-          @sources.add_source(source)
-          @source_stack << source
-        elsif stripped =~ /^git\s+['"]([^'"]+)['"](?:\s*,\s*branch:\s*['"]([^'"]+)['"])?(?:\s*,\s*ref:\s*['"]([^'"]+)['"])?\s+do\s*$/
-          source = Bundler::Source::Git.new(git: $1, branch: $2, ref: $3)
-          @sources.add_source(source)
-          @source_stack << source
-        elsif stripped =~ /^gem\s+['"]([^'"]+)['"]/
-          name = $1
-          options = {}
-          options[:require] = false if stripped.include?("require: false")
-          if stripped =~ /require:\s*\[([^\]]*)\]/
-            options[:require] = $1.scan(/['"]([^'"]+)['"]/).flatten
-          elsif stripped =~ /require:\s*['"]([^'"]+)['"]/
-            options[:require] = $1
-          end
-          if stripped =~ /path:\s*['"]([^'"]+)['"]/
-            options[:path] = File.expand_path($1, root)
-          end
-          if stripped =~ /git:\s*['"]([^'"]+)['"]/
-            options[:git] = $1
-          end
-          if stripped =~ /branch:\s*['"]([^'"]+)['"]/
-            options[:branch] = $1
-          end
-          if stripped =~ /ref:\s*['"]([^'"]+)['"]/
-            options[:ref] = $1
-          end
-          gem(name, options)
-        elsif stripped =~ /^group\s+(.+?)\s+do\s*$/
-          groups = $1.scan(/:([A-Za-z0-9_]+)/).flatten.map(&:to_sym)
-          @group_stack << groups
-        elsif stripped == "end"
-          if @source_stack.any?
-            @source_stack.pop
-          elsif @group_stack.any?
-            @group_stack.pop
-          end
-        end
-      end
+      full = File.expand_path(path, _current_gemfile_dir)
+      dir  = File.dirname(full)
+      content = File.read(full)
+      @gemfile_dir_stack.push(dir)
+      instance_eval(content, full, 1)
       self
+    ensure
+      @gemfile_dir_stack.pop
     end
 
     private
+
+    def _current_gemfile_dir
+      @gemfile_dir_stack.empty? ? Dir.pwd : @gemfile_dir_stack.last
+    end
 
     def current_groups
       groups = []

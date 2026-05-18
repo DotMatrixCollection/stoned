@@ -1287,8 +1287,21 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         Value klass = val_class(ev->arena, anon_name, recv);
         klass.klass->class_env = env_new(ev->arena, recv.klass->class_env, 1);
 
+        /* Check last arg for keyword_init: true option hash */
+        int keyword_init = 0;
+        int member_argc = argc;
+        if (argc > 0 && args[argc - 1].kind == VAL_HASH) {
+            Value kwinit_key = val_symbol("keyword_init");
+            Value kwinit_val;
+            if (val_hash_get(args[argc - 1].hash, kwinit_key, &kwinit_val))
+                keyword_init = val_truthy(kwinit_val);
+            member_argc = argc - 1;
+        }
+        env_define(ev->arena, klass.klass->class_env, "__struct_keyword_init__",
+                   val_bool(keyword_init));
+
         Value members = val_array_new();
-        for (int i = 0; i < argc; i++) {
+        for (int i = 0; i < member_argc; i++) {
             const char *member = (args[i].kind == VAL_SYMBOL || args[i].kind == VAL_STRING) ? args[i].sval : NULL;
             if (!member) {
                 *out = eval_raise_class(ev, site, "TypeError", "Struct member name must be a Symbol or String");
@@ -2987,16 +3000,32 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             recv.klass->class_env &&
             env_get(recv.klass->class_env, "__struct_members__", &struct_members) &&
             struct_members.kind == VAL_ARRAY) {
-            if (argc > (int)struct_members.array->len) {
-                *out = eval_raise_class(ev, site, "ArgumentError", "struct size differs");
-                return 1;
-            }
+            Value kwinit_flag;
+            int keyword_init = env_get(recv.klass->class_env, "__struct_keyword_init__", &kwinit_flag) &&
+                                val_truthy(kwinit_flag);
             Value obj = val_object(ev->arena, recv);
-            for (size_t i = 0; i < struct_members.array->len; i++) {
-                Value member = struct_members.array->elems[i];
-                if (member.kind != VAL_STRING) continue;
-                Value val = i < (size_t)argc ? args[i] : val_nil();
-                val_object_set_ivar(ev->arena, obj, member.sval, val);
+            if (keyword_init) {
+                /* keyword_init struct: accept a single keyword hash (or nothing) */
+                Value kw = (argc == 1 && args[0].kind == VAL_HASH) ? args[0] : val_nil();
+                for (size_t i = 0; i < struct_members.array->len; i++) {
+                    Value member = struct_members.array->elems[i];
+                    if (member.kind != VAL_STRING && member.kind != VAL_SYMBOL) continue;
+                    Value sym = val_symbol(member.sval);
+                    Value val = val_nil();
+                    if (kw.kind == VAL_HASH) val_hash_get(kw.hash, sym, &val);
+                    val_object_set_ivar(ev->arena, obj, member.sval, val);
+                }
+            } else {
+                if (argc > (int)struct_members.array->len) {
+                    *out = eval_raise_class(ev, site, "ArgumentError", "struct size differs");
+                    return 1;
+                }
+                for (size_t i = 0; i < struct_members.array->len; i++) {
+                    Value member = struct_members.array->elems[i];
+                    if (member.kind != VAL_STRING) continue;
+                    Value val = i < (size_t)argc ? args[i] : val_nil();
+                    val_object_set_ivar(ev->arena, obj, member.sval, val);
+                }
             }
             *out = obj;
             return 1;
