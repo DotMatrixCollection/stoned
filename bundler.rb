@@ -120,7 +120,8 @@ module Bundler
     end
 
     def ui
-      @ui ||= BundlerUI.new
+      require File.join(BUNDLER_RB_DIR, "bundler", "ui", "shell")
+      @ui ||= Bundler::UI::Shell.new
     end
 
     def definition
