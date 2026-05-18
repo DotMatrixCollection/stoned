@@ -548,6 +548,10 @@ when "list"
     exit 1
   end
   dsl = GemfileDSL.evaluate(GEMFILE)
+  unless File.exist?(LOCKFILE)
+    STDERR.puts "Could not locate Gemfile.lock"
+    exit 1
+  end
   lf = Lockfile.read(LOCKFILE)
   Gem::Specification.reset!
   puts "Gems included by the bundle:"
@@ -573,8 +577,8 @@ when "show", "info", "open"
     exit 1
   end
 
-  if command == "open" && args.empty?
-    STDERR.puts "Usage: bundle open GEM"
+  if (command == "open" || command == "info") && args.empty?
+    STDERR.puts "Usage: bundle #{command} GEM"
     exit 1
   end
 
