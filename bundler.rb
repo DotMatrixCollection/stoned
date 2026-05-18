@@ -100,9 +100,24 @@ module Bundler
     def with_unbundled_env(&block)
       block.call if block_given?
     end
-    alias unbundled_env with_unbundled_env
     alias with_clean_env with_unbundled_env
     alias clean_env with_unbundled_env
+
+    def original_env
+      filtered_env
+    end
+
+    def unbundled_env
+      filtered_env
+    end
+
+    def clean_system(*args)
+      system(*args)
+    end
+
+    def unbundled_system(*args)
+      clean_system(*args)
+    end
 
     def ui
       @ui ||= BundlerUI.new
@@ -138,6 +153,14 @@ module Bundler
       Pathname.new(path)
     rescue Exception
       path
+    end
+
+    def filtered_env
+      filtered = {}
+      ENV.to_h.each do |key, value|
+        filtered[key] = value unless key.start_with?("BUNDLE_")
+      end
+      filtered
     end
 
     def parse_gemfile_dependencies(gemfile_path)
