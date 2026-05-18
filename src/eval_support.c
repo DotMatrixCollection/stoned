@@ -438,7 +438,7 @@ static const char *canonical_existing_path(Arena *a, const char *path) {
     return copy;
 }
 
-static Value eval_ruby_string(Eval *ev, const char *src, const char *display_name, Node *site) {
+Value eval_ruby_string(Eval *ev, const char *src, const char *display_name, Node *site) {
     size_t src_len = strlen(src);
     Parser parser;
     parser_init(&parser, src, src_len, ev->arena);

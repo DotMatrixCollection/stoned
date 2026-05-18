@@ -592,6 +592,18 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
         Value m;
         if (ruby_class_find_instance_method(recv.obj->klass.klass, name, &m, NULL))
             return method_visible_for_respond_to(m, include_private);
+        /* For built-in classes, check via a synthetic primitive value */
+        if (recv.obj->klass.kind == VAL_CLASS && recv.obj->klass.klass) {
+            const char *cn = recv.obj->klass.klass->name;
+            Value probe = val_nil();
+            if (strcmp(cn, "String") == 0) probe = val_string(ev->arena, "");
+            else if (strcmp(cn, "Array") == 0) probe = val_array_new();
+            else if (strcmp(cn, "Hash") == 0)  probe = val_hash_new(ev->arena);
+            else if (strcmp(cn, "Integer") == 0) probe = val_int(0);
+            else if (strcmp(cn, "Float") == 0)   probe = val_float(0.0);
+            if (probe.kind != VAL_NIL)
+                return builtin_primitive_responds_to(probe, name);
+        }
         return 0;
     }
 
@@ -1545,8 +1557,15 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         if (!new_name || !old_name)
             return eval_raise_class(ev, site, "TypeError", "expected Symbol or String");
         Value method;
-        if (!ruby_class_find_instance_method(self.klass, old_name, &method, NULL))
-            return eval_raise_class(ev, site, "NameError", "undefined method '%s' for alias_method", old_name);
+        if (!ruby_class_find_instance_method(self.klass, old_name, &method, NULL)) {
+            /* Check if old_name is available via built-in dispatch */
+            Value probe = val_object(ev->arena, self);
+            if (!val_responds_to(ev, probe, old_name, 1))
+                return eval_raise_class(ev, site, "NameError", "undefined method '%s' for alias_method", old_name);
+            /* Store a forwarding symbol — dispatch_object will resolve it at call time */
+            env_define(ev->arena, self.klass->class_env, new_name, val_symbol(old_name));
+            return val_symbol(new_name);
+        }
         env_define(ev->arena, self.klass->class_env, new_name, method);
         return val_symbol(new_name);
     }
@@ -2212,6 +2231,35 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (recv.kind == VAL_ARRAY && dispatch_array(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (recv.kind == VAL_HASH && dispatch_hash(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (recv.kind == VAL_RANGE && dispatch_range(ev, env, recv, name, args, argc, blk, site, &out)) return out;
+
+    /* Check for aliases / user methods added to primitive classes via class reopening or alias_method */
+    {
+        const char *prim_class = NULL;
+        if (recv.kind == VAL_STRING) prim_class = "String";
+        else if (recv.kind == VAL_INT) prim_class = "Integer";
+        else if (recv.kind == VAL_FLOAT) prim_class = "Float";
+        else if (recv.kind == VAL_ARRAY) prim_class = "Array";
+        else if (recv.kind == VAL_HASH) prim_class = "Hash";
+        else if (recv.kind == VAL_RANGE) prim_class = "Range";
+        else if (recv.kind == VAL_SYMBOL) prim_class = "Symbol";
+        else if (recv.kind == VAL_NIL) prim_class = "NilClass";
+        else if (recv.kind == VAL_BOOL) prim_class = recv.bval ? "TrueClass" : "FalseClass";
+        if (prim_class) {
+            Value klass;
+            if (env_get(ev->top_env, prim_class, &klass) && klass.kind == VAL_CLASS) {
+                /* Alias stored as VAL_SYMBOL */
+                Value alias_val;
+                if (env_get_own(klass.klass->class_env, name, &alias_val) &&
+                    (alias_val.kind == VAL_SYMBOL || alias_val.kind == VAL_STRING) &&
+                    alias_val.sval && strcmp(alias_val.sval, name) != 0)
+                    return dispatch_method(ev, env, recv, alias_val.sval, args, argc, blk, site, public_only, explicit_receiver);
+                /* User-defined Ruby method on the class */
+                Value m; RubyClass *owner = NULL;
+                if (ruby_class_find_instance_method(klass.klass, name, &m, &owner) && m.kind == VAL_METHOD)
+                    return call_method_value(ev, env, recv, m, owner, name, args, argc, blk, site);
+            }
+        }
+    }
     /* Nil receiver calling kernel function (e.g. Method#call on a Kernel method) */
     if (recv.kind == VAL_NIL) {
         static const char *kern_nil[] = {
