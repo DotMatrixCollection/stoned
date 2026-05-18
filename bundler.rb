@@ -92,11 +92,21 @@ module Bundler
     end
 
     def bundle_path
-      pathname_for(Gem.home)
+      configured = settings["PATH"]
+      path = if configured && !configured.empty?
+        File.expand_path(configured, root_path)
+      else
+        Gem.home
+      end
+      pathname_for(path)
     end
 
     def app_config_path
       pathname_for(File.join(root_path, ".bundle"))
+    end
+
+    def app_config
+      app_config_path
     end
 
     def app_cache
@@ -134,6 +144,11 @@ module Bundler
       @ui ||= Bundler::UI::Shell.new
     end
 
+    def feature_flag
+      require File.join(BUNDLER_RB_DIR, "bundler", "feature_flag")
+      @feature_flag ||= Bundler::FeatureFlag.new(settings)
+    end
+
     def definition
       require File.join(BUNDLER_RB_DIR, "bundler", "definition")
       @definition ||= Bundler::Definition.build(default_gemfile, default_lockfile, nil)
@@ -150,6 +165,25 @@ module Bundler
 
     def locked_gems
       nil
+    end
+
+    def use_system_gems?
+      !settings.key?("PATH")
+    end
+
+    def reset!
+      @settings = nil
+      @current_ruby = nil
+      @ui = nil
+      @feature_flag = nil
+      @definition = nil
+      @runtime = nil
+      @rubygems = nil
+      self
+    end
+
+    def reset_paths!
+      reset!
     end
 
     private

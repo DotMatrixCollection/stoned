@@ -19,12 +19,14 @@ old_gemfile  = ENV["BUNDLE_GEMFILE"]
 ENV["GEM_HOME"] = gem_home
 ENV["HOME"]     = root
 ENV["BUNDLE_GEMFILE"] = File.join(app, "Gemfile")
+ENV["BUNDLE_PATH"] = "vendor/bundle"
 
 require "bundler"
 
 puts Bundler.root.to_s == app
-puts Bundler.bundle_path.to_s == gem_home
+puts Bundler.bundle_path.to_s == File.join(app, "vendor", "bundle")
 puts Bundler.app_config_path.to_s == File.join(app, ".bundle")
+puts Bundler.app_config.to_s == File.join(app, ".bundle")
 puts Bundler.app_cache.to_s == File.join(app, "vendor", "cache")
 puts Bundler.user_home.to_s == root
 puts Bundler.default_gemfile.dirname.to_s == app
