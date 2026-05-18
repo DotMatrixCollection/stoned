@@ -2091,6 +2091,8 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
         return result;
     }
     if (strcmp(op, "<<") == 0 && left.kind == VAL_ARRAY) {
+        if (left.array->frozen)
+            return eval_raise_class(ev, node, "FrozenError", "can't modify frozen Array");
         val_array_push(&left, right);
         return left;
     }

@@ -140,11 +140,13 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         return 1;
     }
-    if (strcmp(name, "push") == 0 || strcmp(name, "append") == 0) {
+    if (strcmp(name, "push") == 0 || strcmp(name, "append") == 0 || strcmp(name, "<<") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         for (int i = 0; i < argc; i++) val_array_push(&recv, args[i]);
         *out = recv; return 1;
     }
     if (strcmp(name, "concat") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         for (int i = 0; i < argc; i++) {
             if (args[i].kind == VAL_ARRAY) {
                 for (size_t j = 0; j < args[i].array->len; j++)
@@ -1137,13 +1139,12 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         }
         return 1;
     }
-    if (strcmp(name, "[]=") == 0) {
-        if (argc < 2) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#[]= requires key and value");
-        else {
-            val_hash_set(h, args[0], args[1]);
-            sync_process_env_pair(ev, h, args[0], args[1]);
-            *out = args[1];
-        }
+    if (strcmp(name, "[]=") == 0 || strcmp(name, "store") == 0) {
+        if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "Hash#[]= requires key and value"); return 1; }
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
+        val_hash_set(h, args[0], args[1]);
+        sync_process_env_pair(ev, h, args[0], args[1]);
+        *out = args[1];
         return 1;
     }
     if (strcmp(name, "fetch") == 0) {

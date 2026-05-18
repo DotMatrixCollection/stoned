@@ -1,0 +1,10 @@
+true
+array <<: FrozenError
+array push: FrozenError
+array concat: FrozenError
+[1, 2, 3]
+true
+hash []=: FrozenError
+{:a=>1}
+string <<: FrozenError
+hello
