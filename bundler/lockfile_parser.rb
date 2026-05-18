@@ -2,7 +2,16 @@ require "bundler"
 
 module Bundler
   class LockfileParser
-    Spec = Struct.new(:name, :version, :source)
+    Spec = Struct.new(:name, :version, :source) do
+      def full_name
+        "#{name}-#{version}"
+      end
+
+      def to_s
+        full_name
+      end
+    end
+
     Source = Struct.new(:type, :remote)
 
     attr_reader :specs, :platforms, :dependencies, :bundler_version, :sources

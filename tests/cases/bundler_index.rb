@@ -21,4 +21,6 @@ puts matches.length
 puts matches[0].full_name
 puts index["beta"][0].version
 puts index.names.join(",")
+puts index.dependency_names.join(",")
+puts index.include?(Bundler::LazySpecification.new("gamma", "3.0.0"))
 puts index["gamma"][0].full_name

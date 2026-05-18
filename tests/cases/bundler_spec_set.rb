@@ -21,6 +21,10 @@ puts specs.to_a.length
 puts specs.names.join(",")
 alpha_only = specs.for([Struct.new(:name).new("alpha")])
 puts alpha_only.length
+puts specs.find_all_by_name("alpha").length
+puts specs.find_by_name_and_platform("beta").full_name
+puts specs.materialized_for_all_platforms.equal?(specs)
+puts specs.sorted.map(&:full_name).join(",")
 puts specs.to_hash["beta"].version
 names = []
 specs.each { |spec| names << spec.name }

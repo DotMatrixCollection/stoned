@@ -58,6 +58,7 @@ puts definition.source_requirements.default_source.to_s
 puts definition.locked_gems.bundler_version
 puts definition.lock.dependencies[0]
 puts definition.requested_specs.length
+puts definition.requested_specs[0].name
 puts definition.resolve.length
 puts definition.resolve_remotely!.length
 puts definition.missing_specs? == false

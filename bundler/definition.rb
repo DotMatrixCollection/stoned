@@ -47,7 +47,7 @@ module Bundler
     end
 
     def requested_specs
-      @specs
+      @requested_specs ||= @specs.for(@dependencies)
     end
 
     def platforms
@@ -71,11 +71,11 @@ module Bundler
     end
 
     def resolve
-      @specs
+      requested_specs
     end
 
     def resolve_remotely!
-      @specs
+      requested_specs
     end
 
     def missing_specs?

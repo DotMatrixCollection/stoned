@@ -23,6 +23,10 @@ module Bundler
       @specs.map(&:name)
     end
 
+    def dependency_names
+      names.uniq.sort
+    end
+
     def search(dependency)
       @specs.select do |spec|
         next false unless spec.name == dependency.name
@@ -36,6 +40,16 @@ module Bundler
 
     def each(&block)
       @specs.each(&block)
+    end
+
+    def include?(specification)
+      needle =
+        if specification.respond_to?(:full_name)
+          specification.full_name
+        else
+          specification.to_s
+        end
+      @specs.any? { |spec| spec.full_name == needle }
     end
 
     def use(other)
