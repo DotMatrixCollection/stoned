@@ -590,6 +590,18 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = val_string_n(ev->arena, buf, used);
         return 1;
     }
+    if (strcmp(name, "upcase!") == 0) {
+        Value r = val_nil();
+        dispatch_string(ev, env, recv, "upcase", NULL, 0, NULL, NULL, &r);
+        *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "downcase!") == 0) {
+        Value r = val_nil();
+        dispatch_string(ev, env, recv, "downcase", NULL, 0, NULL, NULL, &r);
+        *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
+        return 1;
+    }
     if (strcmp(name, "strip") == 0) {
         size_t len = strlen(s);
         size_t start = 0;
@@ -609,6 +621,54 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             end = prev;
         }
         *out = val_string_n(ev->arena, s + start, end - start);
+        return 1;
+    }
+    if (strcmp(name, "strip!") == 0) {
+        Value r = val_nil();
+        dispatch_string(ev, env, recv, "strip", NULL, 0, NULL, NULL, &r);
+        *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "lstrip!") == 0) {
+        Value r = val_nil();
+        dispatch_string(ev, env, recv, "lstrip", NULL, 0, NULL, NULL, &r);
+        *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "rstrip!") == 0) {
+        Value r = val_nil();
+        dispatch_string(ev, env, recv, "rstrip", NULL, 0, NULL, NULL, &r);
+        *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "chomp!") == 0) {
+        Value r = val_nil();
+        dispatch_string(ev, env, recv, "chomp", args, argc, NULL, NULL, &r);
+        *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "chop!") == 0) {
+        Value r = val_nil();
+        dispatch_string(ev, env, recv, "chop", NULL, 0, NULL, NULL, &r);
+        *out = (r.kind == VAL_STRING && s[0] != '\0') ? r : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "reverse!") == 0) {
+        Value r = val_nil();
+        dispatch_string(ev, env, recv, "reverse", NULL, 0, NULL, NULL, &r);
+        *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "capitalize!") == 0) {
+        Value r = val_nil();
+        dispatch_string(ev, env, recv, "capitalize", NULL, 0, NULL, NULL, &r);
+        *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "swapcase!") == 0) {
+        Value r = val_nil();
+        dispatch_string(ev, env, recv, "swapcase", NULL, 0, NULL, NULL, &r);
+        *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
         return 1;
     }
     if (strcmp(name, "chars") == 0) {
@@ -1418,6 +1478,15 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = regexp_search_value(ev, args[0], recv, 1, site);
             return 1;
         }
+    }
+    if (strcmp(name, "gsub!") == 0 || strcmp(name, "sub!") == 0) {
+        /* Delegate to non-bang, return nil if string unchanged */
+        const char *nonbang = strcmp(name, "gsub!") == 0 ? "gsub" : "sub";
+        Value r = val_nil();
+        dispatch_string(ev, env, recv, nonbang, args, argc, blk, site, &r);
+        if (val_is_signal(r)) { *out = r; return 1; }
+        *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
+        return 1;
     }
     if (strcmp(name, "sub") == 0 || strcmp(name, "gsub") == 0) {
         int global = strcmp(name, "gsub") == 0;

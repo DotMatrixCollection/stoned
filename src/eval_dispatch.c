@@ -1119,7 +1119,19 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         Value v = args[0];
         if (v.kind == VAL_INT) return v;
         if (v.kind == VAL_FLOAT) return val_int((int64_t)v.fval);
-        if (v.kind == VAL_STRING) return val_int(atoll(v.sval ? v.sval : ""));
+        if (v.kind == VAL_STRING) {
+            const char *s = v.sval ? v.sval : "";
+            while (*s == ' ' || *s == '\t') s++;
+            int base = 0;
+            if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) { base = 16; s += 2; }
+            else if (s[0] == '0' && (s[1] == 'b' || s[1] == 'B')) { base = 2;  s += 2; }
+            else if (s[0] == '0' && (s[1] == 'o' || s[1] == 'O')) { base = 8;  s += 2; }
+            else if (s[0] == '0' && s[1] >= '0' && s[1] <= '7')   { base = 8; }
+            else base = 10;
+            char *end = NULL;
+            int64_t result = (int64_t)strtoll(s, &end, base);
+            return val_int(result);
+        }
         if (!val_responds_to(ev, v, "to_i", 1))
             return eval_raise_class(ev, site, "TypeError", "can't convert %s into Integer", val_kind_name(v.kind));
         Value converted = dispatch_method(ev, env, v, "to_i", NULL, 0, NULL, site, 0, -1);
@@ -2529,7 +2541,13 @@ call_method:
          strcmp(node->call.method, "upcase!") == 0 ||
          strcmp(node->call.method, "downcase!") == 0 ||
          strcmp(node->call.method, "strip!") == 0 ||
+         strcmp(node->call.method, "lstrip!") == 0 ||
+         strcmp(node->call.method, "rstrip!") == 0 ||
          strcmp(node->call.method, "chomp!") == 0 ||
+         strcmp(node->call.method, "chop!") == 0 ||
+         strcmp(node->call.method, "reverse!") == 0 ||
+         strcmp(node->call.method, "capitalize!") == 0 ||
+         strcmp(node->call.method, "swapcase!") == 0 ||
          strcmp(node->call.method, "gsub!") == 0 ||
          strcmp(node->call.method, "sub!") == 0) &&
         node->call.recv) {
