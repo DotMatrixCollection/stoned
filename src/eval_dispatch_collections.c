@@ -369,7 +369,16 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         /* Keep iteration-heavy behavior centralized in this file. */
     }
     if (strcmp(name, "each") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) {
+            /* Return an Enumerator wrapping this array */
+            Value enum_class;
+            if (env_get(ev->top_env, "Enumerator", &enum_class) && enum_class.kind == VAL_CLASS) {
+                Value r = dispatch_method(ev, env, enum_class, "new", &recv, 1, NULL, site, 0, 1);
+                if (!val_is_signal(r)) { *out = r; return 1; }
+                ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+            }
+            *out = recv; return 1;
+        }
         for (size_t i = 0; i < recv.array->len; i++) {
             Value arg = recv.array->elems[i];
             Value r = call_block(ev, env, *blk, &arg, 1, site);

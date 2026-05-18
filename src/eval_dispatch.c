@@ -1828,6 +1828,10 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (!raw) return eval_raise_class(ev, site, "TypeError", "instance_variable_set requires a Symbol or String");
         const char *ivar = raw[0] == '@' ? raw + 1 : raw;
         if (recv.kind == VAL_OBJECT) {
+            if (recv.obj->frozen) {
+                const char *kname = recv.obj->klass.kind == VAL_CLASS ? recv.obj->klass.klass->name : "Object";
+                return eval_raise_class(ev, site, "FrozenError", "can't modify frozen %s: %s", kname, ivar);
+            }
             val_object_set_ivar(ev->arena, recv, ivar, args[1]);
             return args[1];
         }
