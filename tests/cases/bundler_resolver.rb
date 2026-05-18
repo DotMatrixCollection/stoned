@@ -1,6 +1,7 @@
 $stdout.sync = true
 
 require "bundler/dependency"
+require "bundler/index"
 require "bundler/resolver"
 require "bundler/lazy_specification"
 
@@ -9,7 +10,9 @@ deps = [
   Bundler::Dependency.new("beta", ">= 0", path: "/tmp/beta")
 ]
 
-resolver = Bundler::Resolver.new(deps)
+index = Bundler::Index.new
+index << Bundler::LazySpecification.new("alpha", "1.2.3")
+resolver = Bundler::Resolver.new(deps, index)
 specs = resolver.start
 puts specs.is_a?(Bundler::SpecSet)
 puts specs.length

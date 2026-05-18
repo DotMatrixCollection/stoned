@@ -47,12 +47,15 @@ require "bundler/definition"
 definition = Bundler::Definition.build(Bundler.default_gemfile, Bundler.default_lockfile, nil)
 puts definition.gemfile.to_s == File.join(app, "Gemfile")
 puts definition.lockfile.to_s == File.join(app, "Gemfile.lock")
-puts definition.dependencies[0][:name] == "foo"
+puts definition.dependencies[0].name == "foo"
+puts definition.sources[0]
 puts definition.specs[0].name
 puts definition.specs[0].version
 puts definition.platforms[0]
 puts definition.locked_gems.bundler_version
 puts definition.lock.dependencies[0]
+puts definition.requested_specs.length
+puts definition.nothing_changed?
 
 ENV["BUNDLE_GEMFILE"] = nil
 system("rm", "-rf", root)
