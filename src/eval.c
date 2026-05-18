@@ -336,6 +336,17 @@ static void assign_target(Eval *ev, Env *env, Node *target, Value val) {
         } else {
             env_define(ev->arena, ev->top_env, target->sval, val);
         }
+        /* If a class/module is assigned to a constant and has an anonymous name, rename it */
+        if (val.kind == VAL_CLASS && val.klass) {
+            const char *existing = val.klass->name;
+            int is_anon = existing && (strncmp(existing, "Struct::Anonymous", 17) == 0 ||
+                                        strncmp(existing, "#<Class:", 8) == 0 ||
+                                        strncmp(existing, "Anonymous", 9) == 0);
+            if (is_anon) {
+                val.klass->name = arena_alloc(ev->arena, strlen(target->sval) + 1);
+                memcpy((char *)val.klass->name, target->sval, strlen(target->sval) + 1);
+            }
+        }
     } else if (target->kind == NODE_CALL) {
         /* Subscript assignment: h[k] = v, obj.attr = v, etc. */
         Value recv = eval_node(ev, env, target->call.recv ? target->call.recv : target);

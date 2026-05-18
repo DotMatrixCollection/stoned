@@ -21,6 +21,8 @@ Env  *env_new(Arena *a, Env *parent, int is_def);
 Env  *env_nearest_def(Env *env);
 void  env_set(Arena *a, Env *env, const char *name, Value val);
 int   env_get(Env *env, const char *name, Value *out);
+/* Look up only in this specific scope, not traversing parent chain */
+int   env_get_own(Env *env, const char *name, Value *out);
 /* Update existing binding, stopping at is_def boundaries; returns 0 if not found */
 int   env_update(Env *env, const char *name, Value val);
 /* Define in the current frame only (for def/class — never updates parent) */

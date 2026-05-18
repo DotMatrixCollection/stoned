@@ -5,7 +5,15 @@
 
 Value val_class(Arena *a, const char *name, Value superclass) {
     struct RubyClass *klass = arena_alloc(a, sizeof(struct RubyClass));
-    klass->name = name;
+    /* Always copy the name into the arena so stack-local buffers don't dangle */
+    if (name) {
+        size_t nlen = strlen(name);
+        char *name_copy = arena_alloc(a, nlen + 1);
+        memcpy(name_copy, name, nlen + 1);
+        klass->name = name_copy;
+    } else {
+        klass->name = NULL;
+    }
     klass->superclass = superclass;
     klass->class_env = NULL;  /* Will be set by eval when methods are defined */
     klass->prepended_modules = NULL;

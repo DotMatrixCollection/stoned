@@ -659,7 +659,7 @@ int ruby_class_find_instance_method(RubyClass *klass, const char *name, Value *o
                 return 1;
             }
         }
-        if (env_get(k->class_env, name, out) && out->kind == VAL_METHOD) {
+        if (env_get_own(k->class_env, name, out) && out->kind == VAL_METHOD) {
             if (owner) *owner = k;
             return 1;
         }

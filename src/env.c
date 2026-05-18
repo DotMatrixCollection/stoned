@@ -40,6 +40,14 @@ int env_get(Env *env, const char *name, Value *out) {
     return 0;
 }
 
+int env_get_own(Env *env, const char *name, Value *out) {
+    if (!env) return 0;
+    for (EnvEntry *e = env->vars; e; e = e->next) {
+        if (strcmp(e->name, name) == 0) { *out = e->val; return 1; }
+    }
+    return 0;
+}
+
 int env_update(Env *env, const char *name, Value val) {
     for (Env *sc = env; sc; sc = sc->parent) {
         for (EnvEntry *e = sc->vars; e; e = e->next) {
