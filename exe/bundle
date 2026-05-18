@@ -3,6 +3,7 @@
 # Implements: install, exec, version, check, list
 
 require "rubygems"
+require "rbconfig"
 
 BUNDLE_VERSION = "2.5.0.stoned"
 GEM_SERVER = ENV["STONED_GEM_SERVER"] || "https://rubygems.org"
@@ -31,12 +32,21 @@ class GemfileDSL
     @ruby_version = version
   end
 
+  # Platform tags that are compatible with this runtime (Linux/Mac, MRI-like)
+  CURRENT_PLATFORMS = %w[ruby mri x86_64-linux aarch64-linux x86_64-darwin aarch64-darwin java].freeze
+
   def gem(name, *reqs, **opts)
-    path    = opts.delete(:path)
-    git     = opts.delete(:git)
-    branch  = opts.delete(:branch)
-    groups  = [opts.delete(:group) || opts.delete(:groups) || @current_group].flatten.compact
+    path      = opts.delete(:path)
+    git       = opts.delete(:git)
+    branch    = opts.delete(:branch)
+    groups    = [opts.delete(:group) || opts.delete(:groups) || @current_group].flatten.compact
     require_opt = opts.delete(:require)
+    platforms = [opts.delete(:platform) || opts.delete(:platforms)].flatten.compact.map(&:to_s)
+
+    # Skip gems that are only for incompatible platforms
+    unless platforms.empty?
+      return unless platforms.any? { |p| CURRENT_PLATFORMS.include?(p) }
+    end
 
     @dependencies << {
       name:    name.to_s,
@@ -202,25 +212,92 @@ class Lockfile
   def self.read(path)
     lf = new
     return lf unless File.exist?(path)
+    current_section = nil
     File.readlines(path).each do |line|
-      if line =~ /^\s{4}(\S+)\s+\(([^)]+)\)/
-        lf.gems[$1] = $2
+      stripped = line.chomp
+      if stripped =~ /^(GEM|PATH|GIT|PLATFORMS|DEPENDENCIES|BUNDLED WITH)\s*$/
+        current_section = $1
+        next
+      end
+      if stripped =~ /^\s{4}(\S+)\s+\(([^)]+)\)/
+        name = $1
+        ver  = $2
+        # PATH/GIT gems are treated as "path" for drift comparison purposes
+        lf.gems[name] = (current_section == "PATH" || current_section == "GIT") ? "path" : ver
       end
     end
     lf
   end
 
-  def self.write(path, resolved)
-    lines = ["GEM", "  specs:"]
+  # path_by_name: {name => dep_hash} for path deps
+  # top_deps: array of top-level dep hashes from Gemfile
+  def self.write(path, resolved, path_by_name: {}, top_deps: [])
+    lines = []
+    path_gems = {}
+    gem_gems  = {}
+
     resolved.sort_by { |k, _| k }.each do |name, ver|
-      lines << "    #{name} (#{ver})"
+      if path_by_name.key?(name)
+        dep = path_by_name[name]
+        spec = dep[:spec]
+        real_ver = spec && spec.respond_to?(:version) ? spec.version.to_s : nil
+        real_ver ||= (ver == "path" ? nil : ver)
+        path_gems[name] = { path: dep[:path], version: real_ver || "0" }
+      else
+        gem_gems[name] = ver unless ver == "path"
+      end
     end
+
+    # GEM section
+    unless gem_gems.empty?
+      lines << "GEM"
+      lines << "  remote: #{GEM_SERVER}/"
+      lines << "  specs:"
+      gem_gems.sort_by { |k, _| k }.each do |name, ver|
+        lines << "    #{name} (#{ver})"
+      end
+      lines << ""
+    end
+
+    # PATH section (one per path gem)
+    path_gems.sort_by { |k, _| k }.each do |name, info|
+      lines << "PATH"
+      lines << "  remote: #{File.expand_path(info[:path])}"
+      lines << "  specs:"
+      lines << "    #{name} (#{info[:version]})"
+      lines << ""
+    end
+
+    # PLATFORMS section
+    lines << "PLATFORMS"
+    lines << "  ruby"
     lines << ""
+
+    # DEPENDENCIES section
+    unless top_deps.empty?
+      lines << "DEPENDENCIES"
+      top_deps.sort_by { |d| d[:name] }.each do |dep|
+        suffix = dep[:path] ? "!" : ""
+        req    = dep[:reqs] && !dep[:reqs].empty? ? " (#{dep[:reqs].join(", ")})" : ""
+        lines << "  #{dep[:name]}#{req}#{suffix}"
+      end
+      lines << ""
+    end
+
     lines << "BUNDLED WITH"
     lines << "   #{BUNDLE_VERSION}"
     lines << ""
     File.write(path, lines.join("\n"))
   end
+end
+
+def lockfile_write_args(dsl)
+  path_by_name = {}
+  expanded_dependencies(dsl).each do |dep|
+    path_by_name[dep[:name]] = dep if dep[:path] && !dep[:from_gemspec]
+  end
+  top_deps = dsl.dependencies.reject { |d| d[:from_gemspec] }
+  { path_by_name: path_by_name, top_deps: top_deps }
 end
 
 def lockfile_resolved_dependencies(dsl, resolved)
@@ -315,6 +392,18 @@ def bundle_exec_target(dsl, lockfile, command)
   active_dependencies(dsl).each do |dep|
     candidate = bundle_exec_path_for(dep, command)
     return candidate if candidate
+  end
+
+  # PATH fallback: handle absolute path or search $PATH
+  if command.start_with?("/")
+    return { system_cmd: command } if File.file?(command) && File.executable?(command)
+  else
+    ENV["PATH"].to_s.split(File::PATH_SEPARATOR).each do |dir|
+      candidate = File.join(dir, command)
+      if File.file?(candidate) && File.executable?(candidate)
+        return { system_cmd: candidate }
+      end
+    end
   end
 
   nil
@@ -712,6 +801,22 @@ def resolve_no_install(dsl)
   resolved.reject { |_, v| v.nil? }
 end
 
+# ── BUNDLE_PATH / --path early setup ────────────────────────────────────────
+# Resolve the effective GEM_HOME from BUNDLE_PATH config before any gem ops.
+begin
+  _early_merged_cfg = merged_bundle_config
+  _bundle_path_cfg  = ENV["BUNDLE_PATH"] || _early_merged_cfg["BUNDLE_PATH"]
+  if _bundle_path_cfg && !_bundle_path_cfg.empty?
+    _ruby_ver = RUBY_VERSION.split(".")[0..1].join(".")
+    _effective_home = File.expand_path(
+      File.join(_bundle_path_cfg, "ruby", _ruby_ver),
+      Dir.pwd
+    )
+    ENV["GEM_HOME"] = _effective_home
+    Gem.use_paths(_effective_home, [_effective_home])
+  end
+end
+
 # ── Commands ─────────────────────────────────────────────────────────────────
 
 command = ARGV[0]
@@ -729,6 +834,8 @@ when "install", "i"
   with_idx     = args.index("--with")
   without_flag = without_idx ? args[without_idx + 1] : nil
   with_flag    = with_idx    ? args[with_idx + 1]    : nil
+  path_idx     = args.index("--path")
+  path_flag    = path_idx ? args[path_idx + 1] : nil
   if without_flag
     cfg_path = bundle_local_config_path()
     cfg = read_bundle_config(cfg_path)
@@ -740,6 +847,17 @@ when "install", "i"
     cfg = read_bundle_config(cfg_path)
     cfg["BUNDLE_WITH"] = with_flag
     write_bundle_config(cfg_path, cfg)
+  end
+  if path_flag
+    cfg_path = bundle_local_config_path()
+    cfg = read_bundle_config(cfg_path)
+    cfg["BUNDLE_PATH"] = path_flag
+    write_bundle_config(cfg_path, cfg)
+    # Apply immediately for this install run
+    _ruby_ver = RUBY_VERSION.split(".")[0..1].join(".")
+    _new_home = File.expand_path(File.join(path_flag, "ruby", _ruby_ver), Dir.pwd)
+    ENV["GEM_HOME"] = _new_home
+    Gem.use_paths(_new_home, [_new_home])
   end
 
   unless File.exist?(GEMFILE)
@@ -779,7 +897,7 @@ when "install", "i"
     if result
       resolved, newly = result
       new_lock = lockfile_resolved_dependencies(dsl, resolved)
-      Lockfile.write(LOCKFILE, new_lock)
+      Lockfile.write(LOCKFILE, new_lock, **lockfile_write_args(dsl))
       lock_changed = !old_lock ||
                      new_lock.any? { |k, v| old_lock.gems[k] != v } ||
                      old_lock.gems.any? { |k, _| !new_lock.key?(k) }
@@ -827,7 +945,23 @@ when "exec"
     STDERR.puts "Command not found: #{args[0]}"
     exit 1
   end
-  load target
+  if target.is_a?(Hash) && target[:system_cmd]
+    # System command: if it's the ruby interpreter, load the script in-process
+    cmd = target[:system_cmd]
+    if (cmd == RbConfig.ruby || File.basename(cmd) == "ruby" || File.basename(cmd) == File.basename(RbConfig.ruby)) && args[1]
+      script = File.expand_path(args[1])
+      while !ARGV.empty?
+        ARGV.pop
+      end
+      (args[2..] || []).each { |a| ARGV << a }
+      load script
+    else
+      ok = system(cmd, *args[1..])
+      exit(ok ? 0 : 1)
+    end
+  else
+    load target
+  end
 
 when "check"
   unless File.exist?(GEMFILE)
@@ -1000,7 +1134,7 @@ when "lock"
   end
   dsl = GemfileDSL.evaluate(GEMFILE)
   resolved = resolve_no_install(dsl)
-  Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
+  Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved), **lockfile_write_args(dsl))
   puts "Writing lockfile to #{File.expand_path(LOCKFILE)}"
 
 when "env"
@@ -1088,7 +1222,7 @@ when "update"
   result = resolve_and_install(dsl, verbose: true, force_update: true)
   if result
     resolved, _newly = result
-    Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
+    Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved), **lockfile_write_args(dsl))
     puts "Bundle updated!"
   else
     STDERR.puts "Bundle update failed."
@@ -1177,7 +1311,7 @@ when "add"
   result = resolve_and_install(dsl, verbose: true)
   if result
     resolved, _newly = result
-    Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
+    Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved), **lockfile_write_args(dsl))
     puts "Bundle complete! #{resolved.length} gems now installed."
   else
     STDERR.puts "Bundle install failed."
@@ -1216,7 +1350,7 @@ when "remove"
     result = resolve_and_install(dsl, verbose: false)
     if result
       resolved, _newly = result
-      Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
+      Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved), **lockfile_write_args(dsl))
     end
   end
 
@@ -1271,10 +1405,237 @@ when "console"
   require "irb"
   IRB.start
 
+when "init"
+  target = args[0] || Dir.pwd
+  gemfile_path = File.join(target, "Gemfile")
+  if File.exist?(gemfile_path)
+    STDERR.puts "#{gemfile_path} already exists"
+    exit 1
+  end
+  Dir.mkdir(target) unless File.directory?(target)
+  File.write(gemfile_path, <<~GEMFILE)
+    # frozen_string_literal: true
+
+    source "https://rubygems.org"
+
+    # gem "rails"
+  GEMFILE
+  puts "Writing new Gemfile to #{File.expand_path(gemfile_path)}"
+
+when "gem"
+  gem_name = args[0]
+  if gem_name.nil? || gem_name.empty?
+    STDERR.puts "Usage: bundle gem GEM_NAME"
+    exit 1
+  end
+  if File.exist?(gem_name)
+    STDERR.puts "#{gem_name} already exists"
+    exit 1
+  end
+  klass = gem_name.split(/[-_]/).map(&:capitalize).join
+  lib_dir  = File.join(gem_name, "lib", gem_name)
+  spec_dir = File.join(gem_name, "spec")
+  [
+    File.join(gem_name, "lib", gem_name),
+    File.join(gem_name, "spec"),
+  ].each { |d| system("mkdir", "-p", d) }
+  File.write(File.join(gem_name, "#{gem_name}.gemspec"), <<~GEMSPEC)
+    # frozen_string_literal: true
+
+    Gem::Specification.new do |spec|
+      spec.name    = "#{gem_name}"
+      spec.version = #{klass}::VERSION
+      spec.authors = ["#{ENV["GIT_AUTHOR_NAME"] || "Your Name"}"]
+      spec.email   = ["#{ENV["GIT_AUTHOR_EMAIL"] || "your@email.com"}"]
+
+      spec.summary = "A new gem."
+      spec.description = spec.summary
+      spec.homepage = "https://github.com/you/#{gem_name}"
+      spec.license = "MIT"
+
+      spec.required_ruby_version = ">= 3.0.0"
+
+      spec.files = Dir["lib/**/*.rb", "#{gem_name}.gemspec", "README.md", "LICENSE"]
+      spec.require_paths = ["lib"]
+    end
+  GEMSPEC
+  File.write(File.join(gem_name, "lib", "#{gem_name}.rb"), <<~RUBY)
+    # frozen_string_literal: true
+
+    require_relative "#{gem_name}/version"
+
+    module #{klass}
+    end
+  RUBY
+  File.write(File.join(gem_name, "lib", gem_name, "version.rb"), <<~RUBY)
+    # frozen_string_literal: true
+
+    module #{klass}
+      VERSION = "0.1.0"
+    end
+  RUBY
+  File.write(File.join(gem_name, "Gemfile"), <<~GEMFILE)
+    # frozen_string_literal: true
+
+    source "https://rubygems.org"
+
+    gemspec
+  GEMFILE
+  File.write(File.join(gem_name, "README.md"), "# #{gem_name}\n\nTODO: Add a description.\n")
+  File.write(File.join(gem_name, "LICENSE"), "MIT License\n\nCopyright (c) #{Time.now.year}\n")
+  File.write(File.join(gem_name, "spec", "spec_helper.rb"), <<~RUBY)
+    # frozen_string_literal: true
+
+    require "#{gem_name}"
+  RUBY
+  puts "Creating gem '#{gem_name}'..."
+  puts "      create  #{gem_name}/"
+  puts "      create  #{gem_name}/Gemfile"
+  puts "      create  #{gem_name}/lib/#{gem_name}.rb"
+  puts "      create  #{gem_name}/lib/#{gem_name}/version.rb"
+  puts "      create  #{gem_name}/#{gem_name}.gemspec"
+  puts "      create  #{gem_name}/spec/spec_helper.rb"
+  puts "      create  #{gem_name}/README.md"
+  puts "      create  #{gem_name}/LICENSE"
+  puts "Gem '#{gem_name}' was successfully created."
+
+when "licenses"
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  unless File.exist?(LOCKFILE)
+    STDERR.puts "Could not locate #{LOCKFILE}. Run bundle install first."
+    exit 1
+  end
+  dsl      = GemfileDSL.evaluate(GEMFILE)
+  lockfile = Lockfile.read(LOCKFILE)
+  active   = active_dependencies(dsl)
+  if active.empty?
+    puts "No gems found in lockfile."
+  else
+    active.sort_by { |d| d[:name] }.each do |dep|
+      spec = bundle_load_path_spec(dep)
+      unless spec
+        Gem::Specification.reset!
+        spec = Gem::Specification.find_by_name(dep[:name])
+      end
+      license = spec && spec.license && !spec.license.to_s.empty? ? spec.license.to_s : "Unknown"
+      puts "#{dep[:name]}: #{license}"
+    end
+  end
+
+when "cache", "package"
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  unless File.exist?(LOCKFILE)
+    STDERR.puts "Could not locate #{LOCKFILE}. Run bundle install first."
+    exit 1
+  end
+  cache_dir = File.join(Dir.pwd, "vendor", "cache")
+  system("mkdir", "-p", cache_dir)
+  dsl      = GemfileDSL.evaluate(GEMFILE)
+  lockfile = Lockfile.read(LOCKFILE)
+  cached   = 0
+  skipped  = 0
+  active_dependencies(dsl).each do |dep|
+    if dep[:path]
+      # Path gems are not cached by default (same as real Bundler without --all)
+      skipped += 1
+      next
+    end
+    name    = dep[:name]
+    version = lockfile.gems[name]
+    next unless version
+    gem_full = "#{name}-#{version}.gem"
+    dest = File.join(cache_dir, gem_full)
+    next if File.exist?(dest)
+    Gem::Specification.reset!
+    spec = Gem::Specification.find_by_name(name, version)
+    next unless spec
+    # Try GEM_HOME/cache/ first, then gem_dir/../cache/
+    src_candidates = [
+      File.join(Gem.home, "cache", gem_full),
+      File.expand_path(File.join(spec.gem_dir, "..", "..", "cache", gem_full)),
+    ]
+    src = src_candidates.find { |s| File.exist?(s) }
+    if src
+      system("cp", src, dest)
+      cached += 1
+    end
+  end
+  puts "Updating files in vendor/cache"
+  puts "Cached #{cached} gem#{cached == 1 ? "" : "s"} in vendor/cache"
+  puts "Skipped #{skipped} path gem#{skipped == 1 ? "" : "s"}" if skipped > 0
+
+when "clean"
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  unless File.exist?(LOCKFILE)
+    STDERR.puts "Could not locate #{LOCKFILE}. Run bundle install first."
+    exit 1
+  end
+  bundle_path = args.include?("--dry-run") ? nil : nil
+  dry_run     = args.include?("--dry-run")
+  cache_dir   = File.join(Dir.pwd, "vendor", "cache")
+  unless File.directory?(cache_dir)
+    puts "No vendor/cache directory found."
+    exit 0
+  end
+  dsl      = GemfileDSL.evaluate(GEMFILE)
+  lockfile = Lockfile.read(LOCKFILE)
+  locked   = lockfile.gems
+  removed  = 0
+  Dir.glob(File.join(cache_dir, "*.gem")).each do |gem_file|
+    base    = File.basename(gem_file, ".gem")
+    parts   = base.split("-")
+    version = parts.pop
+    name    = parts.join("-")
+    next if locked[name] == version
+    if dry_run
+      puts "Would remove #{File.basename(gem_file)}"
+    else
+      puts "Removing #{File.basename(gem_file)}"
+      File.delete(gem_file)
+    end
+    removed += 1
+  end
+  puts removed > 0 ? "Cleaned #{removed} gem#{removed == 1 ? "" : "s"} from vendor/cache" : "Nothing to clean."
+
+when "doctor"
+  problems = []
+  unless File.exist?(GEMFILE)
+    STDERR.puts "Could not locate Gemfile or .bundle/ directory"
+    exit 1
+  end
+  dsl = GemfileDSL.evaluate(GEMFILE)
+  if File.exist?(LOCKFILE)
+    lockfile = Lockfile.read(LOCKFILE)
+    missing  = bundle_missing_dependencies(dsl, lockfile)
+    missing.each do |dep|
+      problems << "The gem '#{dep[:name]}' is in the Gemfile/lockfile but is not installed."
+    end
+    if problems.empty?
+      puts "Your Gemfile is satisfied."
+    else
+      puts "Your bundle is incomplete!"
+      problems.each { |p| STDERR.puts "  [!] #{p}" }
+      exit 1
+    end
+  else
+    puts "No lockfile found. Run `bundle install` to create one."
+  end
+
 when nil, "help", "--help", "-h"
   puts "Usage: bundle COMMAND"
   puts ""
   puts "Commands:"
+  puts "  init          Create a new Gemfile"
+  puts "  gem GEM_NAME  Create a new gem skeleton"
   puts "  install       Install gems from Gemfile"
   puts "  exec FILE     Run a Ruby file with bundled gems on the load path"
   puts "  check         Verify Gemfile dependencies are satisfied"
@@ -1290,6 +1651,10 @@ when nil, "help", "--help", "-h"
   puts "  add GEM       Add a gem to the Gemfile and install"
   puts "  remove GEM    Remove a gem from the Gemfile"
   puts "  outdated      List gems with newer versions available"
+  puts "  licenses      List licenses for bundled gems"
+  puts "  doctor        Check your bundle for common problems"
+  puts "  cache         Copy gems to vendor/cache"
+  puts "  clean         Remove stale gems from vendor/cache"
   puts "  version       Print Bundler version"
 else
   STDERR.puts "Unknown command: #{command}"

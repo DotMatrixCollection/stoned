@@ -3,8 +3,15 @@ Installed bgem 1.0.0
 Bundle complete! 1 gems now installed.
 --LOCK-V1--
 GEM
+  remote: file:///tmp/stoned_bundle_update_/server/
   specs:
     bgem (1.0.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  bgem
 
 BUNDLED WITH
    2.5.0.stoned
@@ -14,8 +21,15 @@ Installed bgem 2.0.0
 Bundle updated!
 --LOCK-V2--
 GEM
+  remote: file:///tmp/stoned_bundle_update_/server/
   specs:
     bgem (2.0.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  bgem
 
 BUNDLED WITH
    2.5.0.stoned

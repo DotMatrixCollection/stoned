@@ -1,10 +1,22 @@
 Using main (path: /tmp/stoned_bundle_without_group_lockfile_/main_gem)
 Bundle complete! 1 gems now installed.
 --LOCK--
-GEM
+PATH
+  remote: /tmp/stoned_bundle_without_group_lockfile_/dev_gem
   specs:
-    devtool (path)
-    main (path)
+    devtool (2.0.0)
+
+PATH
+  remote: /tmp/stoned_bundle_without_group_lockfile_/main_gem
+  specs:
+    main (1.0.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  devtool!
+  main!
 
 BUNDLED WITH
    2.5.0.stoned

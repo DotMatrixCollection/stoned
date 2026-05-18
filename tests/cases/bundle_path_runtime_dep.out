@@ -7,9 +7,20 @@ Using dep 0.4.0
 Bundle complete! 2 gems now installed.
 --LOCK--
 GEM
+  remote: https://rubygems.org/
   specs:
     dep (0.4.0)
-    main (path)
+
+PATH
+  remote: /tmp/stoned_bundle_path_runtime_dep_/main_gem
+  specs:
+    main (0.1.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  main!
 
 BUNDLED WITH
    2.5.0.stoned

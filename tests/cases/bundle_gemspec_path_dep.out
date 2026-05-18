@@ -3,9 +3,21 @@ Using dep (path: /tmp/stoned_bundle_gemspec_path_dep_/dep_gem)
 Bundle complete! 2 gems now installed.
 --LOCK--
 GEM
+  remote: https://rubygems.org/
   specs:
     demo (0.1.0)
-    dep (path)
+
+PATH
+  remote: /tmp/stoned_bundle_gemspec_path_dep_/dep_gem
+  specs:
+    dep (1.2.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  dep (>= 1.0)
+  dep!
 
 BUNDLED WITH
    2.5.0.stoned

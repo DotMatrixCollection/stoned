@@ -7,10 +7,22 @@ Bundle complete! 2 gems now installed.
 --GEMFILE-HAS-GEM2--
 true
 --LOCK--
-GEM
+PATH
+  remote: /tmp/stoned_bundle_add_/gem1
   specs:
-    gem1 (path)
-    gem2 (path)
+    gem1 (1.0.0)
+
+PATH
+  remote: /tmp/stoned_bundle_add_/gem2
+  specs:
+    gem2 (1.0.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  gem1!
+  gem2!
 
 BUNDLED WITH
    2.5.0.stoned

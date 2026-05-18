@@ -124,6 +124,9 @@ def build_gemspec_content(spec, install_dir = nil)
   lines << "  s.name    = #{spec.name.inspect}"
   lines << "  s.version = Gem::Version.new(#{spec.version.to_s.inspect})"
   lines << "  s.summary = #{spec.summary.to_s.inspect}"
+  lines << "  s.description = #{spec.description.to_s.inspect}" unless spec.description.to_s.empty?
+  lines << "  s.homepage = #{spec.homepage.to_s.inspect}"        unless spec.homepage.to_s.empty?
+  lines << "  s.license  = #{spec.license.to_s.inspect}"         unless spec.license.to_s.empty?
   (spec.require_paths || ["lib"]).each { |rp|
     lines << "  s.require_paths = #{(spec.require_paths || ["lib"]).inspect}"
     break
@@ -396,17 +399,22 @@ def print_usage
   STDERR.puts "Usage: gem COMMAND [ARGS]"
   STDERR.puts ""
   STDERR.puts "Common commands:"
-  STDERR.puts "  build GEMSPEC    Build a gem from a gemspec"
-  STDERR.puts "  install GEMNAME  Install a gem"
-  STDERR.puts "  list             List installed gems"
-  STDERR.puts "  contents GEM     List files installed for a gem"
-  STDERR.puts "  search PATTERN   Search installed gems"
+  STDERR.puts "  build GEMSPEC      Build a gem from a gemspec"
+  STDERR.puts "  install GEMNAME    Install a gem"
+  STDERR.puts "  list               List installed gems"
+  STDERR.puts "  info GEM           Display gem information"
+  STDERR.puts "  dependency GEM     List gem dependencies"
+  STDERR.puts "  contents GEM       List files installed for a gem"
+  STDERR.puts "  search PATTERN     Search installed gems"
   STDERR.puts "  specification GEM  Print an installed gemspec"
-  STDERR.puts "  open GEM         Print the installed path for a gem"
-  STDERR.puts "  unpack GEM       Copy an installed gem into the current directory"
-  STDERR.puts "  which FEATURE    Print the installed path for a require target"
-  STDERR.puts "  env              Display RubyGems environment"
-  STDERR.puts "  version          Display RubyGems version"
+  STDERR.puts "  open GEM           Print the installed path for a gem"
+  STDERR.puts "  unpack GEM         Copy an installed gem into the current directory"
+  STDERR.puts "  which FEATURE      Print the installed path for a require target"
+  STDERR.puts "  cleanup [GEM]      Remove old versions of installed gems"
+  STDERR.puts "  outdated           List gems with newer versions"
+  STDERR.puts "  update GEM         Update an installed gem"
+  STDERR.puts "  env                Display RubyGems environment"
+  STDERR.puts "  version            Display RubyGems version"
 end
 
 def option_value(flag_short, flag_long)
@@ -859,7 +867,57 @@ when "outdated"
     end
   end
 
-when "push", "exec"
+when "info"
+  gem_name = ARGV[1]
+  if gem_name.nil? || gem_name.empty?
+    STDERR.puts "ERROR: Please specify a gem name"
+    exit 1
+  end
+  version = option_value("-v", "--version")
+  spec = find_installed_spec(gem_name, version)
+  unless spec
+    STDERR.puts "ERROR: gem '#{gem_name}' is not installed"
+    exit 1
+  end
+  puts "#{spec.name} (#{spec.version})"
+  puts "  Summary:      #{spec.summary}"
+  puts "  Homepage:     #{spec.homepage}" unless spec.homepage.to_s.empty?
+  puts "  License:      #{spec.license}"  unless spec.license.to_s.empty?
+  puts "  Installed at: #{spec.gem_dir}"
+  deps = spec.runtime_dependencies || []
+  if deps.any?
+    puts "  Dependencies:"
+    deps.each { |d| puts "    #{d.name} (#{d.requirement})" }
+  end
+
+when "dependency", "dep"
+  names = positional_args(ARGV[1..])
+  if names.empty?
+    STDERR.puts "ERROR: Please specify a gem name"
+    exit 1
+  end
+  version = option_value("-v", "--version")
+  names.each do |gem_name|
+    spec = find_installed_spec(gem_name, version)
+    unless spec
+      STDERR.puts "Gem #{gem_name} is not installed"
+      next
+    end
+    puts "Gem #{spec.full_name}"
+    deps = spec.runtime_dependencies || []
+    if deps.empty?
+      puts "  (no dependencies)"
+    else
+      deps.each { |d| puts "  #{d.name} (#{d.requirement})" }
+    end
+  end
+
+when "push"
+  STDERR.puts "ERROR: gem push requires a valid API key and network access to rubygems.org"
+  STDERR.puts "Set GEM_HOST_API_KEY or use `gem signin` with a real RubyGems client."
+  exit 1
+
+when "exec"
   STDERR.puts "gem #{command}: not yet implemented"
   exit 1
 

@@ -1,9 +1,16 @@
 Using demo (path: /tmp/stoned_bundle_lockfile_drift_/demo_gem)
 Bundle complete! 1 gems now installed.
 --LOCK1--
-GEM
+PATH
+  remote: /tmp/stoned_bundle_lockfile_drift_/demo_gem
   specs:
-    demo (path)
+    demo (0.5.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  demo!
 
 BUNDLED WITH
    2.5.0.stoned
@@ -24,10 +31,22 @@ Using demo (path: /tmp/stoned_bundle_lockfile_drift_/demo_gem)
 Using extra (path: /tmp/stoned_bundle_lockfile_drift_/extra_gem)
 Bundle complete! 2 gems now installed.
 --LOCK2--
-GEM
+PATH
+  remote: /tmp/stoned_bundle_lockfile_drift_/demo_gem
   specs:
-    demo (path)
-    extra (path)
+    demo (0.5.0)
+
+PATH
+  remote: /tmp/stoned_bundle_lockfile_drift_/extra_gem
+  specs:
+    extra (1.0.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  demo!
+  extra!
 
 BUNDLED WITH
    2.5.0.stoned

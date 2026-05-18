@@ -1,0 +1,23 @@
+Creating gem 'mygem'...
+      create  mygem/
+      create  mygem/Gemfile
+      create  mygem/lib/mygem.rb
+      create  mygem/lib/mygem/version.rb
+      create  mygem/mygem.gemspec
+      create  mygem/spec/spec_helper.rb
+      create  mygem/README.md
+      create  mygem/LICENSE
+Gem 'mygem' was successfully created.
+--FILES--
+true
+true
+true
+true
+true
+--VERSION--
+true
+true
+--GEMSPEC--
+true
+--ALREADY-EXISTS--
+true

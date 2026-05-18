@@ -2,10 +2,22 @@ Writing lockfile to /tmp/stoned_bundle_lock_/app/Gemfile.lock
 --EXISTS--
 true
 --LOCK--
-GEM
+PATH
+  remote: /tmp/stoned_bundle_lock_/dep_gem
   specs:
     dep (1.1.0)
+
+PATH
+  remote: /tmp/stoned_bundle_lock_/main_gem
+  specs:
     main (2.0.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  dep!
+  main!
 
 BUNDLED WITH
    2.5.0.stoned

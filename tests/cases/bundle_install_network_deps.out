@@ -7,10 +7,17 @@ Installed gemc 1.0.0
 Bundle complete! 3 gems now installed.
 --LOCK--
 GEM
+  remote: file:///tmp/stoned_bundle_install_network_deps_/server/
   specs:
     gema (1.0.0)
     gemb (1.0.0)
     gemc (1.0.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  gema
 
 BUNDLED WITH
    2.5.0.stoned

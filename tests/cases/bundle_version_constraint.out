@@ -4,8 +4,15 @@ Installed cver 1.5.0
 Bundle complete! 1 gems now installed.
 --LOCK--
 GEM
+  remote: file:///tmp/stoned_bundle_version_constraint_/server/
   specs:
     cver (1.5.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  cver (~> 1.0)
 
 BUNDLED WITH
    2.5.0.stoned
@@ -15,8 +22,15 @@ Installed cver 1.0.0
 Bundle complete! 1 gems now installed.
 --LOCK-EXACT--
 GEM
+  remote: file:///tmp/stoned_bundle_version_constraint_/server/
   specs:
     cver (1.0.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  cver (~> 1.0.0)
 
 BUNDLED WITH
    2.5.0.stoned
