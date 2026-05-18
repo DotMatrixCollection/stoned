@@ -889,10 +889,11 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
                     for (size_t j = 0; j < args[i].array->len; j++) {
                         const char *s = dispatch_to_s(ev, env, args[i].array->elems[j], site);
                         size_t len = strlen(s);
+                        size_t extra = (len == 0 || s[len - 1] != '\n') ? 1 : 0;
                         char *buf = arena_alloc(ev->arena, len + 2);
                         memcpy(buf, s, len);
-                        buf[len] = '\n';
-                        buf[len + 1] = '\0';
+                        if (extra) buf[len] = '\n';
+                        buf[len + extra] = '\0';
                         Value line = val_string(ev->arena, buf);
                         Value out = dispatch_method(ev, env, stdout_obj, "write", &line, 1, NULL, site, 0, 1);
                         if (val_is_signal(out)) return out;
@@ -900,10 +901,12 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
                 } else {
                     const char *s = dispatch_to_s(ev, env, args[i], site);
                     size_t len = strlen(s);
+                    /* Don't add extra \n if string already ends in \n */
+                    size_t extra = (len == 0 || s[len - 1] != '\n') ? 1 : 0;
                     char *buf = arena_alloc(ev->arena, len + 2);
                     memcpy(buf, s, len);
-                    buf[len] = '\n';
-                    buf[len + 1] = '\0';
+                    if (extra) buf[len] = '\n';
+                    buf[len + extra] = '\0';
                     Value line = val_string(ev->arena, buf);
                     Value out = dispatch_method(ev, env, stdout_obj, "write", &line, 1, NULL, site, 0, 1);
                     if (val_is_signal(out)) return out;
@@ -1030,10 +1033,17 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         if (argc == 0) { fprintf(ev->out, "\n"); return val_nil(); }
         for (int i = 0; i < argc; i++) {
             if (args[i].kind == VAL_ARRAY) {
-                for (size_t j = 0; j < args[i].array->len; j++)
-                    fprintf(ev->out, "%s\n", dispatch_to_s(ev, env, args[i].array->elems[j], site));
+                for (size_t j = 0; j < args[i].array->len; j++) {
+                    const char *s2 = dispatch_to_s(ev, env, args[i].array->elems[j], site);
+                    size_t slen2 = strlen(s2);
+                    if (slen2 > 0 && s2[slen2 - 1] == '\n') fprintf(ev->out, "%s", s2);
+                    else fprintf(ev->out, "%s\n", s2);
+                }
             } else {
-                fprintf(ev->out, "%s\n", dispatch_to_s(ev, env, args[i], site));
+                const char *s2 = dispatch_to_s(ev, env, args[i], site);
+                size_t slen2 = strlen(s2);
+                if (slen2 > 0 && s2[slen2 - 1] == '\n') fprintf(ev->out, "%s", s2);
+                else fprintf(ev->out, "%s\n", s2);
             }
         }
         return val_nil();
@@ -1626,10 +1636,18 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (strcmp(name, "extend") == 0)
         return builtin_extend(ev, recv, args, argc, site);
     if (strcmp(name, "equal?") == 0) {
+        /* Pointer/identity equality — same object in memory */
         if (argc < 1) return val_false();
-        if (recv.kind == VAL_OBJECT && args[0].kind == VAL_OBJECT)
-            return val_bool(recv.obj == args[0].obj);
-        return val_bool(val_equal(recv, args[0]));
+        if (recv.kind != args[0].kind) return val_false();
+        switch (recv.kind) {
+            case VAL_OBJECT: return val_bool(recv.obj     == args[0].obj);
+            case VAL_BLOCK:  return val_bool(recv.block.block_node == args[0].block.block_node);
+            case VAL_STRING: return val_bool(recv.sval    == args[0].sval);
+            case VAL_ARRAY:  return val_bool(recv.array   == args[0].array);
+            case VAL_HASH:   return val_bool(recv.hash    == args[0].hash);
+            case VAL_CLASS:  return val_bool(recv.klass   == args[0].klass);
+            default:         return val_bool(val_equal(recv, args[0]));
+        }
     }
     if (strcmp(name, "eql?") == 0) {
         if (argc < 1) return val_false();

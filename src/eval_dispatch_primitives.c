@@ -829,9 +829,17 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "each_char") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "String#each_char requires a block");
-        else {
-            size_t chars = utf8_char_count(s);
+        size_t chars = utf8_char_count(s);
+        if (!blk) {
+            /* blockless: return array of chars */
+            Value arr = val_array_new();
+            for (size_t i = 0; i < chars; i++) {
+                const char *ptr = NULL; size_t width = 0;
+                utf8_char_at(s, i, &ptr, &width, NULL);
+                val_array_push(&arr, val_string_n(ev->arena, ptr, width));
+            }
+            *out = arr;
+        } else {
             for (size_t i = 0; i < chars; i++) {
                 const char *ptr = NULL;
                 size_t width = 0;
