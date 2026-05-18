@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `383` tests are passing, birb's REPL fully evaluates expressions and echoes results, and a minimal RubyGems/Bundler bringup path now exists for compatibility probes. It is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `395` tests are passing, birb's REPL fully evaluates expressions and echoes results, and a minimal RubyGems/Bundler bringup path now exists for compatibility probes. It is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -67,7 +67,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `383 passed, 0 failed, 383 total`. Recent additions include the minimal RubyGems shim (`require "rubygems"` plus key sub-requires), `exe/gem` and `exe/bundle` bringup helpers, multiline `/.../x` regexp lexing, and newer Bundler bringup coverage around lockfile drift, `bundle exec` command resolution, `gemspec` path overrides, path-gem runtime dependency closure, installed gemspec runtime-dependency preservation, installed-spec runtime dependency loading, and `BUNDLE_WITH` / `BUNDLE_WITHOUT` group handling.
+Current coverage in the tree: `395 passed, 0 failed, 395 total`. Recent additions include the minimal RubyGems shim (`require "rubygems"` plus key sub-requires), `exe/gem` and `exe/bundle` bringup helpers, multiline `/.../x` regexp lexing, and newer Bundler/RubyGems bringup coverage around local `gem search`, `gem contents`, `gem specification`, version-aware `Gem.bin_path` / `Gem.activate_bin_path`, version-aware RubyGems activation/lookups, missing-version error reporting for installed gems, lockfile drift, installed- and path-gem `bundle exec` command resolution, `bundle show` / `bundle info` / `bundle open` path introspection for both path and installed gems, `gemspec` path overrides, path-gem runtime dependency closure, installed gemspec runtime-dependency plus executable metadata preservation, installed-spec runtime dependency loading, and `BUNDLE_WITH` / `BUNDLE_WITHOUT` group handling.
 
 What is working today:
 
