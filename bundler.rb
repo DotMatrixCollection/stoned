@@ -123,8 +123,18 @@ module Bundler
       @ui ||= BundlerUI.new
     end
 
+    def definition
+      require File.join(BUNDLER_RB_DIR, "bundler", "definition")
+      @definition ||= Bundler::Definition.build(default_gemfile, default_lockfile, nil)
+    end
+
+    def runtime
+      require File.join(BUNDLER_RB_DIR, "bundler", "runtime")
+      @runtime ||= Bundler::Runtime.new(definition, settings)
+    end
+
     def load
-      self
+      definition
     end
 
     def locked_gems
