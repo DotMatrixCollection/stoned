@@ -1921,6 +1921,28 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                     val_array_push(&arr, val_symbol(e->name));
             }
         }
+        /* For VAL_CLASS, class methods live in klass->class_env keyed as "self.name" */
+        if (recv.kind == VAL_CLASS && recv.klass) {
+            RubyClass *kc = recv.klass;
+            while (kc) {
+                Env *ce = kc->class_env;
+                for (EnvEntry *e = ce ? ce->vars : NULL; e; e = e->next) {
+                    if (e->val.kind != VAL_METHOD) continue;
+                    /* Class method entries are keyed "self.name" */
+                    const char *mname = e->name;
+                    if (strncmp(mname, "self.", 5) == 0) mname += 5;
+                    else continue; /* skip instance method entries */
+                    MethodVisibility vis = e->val.method.visibility;
+                    int match = ((vis_mask & 1) && vis == METHOD_PUBLIC) ||
+                                ((vis_mask & 2) && vis == METHOD_PROTECTED) ||
+                                ((vis_mask & 4) && vis == METHOD_PRIVATE);
+                    if (match && !sym_in_array(&arr, mname))
+                        val_array_push(&arr, val_symbol(mname));
+                }
+                if (!include_super) break;
+                kc = (kc->superclass.kind == VAL_CLASS) ? kc->superclass.klass : NULL;
+            }
+        }
         if (recv.kind == VAL_OBJECT) {
             if (recv.obj->klass.kind == VAL_CLASS) {
                 RubyClass *k = recv.obj->klass.klass;
