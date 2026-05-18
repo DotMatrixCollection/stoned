@@ -2000,6 +2000,10 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             Value disp_out;
             if (dispatch_object(ev, env, recv, "!=", args, argc, blk, site, &disp_out, public_only, explicit_receiver))
                 return disp_out;
+            /* Fall back to negating == rather than pointer identity */
+            Value eq = dispatch_method(ev, env, recv, "==", args, argc, blk, site, public_only, explicit_receiver);
+            if (!val_is_signal(eq)) return val_bool(!val_truthy(eq));
+            ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
         }
         return val_bool(!val_equal(recv, args[0]));
     }
