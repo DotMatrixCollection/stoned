@@ -1059,9 +1059,17 @@ when "list"
   end
   lf = Lockfile.read(LOCKFILE)
   Gem::Specification.reset!
-  puts "Gems included by the bundle:"
+  show_paths = args.include?("--paths")
+  unless show_paths
+    puts "Gems included by the bundle:"
+  end
   active_dependencies(dsl).each do |dep|
-    puts "  * #{dep[:name]} (#{bundle_dep_display_version(dep, lf)})"
+    if show_paths
+      path = bundle_dep_path(dep, lf)
+      puts path || dep[:name]
+    else
+      puts "  * #{dep[:name]} (#{bundle_dep_display_version(dep, lf)})"
+    end
   end
 
 when "show", "info", "open"
