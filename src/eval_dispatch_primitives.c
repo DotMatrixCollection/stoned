@@ -319,8 +319,11 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
             *out = val_int(n < lo ? lo : n > hi ? hi : n); return 1;
         }
         if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
-        int64_t lo = args[0].kind == VAL_INT ? args[0].ival : (int64_t)args[0].fval;
-        int64_t hi = args[1].kind == VAL_INT ? args[1].ival : (int64_t)args[1].fval;
+        /* nil bounds mean "no bound" (Ruby 2.7+) */
+        int has_lo = args[0].kind != VAL_NIL;
+        int has_hi = args[1].kind != VAL_NIL;
+        int64_t lo = has_lo ? (args[0].kind == VAL_INT ? args[0].ival : (int64_t)args[0].fval) : INT64_MIN;
+        int64_t hi = has_hi ? (args[1].kind == VAL_INT ? args[1].ival : (int64_t)args[1].fval) : INT64_MAX;
         *out = val_int(n < lo ? lo : n > hi ? hi : n);
         return 1;
     }
@@ -484,8 +487,10 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(name, "clamp") == 0) {
         if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
-        double lo = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
-        double hi = args[1].kind == VAL_INT ? (double)args[1].ival : args[1].fval;
+        int has_lo = args[0].kind != VAL_NIL;
+        int has_hi = args[1].kind != VAL_NIL;
+        double lo = has_lo ? (args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval) : -1.0/0.0;
+        double hi = has_hi ? (args[1].kind == VAL_INT ? (double)args[1].ival : args[1].fval) :  1.0/0.0;
         *out = val_float(f < lo ? lo : f > hi ? hi : f);
         return 1;
     }

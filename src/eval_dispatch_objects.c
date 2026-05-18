@@ -2232,6 +2232,27 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             return 1;
         }
     }
+    /* IO.foreach / IO.readlines — same as File.foreach/readlines */
+    if ((strcmp(recv.klass->name, "IO") == 0) &&
+        (strcmp(name, "foreach") == 0 || strcmp(name, "readlines") == 0)) {
+        if (argc < 1) { *out = wrong_arg_count(ev, site, argc, 1); return 1; }
+        if (args[0].kind != VAL_STRING) { *out = implicit_string_conversion_error(ev, args[0], site); return 1; }
+        FILE *rf = fopen(args[0].sval, "r");
+        if (!rf) { *out = eval_raise_class(ev, site, errno_class_name(errno), "%s - %s", strerror(errno), args[0].sval); return 1; }
+        Value lines = val_array_new();
+        char lbuf[4096];
+        while (fgets(lbuf, sizeof(lbuf), rf)) val_array_push(&lines, val_string(ev->arena, lbuf));
+        fclose(rf);
+        if (blk) {
+            for (size_t i = 0; i < lines.array->len; i++) {
+                Value r = call_block(ev, env, *blk, &lines.array->elems[i], 1, site);
+                if (val_is_signal(r)) { *out = r; return 1; }
+            }
+            *out = val_nil();
+        } else { *out = lines; }
+        return 1;
+    }
+
     if (strcmp(recv.klass->name, "File") == 0) {
         if (strcmp(name, "basename") == 0) {
             if (argc < 1 || argc > 2) {
