@@ -1565,6 +1565,24 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     repl = val_to_s(ev->arena, r);
                 } else {
                     if (argc < 2) { free(buf); regex_match_free(&m); *out = eval_raise_class(ev, site, "ArgumentError", "String#%s requires a replacement or block", name); return 1; }
+                    /* Hash replacement: look up matched string in hash */
+                    if (args[1].kind == VAL_HASH) {
+                        size_t mlen2 = (size_t)(m.end - m.beg);
+                        Value mkey = val_string_n(ev->arena, s + m.beg, mlen2);
+                        Value hval;
+                        const char *hrepl;
+                        if (val_hash_get(args[1].hash, mkey, &hval))
+                            hrepl = val_to_s(ev->arena, hval);
+                        else
+                            hrepl = val_string_n(ev->arena, s + m.beg, mlen2).sval;
+                        regex_match_free(&m);
+                        size_t hrlen = strlen(hrepl);
+                        while (used + hrlen + 1 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }
+                        memcpy(buf + used, hrepl, hrlen);
+                        used += hrlen;
+                        replaced = 1;
+                        goto regex_gsub_after_replace;
+                    }
                     const char *raw = val_to_s(ev->arena, args[1]);
                     /* Expand backreferences: \1..\9, \0/\& (match), \\ (literal \) */
                     {
@@ -1604,6 +1622,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 memcpy(buf + used, repl, rlen);
                 used += rlen;
                 replaced = 1;
+                regex_gsub_after_replace:
                 if (mlen == 0) {
                     if (pos < slen) {
                         while (used + 2 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }
@@ -1645,7 +1664,13 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     repl = val_to_s(ev->arena, r);
                 } else {
                     if (argc < 2) { free(buf); *out = eval_raise_class(ev, site, "ArgumentError", "String#%s requires a replacement or block", name); return 1; }
-                    repl = val_to_s(ev->arena, args[1]);
+                    if (args[1].kind == VAL_HASH) {
+                        Value mkey = val_string_n(ev->arena, p, nlen);
+                        Value hval;
+                        repl = val_hash_get(args[1].hash, mkey, &hval) ? val_to_s(ev->arena, hval) : val_string_n(ev->arena, p, nlen).sval;
+                    } else {
+                        repl = val_to_s(ev->arena, args[1]);
+                    }
                 }
                 size_t rlen = strlen(repl);
                 while (used + rlen + 2 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }

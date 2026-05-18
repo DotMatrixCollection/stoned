@@ -674,6 +674,26 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = val_string_n(ev->arena, result, out_len);
         return 1;
     }
+    if (strcmp(name, "transpose") == 0) {
+        if (recv.array->len == 0) { *out = val_array_new(); return 1; }
+        /* Determine column count from first sub-array */
+        size_t ncols = 0;
+        if (recv.array->elems[0].kind == VAL_ARRAY)
+            ncols = recv.array->elems[0].array->len;
+        Value result = val_array_new();
+        for (size_t col = 0; col < ncols; col++) {
+            Value row = val_array_new();
+            for (size_t ri = 0; ri < recv.array->len; ri++) {
+                Value src = recv.array->elems[ri];
+                if (src.kind == VAL_ARRAY && col < src.array->len)
+                    val_array_push(&row, src.array->elems[col]);
+                else
+                    val_array_push(&row, val_nil());
+            }
+            val_array_push(&result, row);
+        }
+        *out = result; return 1;
+    }
     if (strcmp(name, "flatten") == 0) {
         int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : -1;
         Value result = val_array_new();
@@ -1121,6 +1141,26 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         *out = blk ? val_nil() : result;
         return 1;
+    }
+    if (strcmp(name, "assoc") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value elem = recv.array->elems[i];
+            if (elem.kind == VAL_ARRAY && elem.array->len > 0 && val_equal(elem.array->elems[0], args[0])) {
+                *out = elem; return 1;
+            }
+        }
+        *out = val_nil(); return 1;
+    }
+    if (strcmp(name, "rassoc") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        for (size_t i = 0; i < recv.array->len; i++) {
+            Value elem = recv.array->elems[i];
+            if (elem.kind == VAL_ARRAY && elem.array->len > 1 && val_equal(elem.array->elems[1], args[0])) {
+                *out = elem; return 1;
+            }
+        }
+        *out = val_nil(); return 1;
     }
     return 0;
 }
