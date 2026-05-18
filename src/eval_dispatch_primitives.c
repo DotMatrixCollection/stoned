@@ -221,6 +221,18 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         *out = val_int((n >> idx) & 1);
         return 1;
     }
+    if (strcmp(name, "coerce") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        Value pair = val_array_new();
+        if (args[0].kind == VAL_FLOAT) {
+            val_array_push(&pair, args[0]);
+            val_array_push(&pair, val_float((double)n));
+        } else {
+            val_array_push(&pair, args[0].kind == VAL_INT ? args[0] : val_int(n));
+            val_array_push(&pair, recv);
+        }
+        *out = pair; return 1;
+    }
     if (strcmp(name, "gcd") == 0) {
         if (argc < 1 || args[0].kind != VAL_INT) { *out = eval_raise_class(ev, site, "TypeError", "Integer#gcd requires an Integer"); return 1; }
         *out = val_int(int_gcd(n, args[0].ival));
@@ -440,6 +452,14 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (strcmp(name, "positive?") == 0) { *out = val_bool(f > 0.0); return 1; }
     if (strcmp(name, "negative?") == 0) { *out = val_bool(f < 0.0); return 1; }
     if (strcmp(name, "integer?") == 0)  { *out = val_false(); return 1; }
+    if (strcmp(name, "coerce") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        Value pair = val_array_new();
+        double other = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
+        val_array_push(&pair, val_float(other));
+        val_array_push(&pair, recv);
+        *out = pair; return 1;
+    }
     if (strcmp(name, "nan?") == 0)      { *out = val_bool(isnan(f)); return 1; }
     if (strcmp(name, "finite?") == 0)   { *out = val_bool(isfinite(f)); return 1; }
     if (strcmp(name, "infinite?") == 0) {
