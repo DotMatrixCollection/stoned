@@ -1,0 +1,9 @@
+--FROZEN-NO-LOCK--
+Your lockfile needs to be updated, but the `--frozen` flag was passed.
+1
+--FROZEN-OK--
+Bundle complete! 1 gems now installed.
+0
+--FROZEN-DRIFT--
+Your lockfile needs to be updated, but the `--frozen` flag was passed.
+1

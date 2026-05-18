@@ -538,8 +538,13 @@ when "version", "-v", "--version"
   puts "Bundler version #{BUNDLE_VERSION}"
 
 when "install", "i"
+  frozen = args.include?("--frozen") || args.include?("--deployment")
   unless File.exist?(GEMFILE)
     STDERR.puts "Could not locate Gemfile"
+    exit 1
+  end
+  if frozen && !File.exist?(LOCKFILE)
+    STDERR.puts "Your lockfile needs to be updated, but the `--frozen` flag was passed."
     exit 1
   end
   dsl = GemfileDSL.evaluate(GEMFILE)
@@ -547,13 +552,31 @@ when "install", "i"
     STDERR.puts "curl and tar are required for bundle install"
     exit 1
   end
-  resolved = resolve_and_install(dsl, verbose: true)
-  if resolved
-    Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
-    puts "Bundle complete! #{resolved.length} gems now installed."
+  if frozen
+    resolved = resolve_and_install(dsl, verbose: false)
+    if resolved
+      new_lock = lockfile_resolved_dependencies(dsl, resolved)
+      existing = Lockfile.read(LOCKFILE)
+      drift = new_lock.keys.any? { |k| existing.gems[k] != new_lock[k] } ||
+              existing.gems.keys.any? { |k| !new_lock.key?(k) }
+      if drift
+        STDERR.puts "Your lockfile needs to be updated, but the `--frozen` flag was passed."
+        exit 1
+      end
+      puts "Bundle complete! #{resolved.length} gems now installed."
+    else
+      STDERR.puts "Bundle install failed."
+      exit 1
+    end
   else
-    STDERR.puts "Bundle install failed."
-    exit 1
+    resolved = resolve_and_install(dsl, verbose: true)
+    if resolved
+      Lockfile.write(LOCKFILE, lockfile_resolved_dependencies(dsl, resolved))
+      puts "Bundle complete! #{resolved.length} gems now installed."
+    else
+      STDERR.puts "Bundle install failed."
+      exit 1
+    end
   end
 
 when "exec"
