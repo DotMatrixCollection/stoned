@@ -918,8 +918,38 @@ when "push"
   exit 1
 
 when "exec"
-  STDERR.puts "gem #{command}: not yet implemented"
-  exit 1
+  # gem exec EXEC_NAME [args...]
+  # Finds an installed gem's executable and runs it
+  exec_name = ARGV[1]
+  if exec_name.nil? || exec_name.empty?
+    STDERR.puts "Usage: gem exec EXECUTABLE [ARGS...]"
+    exit 1
+  end
+  exec_args = ARGV[2..]
+  # Search all installed specs for an executable with this name
+  Gem::Specification.reset!
+  found_path = nil
+  Gem::Specification.all.each do |spec|
+    exes = spec.executables || []
+    next unless exes.include?(exec_name)
+    bindir = spec.bindir || "bin"
+    candidate = File.join(spec.gem_dir, bindir, exec_name)
+    if File.exist?(candidate)
+      found_path = candidate
+      break
+    end
+  end
+  unless found_path
+    # Also check the gem bin/ wrapper directory
+    wrapper = File.join(Gem.home, "bin", exec_name)
+    found_path = wrapper if File.exist?(wrapper)
+  end
+  unless found_path
+    STDERR.puts "ERROR: Executable '#{exec_name}' not found in any installed gem"
+    exit 1
+  end
+  ARGV.shift; ARGV.shift
+  load found_path
 
 else
   STDERR.puts "ERROR: Unknown command '#{command}'"

@@ -37,8 +37,10 @@ class GemfileDSL
 
   def gem(name, *reqs, **opts)
     path      = opts.delete(:path)
-    git       = opts.delete(:git)
-    branch    = opts.delete(:branch)
+    github    = opts.delete(:github)
+    bitbucket = opts.delete(:bitbucket)
+    git       = opts.delete(:git) || (github && "https://github.com/#{github}.git") || (bitbucket && "https://bitbucket.org/#{bitbucket}.git")
+    branch    = opts.delete(:branch) || opts.delete(:ref) || opts.delete(:tag)
     groups    = [opts.delete(:group) || opts.delete(:groups) || @current_group].flatten.compact
     require_opt = opts.delete(:require)
     platforms = [opts.delete(:platform) || opts.delete(:platforms)].flatten.compact.map(&:to_s)
@@ -59,10 +61,26 @@ class GemfileDSL
     }
   end
 
-  def group(*names, &block)
+  def group(*names, optional: false, &block)
     @current_group = names.map(&:to_s)
     instance_eval(&block) if block_given?
     @current_group = nil
+  end
+
+  def eval_gemfile(path)
+    full = File.expand_path(path, File.dirname(@_gemfile_path || Dir.pwd))
+    instance_eval(File.read(full), full) if File.exist?(full)
+  end
+
+  def install_if(*conditions, &block)
+    instance_eval(&block) if block_given?
+  end
+
+  def self.evaluate(gemfile_path)
+    dsl = new
+    dsl.instance_variable_set(:@_gemfile_path, gemfile_path)
+    dsl.instance_eval(File.read(gemfile_path), gemfile_path)
+    dsl
   end
 
   def gemspec(name: nil, path: ".", **opts)
@@ -92,11 +110,6 @@ class GemfileDSL
     end
   end
 
-  def self.evaluate(gemfile_path)
-    dsl = new
-    dsl.instance_eval(File.read(gemfile_path), gemfile_path)
-    dsl
-  end
 end
 
 def normalized_dependencies(dsl)
@@ -643,7 +656,23 @@ def install_gem_from_server(gem_name, version)
   end
 end
 
-def resolve_and_install(dsl, verbose: true, force_update: false)
+def install_gem_from_cache(gem_name, version, cache_dir)
+  gem_full = "#{gem_name}-#{version}"
+  candidates = Dir.glob(File.join(cache_dir, "#{gem_full}.gem"))
+  candidates += Dir.glob(File.join(cache_dir, "#{gem_name}-*.gem")) if candidates.empty?
+  gem_file = candidates.first
+  unless gem_file && File.exist?(gem_file)
+    return false
+  end
+  require "rbconfig"
+  gem_exe = File.join(File.dirname(RbConfig.ruby), "gem")
+  gem_exe = File.expand_path("exe/gem", File.dirname(File.dirname(File.expand_path(__FILE__)))) unless File.exist?(gem_exe)
+  ok = system(RbConfig.ruby, gem_exe, "install", "--no-deps", gem_file)
+  Gem::Specification.reset!
+  ok
+end
+
+def resolve_and_install(dsl, verbose: true, force_update: false, local: false)
   resolved      = {}
   errors        = []
   new_installed = 0
@@ -693,6 +722,36 @@ def resolve_and_install(dsl, verbose: true, force_update: false)
       puts "Using #{name} #{spec.version}" if verbose
       enqueue_runtime_deps(spec, dep[:groups], queue, queued, resolved)
     else
+      if local
+        cache_dir = File.join(Dir.pwd, "vendor", "cache")
+        version   = dep[:reqs] && !dep[:reqs].empty? ? dep[:reqs].first.gsub(/[^0-9.]/, "").strip : nil
+        if version && !version.empty?
+          ok = install_gem_from_cache(name, version, cache_dir)
+        else
+          ok = false
+          # Try any cached version of this gem
+          gems_in_cache = Dir.glob(File.join(cache_dir, "#{name}-*.gem"))
+          if gems_in_cache.any?
+            ok = install_gem_from_cache(name, File.basename(gems_in_cache.first, ".gem").sub("#{name}-", ""), cache_dir)
+          end
+        end
+        unless ok
+          errors << "Could not find gem '#{name}' in vendor/cache (--local mode, no network)"
+          next
+        end
+        Gem::Specification.reset!
+        installed = Gem::Specification.find_by_name(name)
+        if installed
+          resolved[name] = installed.version.to_s
+          new_installed += 1
+          puts "Installing #{name} #{installed.version} from cache" if verbose
+          enqueue_runtime_deps(installed, dep[:groups], queue, queued, resolved)
+        else
+          errors << "Failed to install '#{name}' from vendor/cache"
+        end
+        next
+      end
+
       version = fetch_version(name, dep[:reqs], force_remote: force_update)
       unless version
         errors << "Could not find gem '#{name}'"
@@ -827,7 +886,8 @@ when "version", "-v", "--version"
   puts "Bundler version #{BUNDLE_VERSION}"
 
 when "install", "i"
-  frozen = args.include?("--frozen") || args.include?("--deployment")
+  frozen  = args.include?("--frozen") || args.include?("--deployment")
+  local   = args.include?("--local")
 
   # Persist --without / --with to .bundle/config
   without_idx  = args.index("--without")
@@ -869,12 +929,16 @@ when "install", "i"
     exit 1
   end
   dsl = GemfileDSL.evaluate(GEMFILE)
-  if bundle_needs_remote_tools?(dsl) && !(check_tool("curl") && check_tool("tar"))
+  if !local && bundle_needs_remote_tools?(dsl) && !(check_tool("curl") && check_tool("tar"))
     STDERR.puts "curl and tar are required for bundle install"
     exit 1
   end
+  if local && bundle_needs_remote_tools?(dsl) && !File.directory?(File.join(Dir.pwd, "vendor", "cache"))
+    STDERR.puts "vendor/cache directory not found. Run `bundle cache` first."
+    exit 1
+  end
   if frozen
-    result = resolve_and_install(dsl, verbose: false)
+    result = resolve_and_install(dsl, verbose: false, local: local)
     if result
       resolved, _newly = result
       new_lock = lockfile_resolved_dependencies(dsl, resolved)
@@ -893,7 +957,7 @@ when "install", "i"
   else
     lockfile_before = File.exist?(LOCKFILE)
     old_lock = lockfile_before ? Lockfile.read(LOCKFILE) : nil
-    result = resolve_and_install(dsl, verbose: true)
+    result = resolve_and_install(dsl, verbose: true, local: local)
     if result
       resolved, newly = result
       new_lock = lockfile_resolved_dependencies(dsl, resolved)
