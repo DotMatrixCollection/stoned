@@ -27,10 +27,10 @@ GEMFILE
 script_path = File.join(root, "use_inline.rb")
 File.write(script_path, <<~RUBY)
   require "bundler/inline"
-  gemfile(quiet: true) do |g|
-    g.source "https://rubygems.org"
-    g.ruby #{RUBY_VERSION.inspect}
-    g.eval_gemfile #{shared_path.inspect}
+  gemfile(quiet: true) do
+    source "https://rubygems.org"
+    ruby #{RUBY_VERSION.inspect}
+    eval_gemfile #{shared_path.inspect}
   end
   require "mygem"
   puts INLINE_GEM_LOADED

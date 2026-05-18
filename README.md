@@ -71,8 +71,7 @@ Current coverage in the tree: `523 passed, 0 failed, 523 total`. Recent addition
 
 Bundler bringup note:
 
-- Some Bundler-style regressions currently use the explicit-receiver form (`g.source`, `g.gem`, `g.eval_gemfile`) instead of the MRI-style receiverless DSL inside `instance_eval`.
-- That is intentional documentation of a current interpreter edge, not a statement that the receiverless form is unimportant.
+- Receiverless `instance_eval`-style DSL calls are now working for the direct Bundler-style block cases we cover, including `bundler/inline`.
 - The current shim layer can support a surprising amount of Bundler surface area, but full Bundler compatibility is still gated on a few Ruby semantic gaps listed below.
 
 What is working today:
@@ -114,7 +113,7 @@ Known limitations:
 - File/IO coverage is now stateful enough for real cursors, descriptor wrappers, line/char/byte reads, and several MRI-style cursor/query methods, but it is still well short of MRI: no socket IO and still-limited encoding/mode fidelity outside the covered text/binary and shared stream-read behavior
 - RubyGems/Bundler support is still bringup-grade: enough for shim loading and targeted experiments, not yet full dependency resolution, activation semantics, native extensions, or real-world gem installation compatibility
 - Bundler compatibility is still constrained by a few interpreter-level Ruby edges, not just missing shim objects:
-  - receiverless DSL calls inside `instance_eval`/implicit-self blocks are still not reliable enough for MRI-style `Gemfile`/`bundler/inline` syntax everywhere, so some regressions use explicit receivers as a stopgap
+  - broader implicit-self DSL parity still needs tightening beyond the now-covered direct `instance_eval` block cases, especially once more metaprogrammed and library-shaped DSL wrappers get involved
   - a few truthiness-sensitive parser/runtime corners still show up in compatibility helpers, which is why some shim code avoids depending on regex-match return values or similarly subtle Ruby semantics in hot paths
   - rescue behavior is good enough for ordinary typed clauses, but some library-style wrapper patterns still need tightening before helpers like `Bundler::FriendlyErrors.with_friendly_errors` can fully emulate MRI/Bundler control flow
 - Exceptions work, but they still need broader standard exception coverage and fuller Ruby rescue semantics beyond the current typed clauses, lists, variable binding, and `retry`

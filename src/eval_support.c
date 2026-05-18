@@ -1266,6 +1266,9 @@ Value call_block(Eval *ev, Env *caller_env, Value blk, Value *args, int argc, No
     Node *bn      = blk.block.block_node;
     Env *closure  = blk.block.closure;
     Env *frame    = env_new(ev->arena, closure, 0);
+    Value closure_self = val_nil();
+    if (env_get(closure, "self", &closure_self))
+        env_define(ev->arena, frame, "self", closure_self);
     NodeList *pl  = bn->block.params;
     Value *bound_args = args;
     int bound_argc = argc;

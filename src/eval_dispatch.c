@@ -1837,14 +1837,16 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (blk) {
             /* Block form: evaluate block with self = receiver */
             Env *ieval_env = env_new(ev->arena, blk->block.closure, 0);
-            env_set(ev->arena, ieval_env, "self", recv);
+            env_define(ev->arena, ieval_env, "self", recv);
             Value bargs[1] = { recv };
-            return call_block(ev, ieval_env, *blk, bargs, 1, site);
+            Value ieval_block = *blk;
+            ieval_block.block.closure = ieval_env;
+            return call_block(ev, ieval_env, ieval_block, bargs, 1, site);
         }
         if (argc >= 1 && args[0].kind == VAL_STRING) {
             /* String form: eval string with self = receiver */
             Env *ieval_env = env_new(ev->arena, env, 0);
-            env_set(ev->arena, ieval_env, "self", recv);
+            env_define(ev->arena, ieval_env, "self", recv);
             const char *file = argc >= 2 && args[1].kind == VAL_STRING ? args[1].sval : ev->current_file;
             int64_t line = argc >= 3 && args[2].kind == VAL_INT ? args[2].ival : 1;
             return eval_string_in_context(ev, env, args[0].sval, ieval_env, file, line, site);

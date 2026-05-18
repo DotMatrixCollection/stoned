@@ -13,8 +13,8 @@ BUNDLER_INLINE_STONED_ROOT = File.dirname(File.dirname(File.expand_path(__FILE__
 #     g.gem "some_gem"
 #   end
 #
-# The no-param block form (real Bundler style) is not supported in this
-# interpreter because instance_eval-based DSLs are not yet implemented.
+# The real Bundler-style no-param block form is also supported through
+# `instance_eval`, so `gemfile { source "..."; gem "x" }` works too.
 
 class BundlerInlineDSL
   attr_reader :deps, :gem_source, :ruby_requirements
