@@ -204,7 +204,34 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     if (strcmp(name, "negative?") == 0){ *out = val_bool(n < 0); return 1; }
     if (strcmp(name, "integer?") == 0) { *out = val_true(); return 1; }
     if (strcmp(name, "ceil") == 0 || strcmp(name, "floor") == 0 ||
-        strcmp(name, "round") == 0 || strcmp(name, "truncate") == 0) { *out = recv; return 1; }
+        strcmp(name, "round") == 0 || strcmp(name, "truncate") == 0) {
+        /* With negative precision: round to nearest 10^|precision| */
+        if (argc >= 1 && args[0].kind == VAL_INT && args[0].ival < 0) {
+            int64_t factor = 1;
+            for (int64_t i = 0; i < -args[0].ival; i++) factor *= 10;
+            int64_t q = n / factor;
+            int64_t r = n % factor;
+            if (strcmp(name, "ceil") == 0)
+                *out = val_int(r == 0 ? n : (n > 0 ? (q + 1) * factor : q * factor));
+            else if (strcmp(name, "floor") == 0)
+                *out = val_int(r == 0 ? n : (n > 0 ? q * factor : (q - 1) * factor));
+            else if (strcmp(name, "round") == 0) {
+                int64_t lo = (n > 0 ? q : q - 1) * factor;
+                int64_t hi = lo + factor;
+                int64_t mid = lo + factor / 2;
+                *out = val_int((n < mid) ? lo : hi);
+            } else { /* truncate */
+                *out = val_int(q * factor);
+            }
+            return 1;
+        }
+        /* With non-negative precision or no arg: integer returns self */
+        if (argc >= 1 && args[0].kind == VAL_INT && args[0].ival >= 0)
+            *out = recv;
+        else
+            *out = recv;
+        return 1;
+    }
     if (strcmp(name, "succ") == 0 || strcmp(name, "next") == 0) { *out = val_int(n + 1); return 1; }
     if (strcmp(name, "pred") == 0) { *out = val_int(n - 1); return 1; }
     if (strcmp(name, "chr") == 0) {
@@ -537,7 +564,12 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     (void)env;
     if (recv.kind != VAL_STRING) return 0;
     const char *s = recv.sval ? recv.sval : "";
-    if (strcmp(name, "to_s") == 0) { *out = recv; return 1; }
+    if (strcmp(name, "to_s") == 0 || strcmp(name, "to_str") == 0) { *out = recv; return 1; }
+    if (strcmp(name, "dump") == 0) {
+        /* Like inspect but always double-quoted */
+        *out = val_string(ev->arena, val_inspect(ev->arena, recv));
+        return 1;
+    }
     if (strcmp(name, "<=>") == 0) {
         if (argc < 1 || args[0].kind != VAL_STRING) { *out = val_nil(); return 1; }
         int c = strcmp(s, args[0].sval ? args[0].sval : "");

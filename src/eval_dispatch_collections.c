@@ -1071,6 +1071,40 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         *out = result; return 1;
     }
+    if (strcmp(name, "intersection") == 0) {
+        /* Ruby 2.7+ named form — same as & but accepts multiple arrays */
+        Value result = recv;
+        for (int ai = 0; ai < argc; ai++) {
+            if (args[ai].kind != VAL_ARRAY) continue;
+            Value inter_args[1] = { args[ai] };
+            Value inter_out;
+            dispatch_array(ev, env, result, "&", inter_args, 1, NULL, site, &inter_out);
+            result = inter_out;
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "union") == 0) {
+        Value result = recv;
+        for (int ai = 0; ai < argc; ai++) {
+            if (args[ai].kind != VAL_ARRAY) continue;
+            Value u_args[1] = { args[ai] };
+            Value u_out;
+            dispatch_array(ev, env, result, "|", u_args, 1, NULL, site, &u_out);
+            result = u_out;
+        }
+        *out = result; return 1;
+    }
+    if (strcmp(name, "difference") == 0) {
+        Value result = recv;
+        for (int ai = 0; ai < argc; ai++) {
+            if (args[ai].kind != VAL_ARRAY) continue;
+            Value d_args[1] = { args[ai] };
+            Value d_out;
+            dispatch_array(ev, env, result, "-", d_args, 1, NULL, site, &d_out);
+            result = d_out;
+        }
+        *out = result; return 1;
+    }
     if (strcmp(name, "&") == 0) {
         if (argc < 1 || args[0].kind != VAL_ARRAY) { *out = eval_raise_class(ev, site, "TypeError", "Array#& requires an Array"); return 1; }
         Value result = val_array_new();
@@ -1766,6 +1800,32 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         Value result = val_array_new();
         array_flatten_into(pairs, &result, depth);
         *out = result; return 1;
+    }
+    if (strcmp(name, "compact") == 0) {
+        Value result = val_hash_new(ev->arena);
+        for (size_t i = 0; i < h->len; i++)
+            if (h->vals[i].kind != VAL_NIL) val_hash_set(result.hash, h->keys[i], h->vals[i]);
+        *out = result; return 1;
+    }
+    if (strcmp(name, "compact!") == 0) {
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
+        size_t w = 0;
+        for (size_t i = 0; i < h->len; i++) {
+            if (h->vals[i].kind != VAL_NIL) {
+                h->keys[w] = h->keys[i];
+                h->vals[w] = h->vals[i];
+                w++;
+            }
+        }
+        int changed = (w != h->len);
+        h->len = w;
+        *out = changed ? recv : val_nil(); return 1;
+    }
+    if (strcmp(name, "any?") == 0 && !blk) {
+        *out = val_bool(h->len > 0); return 1;
+    }
+    if (strcmp(name, "none?") == 0 && !blk) {
+        *out = val_bool(h->len == 0); return 1;
     }
     if (strcmp(name, "invert") == 0) {
         Value result = val_hash_new(ev->arena);
