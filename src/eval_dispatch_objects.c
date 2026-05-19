@@ -1445,7 +1445,7 @@ const char *primitive_class_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "File") == 0)
         return "open,read,write,binread,foreach,readlines,exist?,exists?";
     if (strcmp(klass_name, "IO") == 0)
-        return "open,read,write,pipe,binread,foreach,readlines";
+        return "open,read,write,pipe,popen,console_size,binread,foreach,readlines";
     if (strcmp(klass_name, "Process") == 0)
         return "pid";
     if (strcmp(klass_name, "Struct") == 0)
