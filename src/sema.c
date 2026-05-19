@@ -1,4 +1,5 @@
 #include "sema.h"
+#include "env.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -12,6 +13,21 @@ static void sema_error(Sema *s, const char *msg, uint32_t line, uint32_t col) {
         s->errors[s->error_count].col     = col;
         s->error_count++;
     }
+}
+
+static int is_local_identifier_name(const char *name) {
+    if (!name || !name[0])
+        return 0;
+    if (strcmp(name, "self") == 0)
+        return 0;
+    if (!(name[0] == '_' || (name[0] >= 'a' && name[0] <= 'z')))
+        return 0;
+    for (const unsigned char *p = (const unsigned char *)name + 1; *p; p++) {
+        if (!(*p == '_' || (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+              (*p >= '0' && *p <= '9')))
+            return 0;
+    }
+    return 1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -512,6 +528,19 @@ void sema_init(Sema *s, Arena *arena) {
 void sema_run(Sema *s, Node *program) {
     scope_push(s, 1);          /* top-level is a hard scope */
     collect(s, program, NULL); /* collect top-level locals */
+    resolve(s, program);
+    scope_pop(s);
+}
+
+void sema_run_in_env(Sema *s, Node *program, Env *env) {
+    scope_push(s, 1);          /* top-level is a hard scope */
+    for (Env *scan = env; scan; scan = scan->parent) {
+        for (EnvEntry *entry = scan->vars; entry; entry = entry->next) {
+            if (is_local_identifier_name(entry->name))
+                scope_add(s, entry->name);
+        }
+    }
+    collect(s, program, NULL);
     resolve(s, program);
     scope_pop(s);
 }

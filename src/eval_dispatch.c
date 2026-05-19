@@ -168,67 +168,28 @@ int builtin_method_arity(const char *mname) {
     return -1; /* default: variadic/unknown */
 }
 
-static int is_local_identifier_name(const char *name) {
-    if (!name || !name[0] || strcmp(name, "self") == 0)
-        return 0;
-    if (!((name[0] >= 'a' && name[0] <= 'z') || name[0] == '_'))
-        return 0;
-    for (const char *p = name + 1; *p; p++) {
-        if (!( (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
-               (*p >= '0' && *p <= '9') || *p == '_'))
-            return 0;
-    }
-    return 1;
-}
-
 static Value eval_string_in_context(Eval *ev, Env *caller_env, const char *src, Env *target_env,
                                     const char *file, int64_t line, Node *site) {
     if (!src)
         src = "";
 
     size_t src_len = strlen(src);
-    size_t local_prelude_len = 0;
-    for (EnvEntry *entry = target_env ? target_env->vars : NULL; entry; entry = entry->next) {
-        if (!is_local_identifier_name(entry->name))
-            continue;
-        local_prelude_len += strlen(entry->name) * 2 + 2;
-    }
-    if (local_prelude_len > 0)
-        local_prelude_len += 10; /* begin;...;end; */
     size_t prefix_len = line > 1 ? (size_t)(line - 1) : 0;
-    char *shifted = arena_alloc(ev->arena, prefix_len + local_prelude_len + src_len + 1);
+    char *shifted = arena_alloc(ev->arena, prefix_len + src_len + 1);
     for (size_t i = 0; i < prefix_len; i++)
         shifted[i] = '\n';
     size_t pos = prefix_len;
-    if (local_prelude_len > 0) {
-        memcpy(shifted + pos, "begin;", 6);
-        pos += 6;
-        for (EnvEntry *entry = target_env ? target_env->vars : NULL; entry; entry = entry->next) {
-            size_t nlen;
-            if (!is_local_identifier_name(entry->name))
-                continue;
-            nlen = strlen(entry->name);
-            memcpy(shifted + pos, entry->name, nlen);
-            pos += nlen;
-            shifted[pos++] = '=';
-            memcpy(shifted + pos, entry->name, nlen);
-            pos += nlen;
-            shifted[pos++] = ';';
-        }
-        memcpy(shifted + pos, "end;", 4);
-        pos += 4;
-    }
     memcpy(shifted + pos, src, src_len + 1);
 
     Parser parser;
-    parser_init(&parser, shifted, prefix_len + pos - prefix_len + src_len, ev->arena);
+    parser_init(&parser, shifted, pos + src_len, ev->arena);
     Node *tree = parse_program(&parser);
     if (parser.error_count > 0)
         return eval_raise_class(ev, site, "SyntaxError", "%s", parser.errors[0].message);
 
     Sema sema;
     sema_init(&sema, ev->arena);
-    sema_run(&sema, tree);
+    sema_run_in_env(&sema, tree, target_env ? target_env : caller_env);
     if (sema.error_count > 0)
         return eval_raise_class(ev, site, "SyntaxError", "%s", sema.errors[0].message);
 
@@ -626,6 +587,7 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
         strcmp(name, "send") == 0 || strcmp(name, "__send__") == 0 ||
         strcmp(name, "public_send") == 0 ||
         strcmp(name, "freeze") == 0 || strcmp(name, "frozen?") == 0 ||
+        strcmp(name, "dup") == 0 || strcmp(name, "clone") == 0 ||
         strcmp(name, "object_id") == 0 || strcmp(name, "hash") == 0 ||
         strcmp(name, "to_s") == 0 ||
         strcmp(name, "inspect") == 0 || strcmp(name, "==") == 0 ||

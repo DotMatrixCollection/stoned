@@ -4,6 +4,8 @@
 #include "ast.h"
 #include "parser.h"  /* reuse ParseError / MAX_ERRORS */
 
+struct Env;
+
 typedef struct LocalEntry {
     const char        *name;
     struct LocalEntry *next;
@@ -30,5 +32,6 @@ typedef struct {
 
 void sema_init(Sema *s, Arena *arena);
 void sema_run(Sema *s, Node *program);
+void sema_run_in_env(Sema *s, Node *program, struct Env *env);
 
 #endif
