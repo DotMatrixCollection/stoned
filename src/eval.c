@@ -2261,6 +2261,12 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "\n";
 
     static const char *prelude_core =
+        "class Object\n"
+        "  def method_missing(name, *args)\n"
+        "    raise NoMethodError, \"undefined method '#{name}' for #{self.class}\"\n"
+        "  end\n"
+        "  private :method_missing\n"
+        "end\n"
         "class Integer\n"
         "  include Comparable\n"
         "end\n"
