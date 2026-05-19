@@ -152,7 +152,7 @@ static inline int flow_signal_out(Value v, Value *out) {
         *out = *v.jump.wrapped;
         return 1;
     }
-    if (v.kind == VAL_RETURN || v.kind == VAL_EXCEPTION) {
+    if (v.kind == VAL_RETURN || v.kind == VAL_EXCEPTION || v.kind == VAL_THROW) {
         *out = v;
         return 1;
     }
