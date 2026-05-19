@@ -292,12 +292,27 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     }
     if (strcmp(name, "succ") == 0 || strcmp(name, "next") == 0) { *out = val_int(n + 1); return 1; }
     if (strcmp(name, "pred") == 0) { *out = val_int(n - 1); return 1; }
+    if (strcmp(name, "infinite?") == 0) { *out = val_nil(); return 1; }
+    if (strcmp(name, "finite?") == 0) { *out = val_true(); return 1; }
+    if (strcmp(name, "nan?") == 0) { *out = val_false(); return 1; }
     if (strcmp(name, "chr") == 0) {
-        if (n < 0 || n > 127) { *out = eval_raise_class(ev, site, "RangeError", "%lld out of char range", (long long)n); return 1; }
-        char buf[2] = { (char)n, '\0' };
-        *out = val_string(ev->arena, buf);
+        if (n < 0 || n > 0x10FFFF) { *out = eval_raise_class(ev, site, "RangeError", "%lld out of char range", (long long)n); return 1; }
+        if (n <= 127) {
+            char buf[2] = { (char)n, '\0' };
+            *out = val_string(ev->arena, buf);
+        } else {
+            /* UTF-8 encode the codepoint */
+            char buf[5]; int len = 0;
+            if (n < 0x80)       { buf[0] = (char)n; len = 1; }
+            else if (n < 0x800) { buf[0] = (char)(0xC0|(n>>6)); buf[1] = (char)(0x80|(n&0x3F)); len = 2; }
+            else if (n < 0x10000) { buf[0] = (char)(0xE0|(n>>12)); buf[1] = (char)(0x80|((n>>6)&0x3F)); buf[2] = (char)(0x80|(n&0x3F)); len = 3; }
+            else { buf[0] = (char)(0xF0|(n>>18)); buf[1] = (char)(0x80|((n>>12)&0x3F)); buf[2] = (char)(0x80|((n>>6)&0x3F)); buf[3] = (char)(0x80|(n&0x3F)); len = 4; }
+            buf[len] = '\0';
+            *out = val_string(ev->arena, buf);
+        }
         return 1;
     }
+    if (strcmp(name, "ord") == 0) { *out = recv; return 1; }
     if (strcmp(name, "[]") == 0) {
         /* Bit indexing: n[i] returns the ith bit of n (LSB = 0) */
         if (argc < 1 || args[0].kind != VAL_INT) { *out = val_int(0); return 1; }

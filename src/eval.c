@@ -661,14 +661,35 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         }
         case NODE_CONST: {
             Value v = lookup_const_path(ev, env, node->sval);
-            if (v.kind == VAL_NIL)
+            if (v.kind == VAL_NIL) {
+                /* Try const_missing hook on the parent module */
+                const char *parent_name = NULL, *leaf_name = NULL;
+                split_const_path(ev->arena, node->sval, &parent_name, &leaf_name);
+                if (parent_name && leaf_name) {
+                    Value parent = lookup_const_path(ev, env, parent_name);
+                    if (parent.kind == VAL_CLASS) {
+                        Value sym = val_symbol(leaf_name);
+                        Value r = dispatch_method(ev, env, parent, "const_missing", &sym, 1, NULL, node, 0, 1);
+                        if (!val_is_signal(r)) return r;
+                        eval_clear_exception(ev);
+                    }
+                }
                 return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", node->sval);
+            }
             return v;
         }
         case NODE_CONST_ACCESS: {
             Value recv = eval_node(ev, env, node->const_access.recv);
             CHECK(recv);
             Value v = lookup_const_on_class(recv, node->const_access.name);
+            if (v.kind == VAL_NIL && recv.kind == VAL_CLASS) {
+                /* Try Module.const_missing(:Name) hook */
+                Value sym = val_symbol(node->const_access.name);
+                Value r = dispatch_method(ev, env, recv, "const_missing", &sym, 1, NULL, node, 0, 1);
+                if (!val_is_signal(r)) return r;
+                eval_clear_exception(ev);
+                return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", node->const_access.name);
+            }
             if (v.kind == VAL_NIL)
                 return eval_raise_class(ev, node, "NameError", "uninitialized constant '%s'", node->const_access.name);
             return v;

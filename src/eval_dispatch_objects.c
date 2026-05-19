@@ -3752,6 +3752,21 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         env_get(ev->top_env, cname, &v);
         *out = v; return 1;
     }
+    if (strcmp(name, "const_set") == 0) {
+        if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        const char *cname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!cname) { *out = eval_raise_class(ev, site, "TypeError", "const_set name must be a Symbol or String"); return 1; }
+        if (!recv.klass->class_env) recv.klass->class_env = env_new(ev->arena, ev->top_env, 1);
+        env_define(ev->arena, recv.klass->class_env, cname, args[1]);
+        /* Also register as flat path in top_env for nested const lookup */
+        size_t plen = strlen(recv.klass->name), nlen = strlen(cname);
+        char *flat = arena_alloc(ev->arena, plen + 2 + nlen + 1);
+        memcpy(flat, recv.klass->name, plen);
+        memcpy(flat + plen, "::", 2);
+        memcpy(flat + plen + 2, cname, nlen + 1);
+        env_define(ev->arena, ev->top_env, flat, args[1]);
+        *out = args[1]; return 1;
+    }
     /* ---- Class reflection ---- */
 
     if (strcmp(name, "superclass") == 0) {
