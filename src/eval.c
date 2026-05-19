@@ -1547,6 +1547,16 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
     env_define(arena, ev->top_env, "RUBY_RELEASE_DATE", val_string(arena, STONED_RELEASE_DATE));
     env_define(arena, ev->top_env, "RUBY_COPYRIGHT", val_string(arena, "stoned - Copyright (C) 2026"));
 
+    /* Standard Ruby global variables */
+    global_set(arena, &ev->globals, "/", val_string(arena, "\n"));  /* $/ record separator */
+    global_set(arena, &ev->globals, "\\", val_nil());               /* $\ output record separator */
+    global_set(arena, &ev->globals, ",", val_nil());                /* $, field separator */
+    global_set(arena, &ev->globals, ";", val_nil());                /* $; default split separator */
+    if (current_file) {
+        global_set(arena, &ev->globals, "0", val_string(arena, current_file));
+        global_set(arena, &ev->globals, "PROGRAM_NAME", val_string(arena, current_file));
+    }
+
     {
         Value marshal_mod = val_class(arena, "Marshal", val_nil());
         marshal_mod.klass->class_env = env_new(arena, ev->top_env, 1);

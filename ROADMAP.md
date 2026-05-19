@@ -530,3 +530,4 @@ These were previously roadmap items and are now implemented in the current tree:
 - `String#%` named format references `%{key}`; `bundler/dsl.rb` uses real `instance_eval`
 - `Enumerable#first(n)`: n-argument form returns first n elements; also fixed `break` from user-defined `yield`-based iterators escaping the method call instead of terminating it
 - `Struct#each`, `#each_pair`, `#[]`, `#[]=`; Struct subclasses now include Enumerable so `map`/`select`/`min`/`sum`/etc. work directly on struct instances
+- `String#[]=` (index, [index,len], range, and substring forms); `StringIO` expanded with read-position tracking (`pos`, `seek`, `rewind`, `eof?`, `gets`, `readline`, `readlines`, `each_line`, `read(n)`, `getc`); `$/` global initialized to `"\n"`; `$0`/`$PROGRAM_NAME` initialized from the script filename

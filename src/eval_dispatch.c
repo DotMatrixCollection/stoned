@@ -2919,5 +2919,22 @@ call_method:
             global_set(ev->arena, &ev->globals, recv_node->sval, result);
     }
 
+    /* String#[]= binding update: recv is a string and result is the new string.
+       The return value of []= is the rhs (last arg), but we need to update the receiver. */
+    if (!val_is_signal(result) && strcmp(node->call.method, "[]=") == 0 &&
+        recv.kind == VAL_STRING && result.kind == VAL_STRING && node->call.recv) {
+        Node *recv_node = node->call.recv;
+        if (recv_node->kind == NODE_LVAR)
+            env_set(ev->arena, env, recv_node->sval, result);
+        else if (recv_node->kind == NODE_IVAR) {
+            Value self;
+            if (env_get(env, "self", &self) && self.kind == VAL_OBJECT)
+                val_object_set_ivar(ev->arena, self, recv_node->sval, result);
+        } else if (recv_node->kind == NODE_GVAR)
+            global_set(ev->arena, &ev->globals, recv_node->sval, result);
+        /* Return the rhs (last arg) as per Ruby semantics */
+        if (argc > 0) return args[argc - 1];
+    }
+
     return result;
 }

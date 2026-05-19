@@ -1,0 +1,12 @@
+"hello world\n"
+"line two\n"
+21
+false
+"third\n"
+true
+nil
+0
+"hello"
+"one\ntwo\n"
+["a\n", "b\n", "c\n"]
+["x", "y", "z"]

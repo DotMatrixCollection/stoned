@@ -1457,6 +1457,65 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         return 1;
     }
+    if (strcmp(name, "[]=") == 0) {
+        if (recv.frozen)
+            { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String"); return 1; }
+        if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        size_t slen = utf8_char_count(s);
+        size_t sbytes = strlen(s);
+        /* Determine replacement string (last arg) */
+        const char *repl = val_to_s(ev->arena, args[argc - 1]);
+        size_t repl_bytes = strlen(repl);
+        /* Determine byte range to replace */
+        size_t bstart = 0, bend = 0;
+        if (argc == 3 && args[0].kind == VAL_INT && args[1].kind == VAL_INT) {
+            /* s[idx, len] = repl */
+            int64_t idx = args[0].ival, len = args[1].ival;
+            if (idx < 0) idx += (int64_t)slen;
+            if (idx < 0 || (size_t)idx > slen)
+                { *out = eval_raise_class(ev, site, "IndexError", "index out of string"); return 1; }
+            if (len < 0) len = 0;
+            size_t take = (size_t)idx + (size_t)len > slen ? slen - (size_t)idx : (size_t)len;
+            bstart = utf8_byte_offset_for_char(s, (size_t)idx);
+            bend   = utf8_byte_offset_for_char(s, (size_t)idx + take);
+        } else if (argc == 2 && args[0].kind == VAL_RANGE) {
+            RubyRange *r = args[0].range;
+            int64_t rbeg = r->begin_val.kind == VAL_INT ? r->begin_val.ival : 0;
+            int64_t rend = r->end_val.kind == VAL_INT ? r->end_val.ival : (int64_t)slen;
+            if (rbeg < 0) rbeg += (int64_t)slen;
+            if (rend < 0) rend += (int64_t)slen;
+            if (!r->exclusive) rend++;
+            if (rbeg < 0) rbeg = 0;
+            if ((size_t)rend > slen) rend = (int64_t)slen;
+            bstart = utf8_byte_offset_for_char(s, (size_t)rbeg);
+            bend   = utf8_byte_offset_for_char(s, (size_t)rend);
+        } else if (argc == 2 && args[0].kind == VAL_INT) {
+            /* s[idx] = repl */
+            int64_t idx = args[0].ival;
+            if (idx < 0) idx += (int64_t)slen;
+            if (idx < 0 || (size_t)idx >= slen)
+                { *out = eval_raise_class(ev, site, "IndexError", "index out of string"); return 1; }
+            bstart = utf8_byte_offset_for_char(s, (size_t)idx);
+            bend   = utf8_byte_offset_for_char(s, (size_t)idx + 1);
+        } else if (argc == 2 && args[0].kind == VAL_STRING) {
+            const char *needle = args[0].sval;
+            const char *found = strstr(s, needle);
+            if (!found) { *out = eval_raise_class(ev, site, "IndexError", "string not matched"); return 1; }
+            bstart = (size_t)(found - s);
+            bend   = bstart + strlen(needle);
+        } else {
+            *out = eval_raise_class(ev, site, "ArgumentError", "wrong arguments for String#[]="); return 1;
+        }
+        /* Build new string: before + repl + after */
+        size_t new_len = bstart + repl_bytes + (sbytes - bend);
+        char *buf = arena_alloc(ev->arena, new_len + 1);
+        memcpy(buf, s, bstart);
+        memcpy(buf + bstart, repl, repl_bytes);
+        memcpy(buf + bstart + repl_bytes, s + bend, sbytes - bend);
+        buf[new_len] = '\0';
+        *out = val_string(ev->arena, buf);
+        return 1;
+    }
     if (strcmp(name, "each_line") == 0 || strcmp(name, "lines") == 0) {
         /* Optional separator argument */
         const char *sep = (argc > 0 && args[0].kind == VAL_STRING) ? args[0].sval : "\n";
