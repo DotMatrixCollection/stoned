@@ -1400,6 +1400,10 @@ static const char *primitive_methods_for_class(const char *klass_name) {
         return "to_i,tv_sec,to_f,tv_nsec,nsec,year,month,mon,day,mday,hour,min,sec,wday,yday,isdst,dst?,utc?,gmt?,strftime,inspect,to_s,utc,gmtime,localtime,zone,==,!=,<=>";
     if (strcmp(klass_name, "Regexp") == 0)
         return "source,inspect,to_s,options,match,match?,=~,casefold?,named_captures,names";
+    if (strcmp(klass_name, "MatchData") == 0)
+        return "to_s,inspect,[],captures,names,named_captures,begin,end,pre_match,post_match";
+    if (strcmp(klass_name, "Exception") == 0)
+        return "message,to_s,inspect,exception,backtrace,set_backtrace";
     if (strcmp(klass_name, "Method") == 0)
         return "name,original_name,owner,receiver,unbind,call,[],===,bind_call,arity,parameters,super_method,to_proc,curry,source_location,inspect,to_s,clone,dup,hash,eql?";
     if (strcmp(klass_name, "UnboundMethod") == 0)
