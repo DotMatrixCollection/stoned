@@ -3863,9 +3863,27 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
         if (!mname) { *out = eval_raise_class(ev, site, "TypeError", "expected Symbol or String"); return 1; }
         Value method; RubyClass *owner = NULL;
+        int is_primitive = 0;
         if (!singleton_class_method_lookup(ev, env, recv, mname, &method) &&
             !ruby_class_find_instance_method(recv.klass, mname, &method, &owner)) {
+            for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+                if (primitive_class_responds_to_name(k->name, mname)) {
+                    is_primitive = 1;
+                    break;
+                }
+            }
+        }
+        if (!is_primitive && method.kind != VAL_METHOD) {
             *out = val_false();
+            return 1;
+        }
+        if (is_primitive) {
+            int match = 0;
+            if (strcmp(name, "method_defined?") == 0) match = 1;
+            else if (strcmp(name, "public_method_defined?") == 0) match = 1;
+            else if (strcmp(name, "private_method_defined?") == 0) match = 0;
+            else match = 0;
+            *out = val_bool(match);
             return 1;
         }
         MethodVisibility vis = method.method.visibility;
