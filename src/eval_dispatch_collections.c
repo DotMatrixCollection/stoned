@@ -114,13 +114,23 @@ static void product_helper(Value *arrays, int narrays, int idx,
     }
 }
 
-static void array_flatten_into(Value arr, Value *result, int depth) {
+static void array_flatten_into(Eval *ev, Env *env, Value arr, Value *result, int depth) {
     for (size_t i = 0; i < arr.array->len; i++) {
         Value elem = arr.array->elems[i];
-        if (elem.kind == VAL_ARRAY && depth != 0)
-            array_flatten_into(elem, result, depth > 0 ? depth - 1 : depth);
-        else
+        if (elem.kind == VAL_ARRAY && depth != 0) {
+            array_flatten_into(ev, env, elem, result, depth > 0 ? depth - 1 : depth);
+        } else if (depth != 0 && elem.kind == VAL_OBJECT && ev && env) {
+            /* Check for to_ary on user objects */
+            Value to_ary_res = dispatch_method(ev, env, elem, "to_ary", NULL, 0, NULL, NULL, 0, -1);
+            if (!val_is_signal(to_ary_res) && to_ary_res.kind == VAL_ARRAY) {
+                array_flatten_into(ev, env, to_ary_res, result, depth > 0 ? depth - 1 : depth);
+            } else {
+                ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+                val_array_push(result, elem);
+            }
+        } else {
             val_array_push(result, elem);
+        }
     }
 }
 
@@ -765,7 +775,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (strcmp(name, "flatten") == 0) {
         int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : -1;
         Value result = val_array_new();
-        array_flatten_into(recv, &result, depth);
+        array_flatten_into(ev, env, recv, &result, depth);
         *out = result;
         return 1;
     }
@@ -831,7 +841,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (strcmp(name, "flatten!") == 0) {
         int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : -1;
         Value result = val_array_new();
-        array_flatten_into(recv, &result, depth);
+        array_flatten_into(ev, env, recv, &result, depth);
         int changed = result.array->len != recv.array->len;
         if (!changed) {
             for (size_t i = 0; i < recv.array->len && !changed; i++)
@@ -1814,7 +1824,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             val_array_push(&pairs, pair);
         }
         Value result = val_array_new();
-        array_flatten_into(pairs, &result, depth);
+        array_flatten_into(ev, env, pairs, &result, depth);
         *out = result; return 1;
     }
     if (strcmp(name, "compact") == 0) {
