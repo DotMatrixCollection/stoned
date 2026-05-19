@@ -855,6 +855,16 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = w != orig ? recv : val_nil();
         return 1;
     }
+    if (strcmp(name, "reverse!") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
+        size_t n = recv.array->len;
+        for (size_t i = 0; i < n / 2; i++) {
+            Value tmp = recv.array->elems[i];
+            recv.array->elems[i] = recv.array->elems[n - 1 - i];
+            recv.array->elems[n - 1 - i] = tmp;
+        }
+        *out = recv; return 1;
+    }
     if (strcmp(name, "sort!") == 0) {
         Value sorted = val_array_new();
         for (size_t i = 0; i < recv.array->len; i++) val_array_push(&sorted, recv.array->elems[i]);
