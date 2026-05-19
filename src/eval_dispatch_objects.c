@@ -2805,6 +2805,14 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             if (args[0].kind != VAL_STRING) {
                 *out = implicit_string_conversion_error(ev, args[0], site); return 1;
             }
+            /* Check for chomp: true option in kwargs */
+            int do_chomp = 0;
+            if (argc > 1 && args[argc-1].kind == VAL_HASH) {
+                Value cv;
+                if (val_hash_get(args[argc-1].hash, val_symbol("chomp"), &cv) ||
+                    val_hash_get(args[argc-1].hash, val_string(ev->arena, "chomp"), &cv))
+                    do_chomp = val_truthy(cv);
+            }
             FILE *rf = fopen(args[0].sval, "r");
             if (!rf) {
                 *out = eval_raise_class(ev, site, errno_class_name(errno), "%s - %s",
@@ -2814,6 +2822,9 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             Value lines = val_array_new();
             char lbuf[4096];
             while (fgets(lbuf, sizeof(lbuf), rf)) {
+                size_t ll = strlen(lbuf);
+                if (do_chomp && ll > 0 && lbuf[ll-1] == '\n') { lbuf[--ll] = '\0'; }
+                if (do_chomp && ll > 0 && lbuf[ll-1] == '\r') { lbuf[--ll] = '\0'; }
                 val_array_push(&lines, val_string(ev->arena, lbuf));
             }
             fclose(rf);

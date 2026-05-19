@@ -545,3 +545,4 @@ These were previously roadmap items and are now implemented in the current tree:
 - `File.unlink` added as alias for `File.delete`
 - `Array#uniq` with block now uses block return value as the uniqueness key; `uniq!` added
 - `Mutex` and `Queue`/`SizedQueue` added to core prelude (no require needed); `require 'thread'` also provides them; `Mutex` exposed at top level (was only `Thread::Mutex`)
+- `File.readlines(path, chomp: true)` now strips newlines (the `chomp:` kwarg was previously ignored)
