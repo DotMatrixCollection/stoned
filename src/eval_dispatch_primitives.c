@@ -1061,6 +1061,21 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "setbyte") == 0) { *out = recv; return 1; }
+    if (strcmp(name, "each_byte") == 0) {
+        if (!blk) {
+            /* Return array of bytes */
+            Value arr = val_array_new();
+            for (size_t i = 0; s[i]; i++) val_array_push(&arr, val_int((int64_t)(unsigned char)s[i]));
+            *out = arr; return 1;
+        }
+        for (size_t i = 0; s[i]; i++) {
+            Value byte = val_int((int64_t)(unsigned char)s[i]);
+            Value r = call_block(ev, env, *blk, &byte, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+        }
+        *out = recv; return 1;
+    }
     if (strcmp(name, "upto") == 0) {
         if (argc < 1 || args[0].kind != VAL_STRING) {
             *out = eval_raise_class(ev, site, "ArgumentError", "String#upto requires a string argument");
