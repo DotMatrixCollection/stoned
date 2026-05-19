@@ -2820,10 +2820,49 @@ call_method:
         }
         if (strcmp(node->call.method, "[]=") == 0) {
             if (argc < 2) return eval_raise_class(ev, node, "ArgumentError", "wrong number of args for []=");
-            int64_t idx = args[0].ival;
+            if (recv.array->frozen) return eval_raise_class(ev, node, "FrozenError", "can't modify frozen Array");
+            /* Array#[start, length] = val — subarray replacement */
+            if (argc == 3 && args[1].kind == VAL_INT) {
+                int64_t start = args[0].kind == VAL_INT ? args[0].ival : 0;
+                int64_t len   = args[1].ival;
+                if (start < 0) start += (int64_t)recv.array->len;
+                if (start < 0) start = 0;
+                if (len < 0) len = 0;
+                /* Collect replacement elements */
+                Value rep_arr = args[2];
+                Value rep_elems[64]; int rep_len = 0;
+                if (rep_arr.kind == VAL_ARRAY) {
+                    rep_len = (int)rep_arr.array->len < 64 ? (int)rep_arr.array->len : 64;
+                    for (int i = 0; i < rep_len; i++) rep_elems[i] = rep_arr.array->elems[i];
+                } else if (rep_arr.kind != VAL_NIL) {
+                    rep_elems[0] = rep_arr; rep_len = 1;
+                }
+                /* Build new array */
+                Value newarr = val_array_new();
+                for (int64_t i = 0; i < start && i < (int64_t)recv.array->len; i++)
+                    val_array_push(&newarr, recv.array->elems[i]);
+                for (int i = 0; i < rep_len; i++)
+                    val_array_push(&newarr, rep_elems[i]);
+                for (int64_t i = start + len; i < (int64_t)recv.array->len; i++)
+                    val_array_push(&newarr, recv.array->elems[i]);
+                /* Copy back in place */
+                recv.array->len = newarr.array->len;
+                if (recv.array->cap < newarr.array->len) {
+                    recv.array->elems = newarr.array->elems;
+                    recv.array->cap = newarr.array->cap;
+                } else {
+                    for (size_t i = 0; i < newarr.array->len; i++)
+                        recv.array->elems[i] = newarr.array->elems[i];
+                }
+                return args[2];
+            }
+            /* Simple Array#[idx] = val */
+            int64_t idx = args[0].kind == VAL_INT ? args[0].ival : 0;
             if (idx < 0) idx = (int64_t)recv.array->len + idx;
-            if (idx >= 0 && (size_t)idx < recv.array->len)
+            if (idx >= 0) {
+                while ((size_t)idx >= recv.array->len) val_array_push(&recv, val_nil());
                 recv.array->elems[idx] = args[1];
+            }
             return args[1];
         }
     }
