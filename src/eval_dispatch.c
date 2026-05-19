@@ -20,6 +20,7 @@ extern char **environ;
 #define CHECK(v) do { if (ev->errored || val_is_signal(v)) return (v); } while(0)
 
 static Value val_class_of(Eval *ev, Value v);
+static Value infer_builtin_method_owner(Eval *ev, Value recv);
 
 /* Store last child exit code in a global; the Ruby prelude wraps it as $?. */
 static void set_child_status(Eval *ev, Env *env __attribute__((unused)),
@@ -486,6 +487,10 @@ static Value val_class_of(Eval *ev, Value v) {
     Value stub = val_class(ev->arena, kname, val_nil());
     stub.klass->class_env = env_new(ev->arena, ev->top_env, 1);
     return stub;
+}
+
+static Value infer_builtin_method_owner(Eval *ev, Value recv) {
+    return val_class_of(ev, recv);
 }
 
 static int method_visible_for_respond_to(Value method, int include_private) {
@@ -2232,18 +2237,25 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (!val_responds_to(ev, recv, mname, 1))
             return eval_raise_class(ev, site, "NameError", "undefined method '%s' for class '%s'", mname, prim_class_name(recv));
         Value method_val = val_nil();
+        Value owner_val = val_nil();
         if (singleton_env) {
             Value m;
-            if (env_get(singleton_env, mname, &m) && m.kind == VAL_METHOD)
+            if (env_get(singleton_env, mname, &m) && m.kind == VAL_METHOD) {
                 method_val = m;
+            }
         }
         if (recv.kind == VAL_OBJECT) {
             if (method_val.kind == VAL_NIL && recv.obj->klass.kind == VAL_CLASS) {
                 Value m; RubyClass *owner = NULL;
-                if (ruby_class_find_instance_method(recv.obj->klass.klass, mname, &m, &owner))
+                if (ruby_class_find_instance_method(recv.obj->klass.klass, mname, &m, &owner)) {
                     method_val = m;
+                    if (owner && owner->name)
+                        env_get(ev->top_env, owner->name, &owner_val);
+                }
             }
         }
+        if (owner_val.kind != VAL_CLASS)
+            owner_val = infer_builtin_method_owner(ev, recv);
         Value m_klass;
         if (!env_get(ev->top_env, "Method", &m_klass) || m_klass.kind != VAL_CLASS)
             return val_nil();
@@ -2251,6 +2263,8 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         val_object_set_ivar(ev->arena, obj, "__receiver__", recv);
         val_object_set_ivar(ev->arena, obj, "__method_name__", val_string(ev->arena, mname));
         val_object_set_ivar(ev->arena, obj, "__method__", method_val);
+        if (owner_val.kind == VAL_CLASS)
+            val_object_set_ivar(ev->arena, obj, "__owner__", owner_val);
         /* For builtins (no Ruby def_node) store arity from the static table */
         if (method_val.kind != VAL_METHOD || !method_val.method.def_node) {
             int nat_arity = builtin_method_arity(mname);

@@ -3560,6 +3560,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         val_object_set_ivar(ev->arena, obj, "__klass__", recv);
         val_object_set_ivar(ev->arena, obj, "__method_name__", val_string(ev->arena, mname));
         val_object_set_ivar(ev->arena, obj, "__method__", method_val);
+        val_object_set_ivar(ev->arena, obj, "__owner__", recv);
         *out = obj;
         return 1;
     }
@@ -4026,6 +4027,9 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 Value mname_v, method_v;
                 if (val_object_get_ivar(recv, "__method_name__", &mname_v)) val_object_set_ivar(ev->arena, ubm, "__method_name__", mname_v);
                 if (val_object_get_ivar(recv, "__method__", &method_v)) val_object_set_ivar(ev->arena, ubm, "__method__", method_v);
+                Value owner_v, nat_v;
+                if (val_object_get_ivar(recv, "__owner__", &owner_v)) val_object_set_ivar(ev->arena, ubm, "__owner__", owner_v);
+                if (val_object_get_ivar(recv, "__native_arity__", &nat_v)) val_object_set_ivar(ev->arena, ubm, "__native_arity__", nat_v);
                 *out = ubm; return 1;
             }
             if (strcmp(name, "call") == 0 || strcmp(name, "[]") == 0 ||
@@ -4147,6 +4151,9 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 val_object_set_ivar(ev->arena, obj, "__receiver__", args[0]);
                 val_object_set_ivar(ev->arena, obj, "__method_name__", method_name_v);
                 val_object_set_ivar(ev->arena, obj, "__method__", method_val);
+                Value owner_v, nat_v;
+                if (val_object_get_ivar(recv, "__owner__", &owner_v)) val_object_set_ivar(ev->arena, obj, "__owner__", owner_v);
+                if (val_object_get_ivar(recv, "__native_arity__", &nat_v)) val_object_set_ivar(ev->arena, obj, "__native_arity__", nat_v);
                 *out = obj;
                 return 1;
             }
