@@ -626,11 +626,32 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             Value cur = blk ? call_block(ev, env, *blk, &recv.array->elems[i], 1, site)
                             : recv.array->elems[i];
             if (val_is_signal(cur)) { *out = cur; return 1; }
-            if (acc.kind == VAL_INT && cur.kind == VAL_INT) acc.ival += cur.ival;
-            else {
+            if (acc.kind == VAL_INT && cur.kind == VAL_INT) {
+                acc.ival += cur.ival;
+            } else if ((acc.kind == VAL_INT || acc.kind == VAL_FLOAT) &&
+                       (cur.kind == VAL_INT || cur.kind == VAL_FLOAT)) {
                 double a = acc.kind == VAL_FLOAT ? acc.fval : (double)acc.ival;
                 double c = cur.kind == VAL_FLOAT ? cur.fval : (double)cur.ival;
                 acc = val_float(a + c);
+            } else if (acc.kind == VAL_ARRAY && cur.kind == VAL_ARRAY) {
+                /* Array concatenation: build new array */
+                Value result = val_array_new();
+                for (size_t j = 0; j < acc.array->len; j++) val_array_push(&result, acc.array->elems[j]);
+                for (size_t j = 0; j < cur.array->len; j++) val_array_push(&result, cur.array->elems[j]);
+                acc = result;
+            } else if (acc.kind == VAL_STRING && cur.kind == VAL_STRING) {
+                /* String concatenation */
+                size_t alen = strlen(acc.sval), clen = strlen(cur.sval);
+                char *buf = arena_alloc(ev->arena, alen + clen + 1);
+                memcpy(buf, acc.sval, alen);
+                memcpy(buf + alen, cur.sval, clen + 1);
+                acc = val_string(ev->arena, buf);
+            } else {
+                /* General: dispatch + method */
+                Value plus_args[1] = { cur };
+                Value r = dispatch_method(ev, env, acc, "+", plus_args, 1, NULL, site, 0, -1);
+                if (val_is_signal(r)) { *out = r; return 1; }
+                acc = r;
             }
         }
         *out = acc;
