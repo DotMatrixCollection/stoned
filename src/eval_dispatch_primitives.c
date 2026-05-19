@@ -1663,7 +1663,19 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (value_is_regexp(args[0])) {
-            Value md = regexp_search_value(ev, args[0], recv, 0, site);
+            /* Optional second arg: start position */
+            Value search_str = recv;
+            if (argc >= 2 && args[1].kind == VAL_INT) {
+                int64_t pos = args[1].ival;
+                size_t slen2 = strlen(s);
+                if (pos < 0) pos = (int64_t)slen2 + pos;
+                if (pos < 0) pos = 0;
+                if ((size_t)pos <= slen2)
+                    search_str = val_string(ev->arena, s + (size_t)pos);
+                else
+                    search_str = val_string(ev->arena, "");
+            }
+            Value md = regexp_search_value(ev, args[0], search_str, 0, site);
             if (ev->errored) { *out = md; return 1; }
             if (blk && md.kind != VAL_NIL) {
                 Value r = call_block(ev, env, *blk, &md, 1, site);
