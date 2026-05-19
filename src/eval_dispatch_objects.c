@@ -5,6 +5,7 @@
 #include "utf8.h"
 #include <math.h>
 #include <time.h>
+#include <ucontext.h>
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -19,6 +20,40 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
+
+/* -------------------------------------------------------------------------
+ * Fiber coroutine implementation using POSIX ucontext
+ * ------------------------------------------------------------------------- */
+
+#define FIBER_STACK_SIZE (512 * 1024)
+
+typedef struct RubyFiber {
+    ucontext_t fiber_ctx;   /* fiber's execution context */
+    ucontext_t caller_ctx;  /* caller's context, saved on each resume */
+    char      *stack;       /* fiber's stack (FIBER_STACK_SIZE bytes) — malloc'd */
+    int        alive;       /* 1 = can be resumed, 0 = dead */
+    Value      result;      /* value passed between resume and yield */
+    Value      block;       /* the block to execute */
+    Eval      *ev;          /* interpreter back-pointer */
+    Env       *env;         /* environment at creation time */
+    Value      self_obj;    /* the Fiber VAL_OBJECT (for Fiber.current) */
+} RubyFiber;
+
+/* fiber_entry is called as the start function of a new ucontext.
+ * makecontext passes the RubyFiber pointer split into two uint32_t halves
+ * because makecontext arguments are int-sized. */
+static void fiber_entry(uint32_t hi, uint32_t lo) {
+    RubyFiber *f = (RubyFiber *)(((uintptr_t)hi << 32) | (uintptr_t)lo);
+    Value arg = f->result;
+    /* Call the block with the first resume argument */
+    Value result = call_block(f->ev, f->env, f->block,
+                              arg.kind != VAL_NIL ? &arg : NULL,
+                              arg.kind != VAL_NIL ? 1 : 0, NULL);
+    f->alive = 0;
+    f->result = result; /* may be a signal (exception) — propagated by resume */
+    swapcontext(&f->fiber_ctx, &f->caller_ctx);
+    /* unreachable */
+}
 
 static uint64_t method_string_hash(const char *s) {
     uint64_t h = 1469598103934665603ULL;
@@ -3142,6 +3177,63 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             return 1;
         }
     }
+    /* Fiber.new { |x| ... } — creates a fiber coroutine */
+    if (strcmp(recv.klass->name, "Fiber") == 0 && strcmp(name, "new") == 0) {
+        if (!blk) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "tried to create Fiber without a block");
+            return 1;
+        }
+        RubyFiber *fiber = arena_alloc(ev->arena, sizeof(RubyFiber));
+        memset(fiber, 0, sizeof(RubyFiber));
+        fiber->block = *blk;
+        fiber->alive = 1;
+        fiber->ev    = ev;
+        fiber->env   = env;
+        fiber->result = val_nil();
+
+        /* TODO: free fiber->stack when fiber is GC'd (currently a leak) */
+        fiber->stack = malloc(FIBER_STACK_SIZE);
+        if (!fiber->stack) {
+            *out = eval_raise_class(ev, site, "FiberError", "can't allocate fiber stack");
+            return 1;
+        }
+
+        getcontext(&fiber->fiber_ctx);
+        fiber->fiber_ctx.uc_stack.ss_sp   = fiber->stack;
+        fiber->fiber_ctx.uc_stack.ss_size = FIBER_STACK_SIZE;
+        fiber->fiber_ctx.uc_link          = NULL; /* we return via swapcontext */
+
+        uint32_t hi = (uint32_t)((uintptr_t)fiber >> 32);
+        uint32_t lo = (uint32_t)((uintptr_t)fiber & 0xFFFFFFFFU);
+        makecontext(&fiber->fiber_ctx, (void(*)())fiber_entry, 2, hi, lo);
+
+        Value obj = val_object(ev->arena, recv);
+        obj.obj->native = fiber;
+        fiber->self_obj = obj;
+        *out = obj;
+        return 1;
+    }
+
+    /* Fiber.yield(val) — suspends the current fiber, returns val to resume caller */
+    if (strcmp(recv.klass->name, "Fiber") == 0 && strcmp(name, "yield") == 0) {
+        RubyFiber *f = ev->current_fiber;
+        if (!f) {
+            *out = eval_raise_class(ev, site, "FiberError", "can't yield from main fiber");
+            return 1;
+        }
+        f->result = argc > 0 ? args[0] : val_nil();
+        swapcontext(&f->fiber_ctx, &f->caller_ctx);
+        /* resumed — f->result now holds the value passed to the next resume */
+        *out = f->result;
+        return 1;
+    }
+
+    /* Fiber.current — returns the currently running Fiber object, or nil for main */
+    if (strcmp(recv.klass->name, "Fiber") == 0 && strcmp(name, "current") == 0) {
+        *out = ev->current_fiber ? ev->current_fiber->self_obj : val_nil();
+        return 1;
+    }
+
     if (strcmp(recv.klass->name, "Proc") == 0 && strcmp(name, "new") == 0) {
         if (!blk) {
             *out = eval_raise_class(ev, site, "ArgumentError", "Proc.new requires a block");
@@ -3777,7 +3869,8 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     if (sm.array->elems[i].kind != VAL_STRING) continue;
                     Value v = val_nil();
                     val_object_get_ivar(recv, sm.array->elems[i].sval, &v);
-                    bi += snprintf(buf+bi, sizeof(buf)-bi, " %s=%s",
+                    bi += snprintf(buf+bi, sizeof(buf)-bi, "%s %s=%s",
+                                   i > 0 ? "," : "",
                                    sm.array->elems[i].sval, val_inspect(ev->arena, v));
                 }
                 bi += snprintf(buf+bi, sizeof(buf)-bi, ">");
@@ -3866,6 +3959,37 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     /* Method and UnboundMethod objects */
     if (recv.obj->klass.kind == VAL_CLASS) {
         const char *kname = recv.obj->klass.klass->name;
+
+        /* Fiber instance methods: alive?, resume */
+        if (strcmp(kname, "Fiber") == 0) {
+            RubyFiber *f = (RubyFiber *)recv.obj->native;
+
+            if (strcmp(name, "alive?") == 0) {
+                *out = val_bool(f && f->alive);
+                return 1;
+            }
+            if (strcmp(name, "resume") == 0) {
+                if (!f || !f->alive) {
+                    *out = eval_raise_class(ev, site, "FiberError", "dead fiber called");
+                    return 1;
+                }
+                /* Pass first argument to fiber; multiple args are not wrapped here
+                 * (MRI would wrap them in an array — TODO if needed) */
+                f->result = argc > 0 ? args[0] : val_nil();
+
+                /* Track currently running fiber */
+                RubyFiber *prev = ev->current_fiber;
+                ev->current_fiber = f;
+
+                swapcontext(&f->caller_ctx, &f->fiber_ctx);
+
+                /* Back from fiber (either Fiber.yield or block returned) */
+                ev->current_fiber = prev;
+
+                *out = f->result;
+                return 1;
+            }
+        }
 
         if (strcmp(kname, "Binding") == 0) {
             NativeBinding *binding = (NativeBinding *)recv.obj->native;

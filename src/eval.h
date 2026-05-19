@@ -6,6 +6,9 @@
 #include "ast.h"
 #include <stdio.h>
 
+/* Forward declaration for Fiber coroutine support */
+struct RubyFiber;
+
 #define EVAL_MAX_DEPTH 512
 
 typedef struct {
@@ -48,6 +51,7 @@ typedef struct {
     const char  *runtime_root;
     LoadedFile  *loaded_files;
     AtExitHandler *at_exit_handlers;
+    struct RubyFiber *current_fiber;  /* currently running fiber, NULL = main fiber */
 } Eval;
 
 void  eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, const char *exec_path,

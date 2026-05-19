@@ -1531,7 +1531,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError", "StopIteration", "EOFError",
         "IndexError", "SystemExit", "SystemStackError", "IOError", "EncodingError", "FrozenError",
         "SystemCallError", "SignalException", "Interrupt", "SyntaxError", "ScriptError",
-        "NotImplementedError",
+        "NotImplementedError", "FiberError", "Fiber",
         NULL
     };
     for (int i = 0; builtins[i]; i++) {
@@ -1583,6 +1583,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
             {"KeyError","IndexError"},
             {"SignalException","Exception"},  {"Interrupt","SignalException"},
             {"BasicObject","Object"},
+            {"FiberError","StandardError"},   {"Fiber","Object"},
             {NULL, NULL}
         };
         for (int hi = 0; hierarchy[hi][0]; hi++) {
