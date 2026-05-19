@@ -1433,6 +1433,34 @@ int primitive_class_responds_to_name(const char *klass_name, const char *name) {
     return 0;
 }
 
+static const char *primitive_class_methods_for_class(const char *klass_name) {
+    if (strcmp(klass_name, "Module") == 0)
+        return "constants,instance_methods,public_instance_methods,private_instance_methods,protected_instance_methods,ancestors,include?,included_modules,name";
+    if (strcmp(klass_name, "Class") == 0)
+        return "superclass,instance_methods,public_instance_methods,private_instance_methods,protected_instance_methods,new,name,ancestors";
+    if (strcmp(klass_name, "Dir") == 0)
+        return "pwd,chdir,mkdir,glob";
+    return NULL;
+}
+
+int primitive_class_method_responds_to_name(const char *klass_name, const char *name) {
+    const char *prim_list = primitive_class_methods_for_class(klass_name);
+    if (!prim_list || !name)
+        return 0;
+    const char *p = prim_list;
+    size_t name_len = strlen(name);
+    while (*p) {
+        const char *end = strchr(p, ',');
+        size_t len = end ? (size_t)(end - p) : strlen(p);
+        if (len == name_len && strncmp(p, name, len) == 0)
+            return 1;
+        if (!end)
+            break;
+        p = end + 1;
+    }
+    return 0;
+}
+
 static int primitive_unbound_method_name(const char *name) {
     static const char *names[] = {
         "inspect", "to_s", "class",

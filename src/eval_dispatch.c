@@ -670,6 +670,10 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
                 return 1;
             k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL;
         }
+        for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+            if (primitive_class_method_responds_to_name(k->name, name))
+                return 1;
+        }
         return 0;
     }
 
@@ -2265,6 +2269,33 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                 }
                 if (!include_super) break;
                 kc = (kc->superclass.kind == VAL_CLASS) ? kc->superclass.klass : NULL;
+            }
+            if (include_super && (vis_mask & 1)) {
+                for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+                    static const char *dummy = "";
+                    (void)dummy;
+                    const char *plist = NULL;
+                    if (strcmp(k->name, "Module") == 0)
+                        plist = "constants,instance_methods,public_instance_methods,private_instance_methods,protected_instance_methods,ancestors,include?,included_modules,name";
+                    else if (strcmp(k->name, "Class") == 0)
+                        plist = "superclass,instance_methods,public_instance_methods,private_instance_methods,protected_instance_methods,new,name,ancestors";
+                    else if (strcmp(k->name, "Dir") == 0)
+                        plist = "pwd,chdir,mkdir,glob";
+                    if (!plist) continue;
+                    for (const char *p = plist; *p; ) {
+                        const char *end = strchr(p, ',');
+                        size_t len = end ? (size_t)(end - p) : strlen(p);
+                        if (len < 128) {
+                            char *mname = arena_alloc(ev->arena, len + 1);
+                            memcpy(mname, p, len);
+                            mname[len] = '\0';
+                            if (!sym_in_array(&arr, mname))
+                                val_array_push(&arr, val_symbol(mname));
+                        }
+                        if (!end) break;
+                        p = end + 1;
+                    }
+                }
             }
         }
         if (recv.kind == VAL_OBJECT) {

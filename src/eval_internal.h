@@ -147,6 +147,7 @@ void collect_own_instance_methods(Env *class_env, Value *arr, int vis_mask);
 void collect_all_instance_methods(RubyClass *klass, Value *arr, int vis_mask,
                                   RubyClass **visited, int *nv);
 int primitive_class_responds_to_name(const char *klass_name, const char *name);
+int primitive_class_method_responds_to_name(const char *klass_name, const char *name);
 Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name, int forced_arity);
 int value_is_regexp(Value v);
 Value regexp_search_value(Eval *ev, Value regexp, Value string, int return_index, Node *site);
