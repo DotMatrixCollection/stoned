@@ -1221,6 +1221,7 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
             s = dispatch_inspect(ev, env, args[i], site);
             fprintf(ev->out, "%s\n", s);
         }
+        if (argc == 0) return val_nil();
         if (argc == 1) return args[0];
         Value arr = val_array_new();
         for (int i = 0; i < argc; i++) val_array_push(&arr, args[i]);
