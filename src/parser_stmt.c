@@ -95,6 +95,7 @@ static const char *method_name_from_token(Parser *p, Token tok) {
         case TOK_TILDE: return "~";
         case TOK_MATCH: return "=~";
         case TOK_NMATCH: return "!~";
+        case TOK_BANG: return "!";
         case TOK_LBRACKET:
             if (match(p, TOK_RBRACKET)) {
                 if (match(p, TOK_EQ)) return "[]=";
@@ -375,6 +376,20 @@ Node *parse_stmt(Parser *p) {
             return NULL;
         }
         Token def_suffix_tok = peek(p);
+        /* def -@ / def +@ / def !@ / def ~@ — unary operator definitions:
+           the operator token is immediately followed by a bare '@' (TOK_IVAR with empty sval) */
+        if (def_suffix_tok.kind == TOK_IVAR && def_suffix_tok.sval && def_suffix_tok.sval[0] == '\0' &&
+            (strcmp(def_name, "-") == 0 || strcmp(def_name, "+") == 0 ||
+             strcmp(def_name, "!") == 0 || strcmp(def_name, "~") == 0) &&
+            token_adjacent(name_tok, def_suffix_tok)) {
+            advance(p); /* consume the bare '@' */
+            size_t nlen = strlen(def_name);
+            char *buf = arena_alloc(p->arena, nlen + 2);
+            memcpy(buf, def_name, nlen);
+            buf[nlen] = '@'; buf[nlen + 1] = '\0';
+            def_name = buf;
+            def_suffix_tok = peek(p);
+        }
         int setter_suffix = 0;
         if ((name_tok.kind == TOK_IDENT || name_tok.kind == TOK_CONST) &&
             def_suffix_tok.kind == TOK_EQ) {

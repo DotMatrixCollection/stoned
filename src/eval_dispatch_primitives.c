@@ -167,7 +167,14 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     }
     if (strcmp(name, "to_f") == 0) { *out = val_float((double)n); return 1; }
     if (strcmp(name, "to_i") == 0 || strcmp(name, "to_int") == 0) { *out = recv; return 1; }
-    if (strcmp(name, "to_r") == 0) { *out = recv; return 1; } /* simplification: n/1 */
+    if (strcmp(name, "to_r") == 0) {
+        Value rat_class;
+        if (env_get(ev->top_env, "Rational", &rat_class) && rat_class.kind == VAL_CLASS)
+            *out = dispatch_method(ev, env, rat_class, "new", &recv, 1, NULL, site, 0, 1);
+        else
+            *out = recv;
+        return 1;
+    }
     if (argc == 1) {
         Value r = args[0];
         int both_int = (r.kind == VAL_INT);
@@ -330,13 +337,24 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     }
     if (strcmp(name, "integer?") == 0) { *out = val_true(); return 1; }
     if (strcmp(name, "to_r") == 0) {
-        /* Return a simplified Rational representation as a string for now */
-        char buf[32]; snprintf(buf, sizeof(buf), "(%lld/1)", (long long)n);
-        *out = val_string(ev->arena, buf); return 1;
+        Value rat_class;
+        if (env_get(ev->top_env, "Rational", &rat_class) && rat_class.kind == VAL_CLASS) {
+            *out = dispatch_method(ev, env, rat_class, "new", &recv, 1, NULL, site, 0, 1);
+        } else {
+            *out = recv; /* fallback before prelude */
+        }
+        return 1;
     }
     if (strcmp(name, "to_c") == 0) {
-        char buf[32]; snprintf(buf, sizeof(buf), "(%lld+0i)", (long long)n);
-        *out = val_string(ev->arena, buf); return 1;
+        Value cplx_class;
+        if (env_get(ev->top_env, "Complex", &cplx_class) && cplx_class.kind == VAL_CLASS) {
+            Value cargs[2] = {recv, val_int(0)};
+            *out = dispatch_method(ev, env, cplx_class, "new", cargs, 2, NULL, site, 0, 1);
+        } else {
+            char buf[32]; snprintf(buf, sizeof(buf), "(%lld+0i)", (long long)n);
+            *out = val_string(ev->arena, buf);
+        }
+        return 1;
     }
     if (strcmp(name, "ceil") == 0 || strcmp(name, "floor") == 0 ||
         strcmp(name, "truncate") == 0 || strcmp(name, "round") == 0) {

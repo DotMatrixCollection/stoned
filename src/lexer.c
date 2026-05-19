@@ -1156,11 +1156,14 @@ static Token scan(Lexer *l) {
             SIMPLE(TOK_STAR);
 
         case '/':
-            if (l->state == LEX_EXPR_BEG || l->state == LEX_EXPR_MID ||
-                (l->state == LEX_EXPR_ARG && l->had_space &&
-                 /* '/ ' (slash followed by space) is division, not regex start */
-                 peek_ch(l) != ' ' && peek_ch(l) != '\t'))
-                return scan_regexp(l, start, sline, scol);
+            /* After 'def'/'alias', / is a method name, never a regexp */
+            if (!l->after_def) {
+                if (l->state == LEX_EXPR_BEG || l->state == LEX_EXPR_MID ||
+                    (l->state == LEX_EXPR_ARG && l->had_space &&
+                     /* '/ ' (slash followed by space) is division, not regex start */
+                     peek_ch(l) != ' ' && peek_ch(l) != '\t'))
+                    return scan_regexp(l, start, sline, scol);
+            }
             if (peek_ch(l) == '=') { advance(l); l->state = LEX_EXPR_BEG; SIMPLE(TOK_SLASH_EQ); }
             l->state = LEX_EXPR_BEG;
             SIMPLE(TOK_SLASH);

@@ -1089,7 +1089,40 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         Value self = val_nil();
         env_get(env, "self", &self);
+        /* Top-level: self is nil; also search top_env for user-defined methods */
+        if (self.kind == VAL_NIL && argc > 0 &&
+            (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING)) {
+            const char *mname = args[0].sval;
+            Value m;
+            if (env_get(ev->top_env, mname, &m) && m.kind == VAL_METHOD) {
+                Value m_klass;
+                if (!env_get(ev->top_env, "Method", &m_klass) || m_klass.kind != VAL_CLASS)
+                    return val_nil();
+                Value obj = val_object(ev->arena, m_klass);
+                val_object_set_ivar(ev->arena, obj, "__receiver__", self);
+                val_object_set_ivar(ev->arena, obj, "__method_name__", val_string(ev->arena, mname));
+                val_object_set_ivar(ev->arena, obj, "__method__", m);
+                Value obj_class;
+                if (env_get(ev->top_env, "Object", &obj_class) && obj_class.kind == VAL_CLASS)
+                    val_object_set_ivar(ev->arena, obj, "__owner__", obj_class);
+                return obj;
+            }
+        }
         return dispatch_method(ev, env, self, "method", args, argc, blk, site, 0, 1);
+    }
+    if (strcmp(name, "respond_to?") == 0) {
+        if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+        if (!mname) return val_false();
+        Value self = val_nil();
+        env_get(env, "self", &self);
+        if (self.kind != VAL_NIL)
+            return dispatch_method(ev, env, self, "respond_to?", args, argc, blk, site, 0, 1);
+        /* Top-level: check kernel methods and user-defined top-level defs */
+        if (val_responds_to(ev, self, mname, 1)) return val_true();
+        Value m;
+        if (env_get(ev->top_env, mname, &m) && m.kind == VAL_METHOD) return val_true();
+        return val_false();
     }
     if (strcmp(name, "trap") == 0) {
         return val_string(ev->arena, "DEFAULT");
@@ -1348,6 +1381,22 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         if (!val_is_signal(converted) && converted.kind == VAL_HASH) return converted;
         ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
         return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into Hash", value_class_name(ev, v));
+    }
+    if (strcmp(name, "Rational") == 0) {
+        Value rat_class;
+        if (!env_get(ev->top_env, "Rational", &rat_class) || rat_class.kind != VAL_CLASS)
+            return eval_raise_class(ev, site, "NameError", "uninitialized constant Rational");
+        if (argc < 1 || argc > 2)
+            return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        return dispatch_method(ev, env, rat_class, "new", args, argc, blk, site, 0, 1);
+    }
+    if (strcmp(name, "Complex") == 0) {
+        Value cplx_class;
+        if (!env_get(ev->top_env, "Complex", &cplx_class) || cplx_class.kind != VAL_CLASS)
+            return eval_raise_class(ev, site, "NameError", "uninitialized constant Complex");
+        if (argc < 1 || argc > 2)
+            return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+        return dispatch_method(ev, env, cplx_class, "new", args, argc, blk, site, 0, 1);
     }
     if (strcmp(name, "raise") == 0 || strcmp(name, "fail") == 0) {
         const char *class_name = "RuntimeError";
@@ -2753,13 +2802,13 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         static const char *kernel_names[] = {
-            "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "Hash", "format", "sprintf", "printf", "raise", "proc", "lambda", "loop", "rand", "srand", "open", "exit", "exit!", "abort", "include", "prepend", "extend",
+            "puts", "print", "p", "pp", "warn", "Integer", "Float", "String", "Array", "Hash", "Rational", "Complex", "format", "sprintf", "printf", "raise", "proc", "lambda", "loop", "rand", "srand", "open", "exit", "exit!", "abort", "include", "prepend", "extend",
             "require", "require_relative", "public", "private", "protected",
             "private_class_method", "public_class_method", "protected_class_method",
             "attr_reader", "attr_writer", "attr_accessor", "alias_method", "module_function", "autoload",
             "deprecate_constant", "private_constant", "public_constant",
             "__dir__", "__method__", "__FILE__", "__LINE__", "__callee__", "binding", "eval", "`",
-            "trap", "at_exit", "sleep", "catch", "throw", "method", "caller", "caller_locations",
+            "trap", "at_exit", "sleep", "catch", "throw", "method", "respond_to?", "caller", "caller_locations",
             "system", "spawn", "wait", "waitpid", "load", NULL
         };
         for (int i = 0; kernel_names[i]; i++) {
