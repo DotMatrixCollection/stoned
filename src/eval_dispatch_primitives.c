@@ -615,16 +615,20 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = val_string_n(ev->arena, buf, used);
         return 1;
     }
-    if (strcmp(name, "upcase!") == 0) {
+    if (strcmp(name, "upcase!") == 0 || strcmp(name, "downcase!") == 0 ||
+        strcmp(name, "capitalize!") == 0 || strcmp(name, "swapcase!") == 0 ||
+        strcmp(name, "reverse!") == 0 || strcmp(name, "chomp!") == 0 ||
+        strcmp(name, "chop!") == 0 || strcmp(name, "strip!") == 0 ||
+        strcmp(name, "lstrip!") == 0 || strcmp(name, "rstrip!") == 0) {
+        if (recv.frozen)
+            { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String: \"%s\"", s); return 1; }
+        const char *nonbang = name;
+        char nb[32]; size_t nl = strlen(name) - 1;
+        memcpy(nb, name, nl); nb[nl] = '\0';
         Value r = val_nil();
-        dispatch_string(ev, env, recv, "upcase", NULL, 0, NULL, NULL, &r);
+        dispatch_string(ev, env, recv, nb, NULL, 0, NULL, NULL, &r);
         *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
-        return 1;
-    }
-    if (strcmp(name, "downcase!") == 0) {
-        Value r = val_nil();
-        dispatch_string(ev, env, recv, "downcase", NULL, 0, NULL, NULL, &r);
-        *out = (r.kind == VAL_STRING && strcmp(r.sval, s) != 0) ? r : val_nil();
+        (void)nonbang;
         return 1;
     }
     if (strcmp(name, "strip") == 0) {
@@ -1600,6 +1604,8 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
     }
     if (strcmp(name, "gsub!") == 0 || strcmp(name, "sub!") == 0) {
+        if (recv.frozen)
+            { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String: \"%s\"", s); return 1; }
         /* Delegate to non-bang, return nil if string unchanged */
         const char *nonbang = strcmp(name, "gsub!") == 0 ? "gsub" : "sub";
         Value r = val_nil();
