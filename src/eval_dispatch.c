@@ -552,6 +552,10 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "map", "collect", "select", "filter", "reject",
         "to_s", "inspect", NULL
     };
+    static const char *symbol_methods[] = {
+        "to_s", "to_sym", "to_proc", "id2name", "inspect", "length", "size",
+        "upcase", "downcase", "capitalize", "match", "match?", "=~", "[]", NULL
+    };
     static const char *nil_methods[] = {
         "nil?", "to_s", "to_str", "to_a", "to_h", "to_i", "to_f", "to_r", "to_c",
         "inspect", "freeze", "frozen?", "dup", "class", "is_a?", "kind_of?",
@@ -569,6 +573,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     else if (recv.kind == VAL_ARRAY) methods = arr_methods;
     else if (recv.kind == VAL_HASH) methods = hash_methods;
     else if (recv.kind == VAL_RANGE) methods = range_methods;
+    else if (recv.kind == VAL_SYMBOL) methods = symbol_methods;
     else if (recv.kind == VAL_BLOCK) methods = proc_methods;
     else if (recv.kind == VAL_NIL) methods = nil_methods;
     else if (recv.kind == VAL_BOOL) methods = bool_methods;
