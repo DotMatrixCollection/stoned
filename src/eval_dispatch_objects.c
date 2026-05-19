@@ -1395,12 +1395,30 @@ static const char *primitive_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Binding") == 0)
         return "eval,local_variable_get,local_variable_set,local_variables,source_location,dup,clone";
     if (strcmp(klass_name, "IO") == 0)
-        return "puts,print,write,<<,flush,sync,sync=,fileno,to_i,to_int,isatty,tty?,winsize,external_encoding,internal_encoding,wait_readable,ungetc,tell,pos,seek,rewind,eof?,gets,readline,readlines,read,getc,readchar,getbyte,readbyte,each_byte,each_char,each_line,close,closed?,raw,raw!,cooked,cooked!";
+        return "puts,print,write,<<,flush,sync,sync=,fileno,to_i,to_int,isatty,tty?,winsize,external_encoding,internal_encoding,wait_readable,ungetc,tell,pos,seek,rewind,eof?,gets,readline,readlines,read,getc,readchar,getbyte,readbyte,each_byte,each_char,each_line,close,closed?,path,raw,raw!,cooked,cooked!";
     if (strcmp(klass_name, "Method") == 0)
         return "name,original_name,owner,receiver,unbind,call,[],===,bind_call,arity,parameters,super_method,to_proc,curry,source_location,inspect,to_s,clone,dup,hash,eql?";
     if (strcmp(klass_name, "UnboundMethod") == 0)
         return "name,original_name,owner,arity,parameters,super_method,bind_call,bind,source_location,inspect,to_s,clone,dup,hash,eql?";
     return NULL;
+}
+
+int primitive_class_responds_to_name(const char *klass_name, const char *name) {
+    const char *prim_list = primitive_methods_for_class(klass_name);
+    if (!prim_list || !name)
+        return 0;
+    const char *p = prim_list;
+    size_t name_len = strlen(name);
+    while (*p) {
+        const char *end = strchr(p, ',');
+        size_t len = end ? (size_t)(end - p) : strlen(p);
+        if (len == name_len && strncmp(p, name, len) == 0)
+            return 1;
+        if (!end)
+            break;
+        p = end + 1;
+    }
+    return 0;
 }
 
 static int primitive_unbound_method_name(const char *name) {

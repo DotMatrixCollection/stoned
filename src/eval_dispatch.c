@@ -642,6 +642,10 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
                 for (int i = 0; unbound_method_obj_methods[i]; i++)
                     if (strcmp(name, unbound_method_obj_methods[i]) == 0) return 1;
             }
+            for (RubyClass *k = recv.obj->klass.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+                if (primitive_class_responds_to_name(k->name, name))
+                    return 1;
+            }
             if (probe.kind != VAL_NIL)
                 return builtin_primitive_responds_to(probe, name);
         }
