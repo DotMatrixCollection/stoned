@@ -481,7 +481,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - `Float` Infinity/NaN now renders as `"Infinity"`, `"-Infinity"`, `"NaN"` (not platform C output)
 - `Integer(nil)` now raises TypeError
 - `format`/`sprintf` `%b` with width/padding now works correctly
-- `Method#name`, `Method#owner`, `Method#receiver`, `Method#arity`, `Method#parameters`, `Method#source_location`, `Method#unbind`, method-object equality/hash semantics; `UnboundMethod#name`, `#owner`, `#arity`, `#parameters`, `#source_location`, `#bind`, `#bind_call`
+- `Method#name`, `Method#owner`, `Method#receiver`, `Method#arity`, `Method#parameters`, `Method#source_location`, `Method#super_method`, `Method#unbind`, method-object equality/hash semantics; `UnboundMethod#name`, `#owner`, `#arity`, `#parameters`, `#source_location`, `#super_method`, `#bind`, `#bind_call`
 - `Comparable#==` added to prelude (uses `<=>`)
 - `Struct.new(keyword_init: true)` strips the option hash from member names; keyword_init structs accept keyword args at construction
 - `Integer(str, base)` accepts optional base argument
@@ -520,7 +520,6 @@ These were previously roadmap items and are now implemented in the current tree:
 - `Float#to_s` → `"Infinity"`, `"-Infinity"`, `"NaN"` (MRI-compatible)
 - `Integer(nil)` raises TypeError; `format %b` with width/padding fixed
 - String bang methods raise FrozenError on frozen strings
-- `Method#name`, `#owner`, `#receiver`, `#unbind`; `UnboundMethod#name`, `#owner`
 - `Class#include?` checks transitively included modules
 - `module_function` (no-arg) creates module-level methods and marks private
 - `alias_method` works for built-in class methods via VAL_SYMBOL forwarding
