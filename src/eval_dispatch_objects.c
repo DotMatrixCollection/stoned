@@ -1331,6 +1331,56 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             def->def.body = body;
 
             env_define(a, klass.klass->class_env, member, val_method(def, ev->top_env, METHOD_PUBLIC, ev->current_file));
+
+            /* Writer: def member=(val); @member = val; end */
+            size_t writer_len = strlen(member);
+            char *writer_name = arena_alloc(a, writer_len + 2);
+            memcpy(writer_name, member, writer_len);
+            writer_name[writer_len] = '=';
+            writer_name[writer_len + 1] = '\0';
+
+            Node *param_node = arena_alloc(a, sizeof(Node));
+            memset(param_node, 0, sizeof(Node));
+            param_node->kind = NODE_PARAM;
+            param_node->param.name = "__struct_val__";
+
+            NodeList *param_list = arena_alloc(a, sizeof(NodeList));
+            param_list->node = param_node;
+            param_list->next = NULL;
+
+            Node *lhs_ivar = arena_alloc(a, sizeof(Node));
+            memset(lhs_ivar, 0, sizeof(Node));
+            lhs_ivar->kind = NODE_IVAR;
+            lhs_ivar->sval = member;
+
+            Node *rhs_param = arena_alloc(a, sizeof(Node));
+            memset(rhs_param, 0, sizeof(Node));
+            rhs_param->kind = NODE_LVAR;
+            rhs_param->sval = "__struct_val__";
+
+            Node *assign_node = arena_alloc(a, sizeof(Node));
+            memset(assign_node, 0, sizeof(Node));
+            assign_node->kind = NODE_ASSIGN;
+            assign_node->assign.target = lhs_ivar;
+            assign_node->assign.value  = rhs_param;
+
+            NodeList *w_stmts = arena_alloc(a, sizeof(NodeList));
+            w_stmts->node = assign_node;
+            w_stmts->next = NULL;
+
+            Node *w_body = arena_alloc(a, sizeof(Node));
+            memset(w_body, 0, sizeof(Node));
+            w_body->kind = NODE_BODY;
+            w_body->body.stmts = w_stmts;
+
+            Node *w_def = arena_alloc(a, sizeof(Node));
+            memset(w_def, 0, sizeof(Node));
+            w_def->kind = NODE_DEF;
+            w_def->def.name = writer_name;
+            w_def->def.params = param_list;
+            w_def->def.body = w_body;
+
+            env_define(a, klass.klass->class_env, writer_name, val_method(w_def, ev->top_env, METHOD_PUBLIC, ev->current_file));
         }
 
         env_define(ev->arena, klass.klass->class_env, "__struct_members__", members);
