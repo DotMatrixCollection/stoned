@@ -715,6 +715,25 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             if (strcmp(op, "-") == 0) {
                 if (operand.kind == VAL_INT) return val_int(-operand.ival);
                 if (operand.kind == VAL_FLOAT) return val_float(-operand.fval);
+                /* Built-in Complex -@ */
+                if (operand.kind == VAL_OBJECT && operand.obj->klass.kind == VAL_CLASS &&
+                    operand.obj->klass.klass && strcmp(operand.obj->klass.klass->name, "Complex") == 0) {
+                    Value cplx_class;
+                    if (env_get(ev->top_env, "Complex", &cplx_class) && cplx_class.kind == VAL_CLASS) {
+                        Value real_v = val_nil(), imag_v = val_nil();
+                        val_object_get_ivar(operand, "real", &real_v);
+                        val_object_get_ivar(operand, "imaginary", &imag_v);
+                        /* Negate real and imaginary parts inline */
+                        Value neg_r = (real_v.kind == VAL_INT) ? val_int(-real_v.ival)
+                                    : (real_v.kind == VAL_FLOAT) ? val_float(-real_v.fval)
+                                    : real_v;
+                        Value neg_i = (imag_v.kind == VAL_INT) ? val_int(-imag_v.ival)
+                                    : (imag_v.kind == VAL_FLOAT) ? val_float(-imag_v.fval)
+                                    : imag_v;
+                        Value args[2] = {neg_r, neg_i};
+                        return dispatch_method(ev, env, cplx_class, "new", args, 2, NULL, node, 0, 1);
+                    }
+                }
                 /* Try user-defined -@ method */
                 Value r = dispatch_method(ev, env, operand, "-@", NULL, 0, NULL, node, 0, 1);
                 if (!val_is_signal(r)) return r;
@@ -2569,6 +2588,17 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "\n"
         "  def initialize(num, den = 1)\n"
         "    raise ZeroDivisionError, 'divided by 0' if den == 0\n"
+        "    if num.is_a?(Float)\n"
+        "      # Convert float to integer fraction via 1e7 denominator\n"
+        "      scale = 10000000\n"
+        "      num = (num * scale).round\n"
+        "      den = den * scale\n"
+        "    end\n"
+        "    if den.is_a?(Float)\n"
+        "      scale = 10000000\n"
+        "      num = num * scale\n"
+        "      den = (den * scale).round\n"
+        "    end\n"
         "    if den < 0\n"
         "      num = -num\n"
         "      den = -den\n"
@@ -2677,6 +2707,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  def to_f; @numerator.to_f / @denominator.to_f; end\n"
         "  def to_i; @numerator / @denominator; end\n"
         "  def to_r; self; end\n"
+        "  def frozen?; true; end\n"
         "  def to_s; \"(#{@numerator}/#{@denominator})\"; end\n"
         "  def inspect; \"(#{@numerator}/#{@denominator})\"; end\n"
         "\n"
@@ -2858,6 +2889,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "def Complex(real, imag = 0)\n"
         "  Complex.new(real, imag)\n"
         "end\n"
+        "\n"
         "\n";
 
     size_t prelude_len =

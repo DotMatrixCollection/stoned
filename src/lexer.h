@@ -8,6 +8,8 @@ typedef enum {
     /* Literals */
     TOK_INT,
     TOK_FLOAT,
+    TOK_RATIONAL,     /* NUMBERr literal — ival holds integer value, fval for float rational */
+    TOK_IMAGINARY,    /* NUMBERi or NUMBERri literal — ival or fval holds the imaginary part */
     TOK_STRING,         /* single-quoted string (no interpolation) */
     TOK_SYMBOL,         /* :foo or :"foo" */
     TOK_WORDS,          /* %w[...] */

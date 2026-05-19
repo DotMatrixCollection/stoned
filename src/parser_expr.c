@@ -149,6 +149,8 @@ static int token_can_start_expr(Token t) {
         case TOK_SELF:
         case TOK_INT:
         case TOK_FLOAT:
+        case TOK_RATIONAL:
+        case TOK_IMAGINARY:
         case TOK_STRING:
         case TOK_REGEXP:
         case TOK_WORDS:
@@ -189,6 +191,8 @@ static int const_path_segment_is_call(Parser *p, Token name_tok) {
         nxt.kind == TOK_INTERP_BEG     ||
         nxt.kind == TOK_INT            ||
         nxt.kind == TOK_FLOAT          ||
+        nxt.kind == TOK_RATIONAL       ||
+        nxt.kind == TOK_IMAGINARY      ||
         nxt.kind == TOK_NIL            ||
         nxt.kind == TOK_TRUE           ||
         nxt.kind == TOK_FALSE          ||
@@ -511,6 +515,8 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
                     nxt.kind == TOK_INTERP_BEG     ||
                     nxt.kind == TOK_INT            ||
                     nxt.kind == TOK_FLOAT          ||
+                    nxt.kind == TOK_RATIONAL       ||
+                    nxt.kind == TOK_IMAGINARY      ||
                     nxt.kind == TOK_NIL            ||
                     nxt.kind == TOK_TRUE           ||
                     nxt.kind == TOK_FALSE          ||
@@ -549,6 +555,8 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
                     nxt.kind == TOK_INTERP_BEG     ||
                     nxt.kind == TOK_INT            ||
                     nxt.kind == TOK_FLOAT          ||
+                    nxt.kind == TOK_RATIONAL       ||
+                    nxt.kind == TOK_IMAGINARY      ||
                     nxt.kind == TOK_NIL            ||
                     nxt.kind == TOK_TRUE           ||
                     nxt.kind == TOK_FALSE          ||
@@ -671,6 +679,8 @@ static Node *parse_expr_continue(Parser *p, Node *left, int min_bp) {
                     nxt.kind == TOK_INTERP_BEG     ||
                     nxt.kind == TOK_INT            ||
                     nxt.kind == TOK_FLOAT          ||
+                    nxt.kind == TOK_RATIONAL       ||
+                    nxt.kind == TOK_IMAGINARY      ||
                     nxt.kind == TOK_NIL            ||
                     nxt.kind == TOK_TRUE           ||
                     nxt.kind == TOK_FALSE          ||
@@ -939,6 +949,36 @@ Node *parse_primary(Parser *p) {
     switch (t.kind) {
         case TOK_INT: { advance(p); Node *n = node_new(p->arena, NODE_INT, s); n->ival = t.ival; return n; }
         case TOK_FLOAT: { advance(p); Node *n = node_new(p->arena, NODE_FLOAT, s); n->fval = t.fval; return n; }
+        case TOK_RATIONAL: {
+            advance(p);
+            Node *n = node_new(p->arena, NODE_CALL, s);
+            n->call.recv = NULL;
+            n->call.method = "Rational";
+            Node *num_node = node_new(p->arena, t.fval != 0.0 ? NODE_FLOAT : NODE_INT, s);
+            if (t.fval != 0.0) num_node->fval = t.fval;
+            else num_node->ival = t.ival;
+            Node *den_node = node_new(p->arena, NODE_INT, s);
+            den_node->ival = 1;
+            n->call.args = nodelist_append(p->arena, NULL, num_node);
+            n->call.args = nodelist_append(p->arena, n->call.args, den_node);
+            n->call.block = NULL;
+            return n;
+        }
+        case TOK_IMAGINARY: {
+            advance(p);
+            Node *n = node_new(p->arena, NODE_CALL, s);
+            n->call.recv = NULL;
+            n->call.method = "Complex";
+            Node *zero_node = node_new(p->arena, NODE_INT, s);
+            zero_node->ival = 0;
+            Node *imag_node = node_new(p->arena, t.fval != 0.0 ? NODE_FLOAT : NODE_INT, s);
+            if (t.fval != 0.0) imag_node->fval = t.fval;
+            else imag_node->ival = t.ival;
+            n->call.args = nodelist_append(p->arena, NULL, zero_node);
+            n->call.args = nodelist_append(p->arena, n->call.args, imag_node);
+            n->call.block = NULL;
+            return n;
+        }
         case TOK_STRING: {
             advance(p);
             Node *str = node_new(p->arena, NODE_STRING, s);
@@ -1085,6 +1125,7 @@ Node *parse_primary(Parser *p) {
                 int can_be_arg = lparen_as_arg || lbracket_as_arg || nxt.kind == TOK_SYMBOL || nxt.kind == TOK_STRING ||
                                  nxt.kind == TOK_REGEXP || nxt.kind == TOK_WORDS || nxt.kind == TOK_SYMBOLS ||
                                  nxt.kind == TOK_INTERP_BEG || nxt.kind == TOK_INT || nxt.kind == TOK_FLOAT ||
+                                 nxt.kind == TOK_RATIONAL || nxt.kind == TOK_IMAGINARY ||
                                  nxt.kind == TOK_NIL || nxt.kind == TOK_TRUE || nxt.kind == TOK_FALSE ||
                                  nxt.kind == TOK_SELF || nxt.kind == TOK_IVAR || nxt.kind == TOK_GVAR ||
                                  nxt.kind == TOK_COLON2 ||
@@ -1126,6 +1167,7 @@ Node *parse_primary(Parser *p) {
             int can_be_arg = lparen_as_arg || lbracket_as_arg || nxt.kind == TOK_SYMBOL || nxt.kind == TOK_STRING ||
                              nxt.kind == TOK_REGEXP || nxt.kind == TOK_WORDS || nxt.kind == TOK_SYMBOLS ||
                              nxt.kind == TOK_INTERP_BEG || nxt.kind == TOK_INT || nxt.kind == TOK_FLOAT ||
+                             nxt.kind == TOK_RATIONAL || nxt.kind == TOK_IMAGINARY ||
                              nxt.kind == TOK_NIL || nxt.kind == TOK_TRUE || nxt.kind == TOK_FALSE ||
                              nxt.kind == TOK_SELF || nxt.kind == TOK_IVAR || nxt.kind == TOK_GVAR ||
                              nxt.kind == TOK_COLON2 ||

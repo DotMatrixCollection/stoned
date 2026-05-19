@@ -1957,7 +1957,14 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         return recv;
     }
     if (strcmp(name, "frozen?") == 0) {
-        if (recv.kind == VAL_OBJECT) return val_bool(recv.obj->frozen);
+        if (recv.kind == VAL_OBJECT) {
+            /* Rational and Complex are value objects — always frozen in MRI */
+            if (recv.obj->klass.kind == VAL_CLASS && recv.obj->klass.klass &&
+                (strcmp(recv.obj->klass.klass->name, "Rational") == 0 ||
+                 strcmp(recv.obj->klass.klass->name, "Complex") == 0))
+                return val_true();
+            return val_bool(recv.obj->frozen);
+        }
         if (recv.kind == VAL_ARRAY)  return val_bool(recv.array->frozen);
         if (recv.kind == VAL_HASH)   return val_bool(recv.hash->frozen);
         /* integers, floats, symbols, nil, true, false are always frozen */
@@ -2577,6 +2584,19 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
         Value argv[1];
         argv[0] = right;
         return dispatch_method(ev, env, left, op, argv, 1, NULL, node, 0, 1);
+    }
+
+    /* Coerce: numeric op Complex/Rational — delegate to dispatch_method so Ruby methods handle it */
+    if (left.kind == VAL_INT || left.kind == VAL_FLOAT) {
+        if (right.kind == VAL_OBJECT && right.obj->klass.kind == VAL_CLASS && right.obj->klass.klass) {
+            const char *rname = right.obj->klass.klass->name;
+            if (strcmp(rname, "Complex") == 0 || strcmp(rname, "Rational") == 0) {
+                if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
+                    strcmp(op, "*") == 0 || strcmp(op, "/") == 0) {
+                    return dispatch_method(ev, env, left, op, &right, 1, NULL, node, 0, 1);
+                }
+            }
+        }
     }
 
     double lf = 0;

@@ -177,6 +177,35 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     }
     if (argc == 1) {
         Value r = args[0];
+        /* Coerce: Integer op Complex → Complex(n,0) op complex */
+        if ((strcmp(name, "+") == 0 || strcmp(name, "-") == 0 ||
+             strcmp(name, "*") == 0 || strcmp(name, "/") == 0) &&
+            r.kind == VAL_OBJECT && r.obj->klass.kind == VAL_CLASS &&
+            r.obj->klass.klass && strcmp(r.obj->klass.klass->name, "Complex") == 0) {
+            Value cplx_class;
+            if (env_get(ev->top_env, "Complex", &cplx_class) && cplx_class.kind == VAL_CLASS) {
+                Value cargs[2] = {recv, val_int(0)};
+                Value self_cplx = dispatch_method(ev, env, cplx_class, "new", cargs, 2, NULL, site, 0, 1);
+                if (!val_is_signal(self_cplx)) {
+                    *out = dispatch_method(ev, env, self_cplx, name, &r, 1, NULL, site, 0, 1);
+                    return 1;
+                }
+            }
+        }
+        /* Coerce: Integer op Rational → Rational(n,1) op rational */
+        if ((strcmp(name, "+") == 0 || strcmp(name, "-") == 0 ||
+             strcmp(name, "*") == 0 || strcmp(name, "/") == 0) &&
+            r.kind == VAL_OBJECT && r.obj->klass.kind == VAL_CLASS &&
+            r.obj->klass.klass && strcmp(r.obj->klass.klass->name, "Rational") == 0) {
+            Value rat_class;
+            if (env_get(ev->top_env, "Rational", &rat_class) && rat_class.kind == VAL_CLASS) {
+                Value self_rat = dispatch_method(ev, env, rat_class, "new", &recv, 1, NULL, site, 0, 1);
+                if (!val_is_signal(self_rat)) {
+                    *out = dispatch_method(ev, env, self_rat, name, &r, 1, NULL, site, 0, 1);
+                    return 1;
+                }
+            }
+        }
         int both_int = (r.kind == VAL_INT);
         double lf = (double)n, rf = both_int ? (double)r.ival : (r.kind == VAL_FLOAT ? r.fval : 0.0);
         if (strcmp(name, "+") == 0) { *out = both_int ? val_int(n + r.ival) : val_float(lf + rf); return 1; }
@@ -503,7 +532,21 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = val_float(trunc(f * factor) / factor);
         return 1;
     }
-    if (strcmp(name, "to_r") == 0)   { *out = recv; return 1; } /* simplification */
+    if (strcmp(name, "to_r") == 0) {
+        Value rat_class;
+        if (env_get(ev->top_env, "Rational", &rat_class) && rat_class.kind == VAL_CLASS) {
+            double fv = recv.fval;
+            /* Represent as fraction: multiply by large power of 10, then GCD reduction
+               happens inside Rational.new via initialize */
+            int64_t denom = 10000000LL; /* 1e7 */
+            int64_t numer = (int64_t)round(fv * (double)denom);
+            Value args[2] = {val_int(numer), val_int(denom)};
+            *out = dispatch_method(ev, env, rat_class, "new", args, 2, NULL, site, 0, 1);
+        } else {
+            *out = recv;
+        }
+        return 1;
+    }
     if (argc == 1) {
         double rf = (args[0].kind == VAL_FLOAT) ? args[0].fval
                   : (args[0].kind == VAL_INT)   ? (double)args[0].ival : 0.0;
@@ -655,6 +698,75 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = val_int((int64_t)strtoll(s, NULL, base)); return 1;
     }
     if (strcmp(name, "to_f") == 0) { *out = val_float(atof(s)); return 1; }
+    if (strcmp(name, "to_r") == 0) {
+        Value rat_class;
+        if (!env_get(ev->top_env, "Rational", &rat_class) || rat_class.kind != VAL_CLASS) {
+            *out = val_int(0);
+            return 1;
+        }
+        /* Try "N/M" format */
+        const char *slash = strchr(s, '/');
+        if (slash) {
+            int64_t num = strtoll(s, NULL, 10);
+            int64_t den = strtoll(slash + 1, NULL, 10);
+            if (den == 0) { *out = eval_raise_class(ev, site, "ZeroDivisionError", "divided by 0"); return 1; }
+            Value rargs[2] = {val_int(num), val_int(den)};
+            *out = dispatch_method(ev, env, rat_class, "new", rargs, 2, NULL, site, 0, 1);
+            return 1;
+        }
+        /* Try float format or plain integer */
+        char *endptr;
+        double fval = strtod(s, &endptr);
+        if (endptr > s) {
+            char *endptr2;
+            int64_t ival = strtoll(s, &endptr2, 10);
+            if (*endptr2 == '\0' || *endptr2 == ' ') {
+                /* Integer string: N/1 */
+                Value rargs[2] = {val_int(ival), val_int(1)};
+                *out = dispatch_method(ev, env, rat_class, "new", rargs, 2, NULL, site, 0, 1);
+            } else {
+                /* Float string: use numerator/denominator approximation */
+                int64_t denom = 1000000;
+                int64_t numer = (int64_t)round(fval * (double)denom);
+                Value rargs[2] = {val_int(numer), val_int(denom)};
+                *out = dispatch_method(ev, env, rat_class, "new", rargs, 2, NULL, site, 0, 1);
+            }
+        } else {
+            *out = val_int(0);
+        }
+        return 1;
+    }
+    if (strcmp(name, "to_c") == 0) {
+        Value cplx_class;
+        if (!env_get(ev->top_env, "Complex", &cplx_class) || cplx_class.kind != VAL_CLASS) {
+            *out = val_nil();
+            return 1;
+        }
+        size_t slen = strlen(s);
+        double real_part = 0.0, imag_part = 0.0;
+        if (slen > 0 && s[slen - 1] == 'i') {
+            /* Find the last + or - that is not at position 0 */
+            const char *sep = NULL;
+            for (const char *p2 = s + slen - 2; p2 > s; p2--) {
+                if (*p2 == '+' || *p2 == '-') { sep = p2; break; }
+            }
+            if (sep) {
+                real_part = strtod(s, NULL);
+                imag_part = strtod(sep, NULL);
+            } else {
+                real_part = 0.0;
+                imag_part = strtod(s, NULL);
+            }
+        } else {
+            real_part = strtod(s, NULL);
+            imag_part = 0.0;
+        }
+        Value r_val = (real_part == (double)(int64_t)real_part) ? val_int((int64_t)real_part) : val_float(real_part);
+        Value i_val = (imag_part == (double)(int64_t)imag_part) ? val_int((int64_t)imag_part) : val_float(imag_part);
+        Value cargs[2] = {r_val, i_val};
+        *out = dispatch_method(ev, env, cplx_class, "new", cargs, 2, NULL, site, 0, 1);
+        return 1;
+    }
     if (strcmp(name, "to_sym") == 0) { *out = val_symbol(s); return 1; }
     if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0) { *out = val_int((int64_t)utf8_char_count(s)); return 1; }
     if (strcmp(name, "empty?") == 0) { *out = val_bool(s[0] == '\0'); return 1; }

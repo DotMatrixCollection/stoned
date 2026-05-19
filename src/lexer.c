@@ -205,6 +205,21 @@ static Token scan_number(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
     } else {
         t.ival = parse_int_with_underscores(l->src + start, 10);
     }
+
+    /* Rational suffix: 3r → TOK_RATIONAL, 1.5r → TOK_RATIONAL */
+    if (peek_ch(l) == 'r' && !isalnum((unsigned char)peek2(l)) && peek2(l) != '_') {
+        advance(l); /* consume 'r' */
+        t.kind = TOK_RATIONAL;
+        /* optional 'i' suffix after 'r': 3ri → imaginary rational — skip for now */
+        return t;
+    }
+    /* Imaginary suffix: 2i → TOK_IMAGINARY */
+    if (peek_ch(l) == 'i' && !isalnum((unsigned char)peek2(l)) && peek2(l) != '_') {
+        advance(l); /* consume 'i' */
+        t.kind = TOK_IMAGINARY;
+        return t;
+    }
+
     return t;
 }
 
@@ -1369,6 +1384,7 @@ Token lexer_next(Lexer *l) {
         case TOK_CONST:
         case TOK_IVAR:  case TOK_CVAR:  case TOK_GVAR:
         case TOK_INT:   case TOK_FLOAT:
+        case TOK_RATIONAL: case TOK_IMAGINARY:
         case TOK_STRING: case TOK_SYMBOL:
         case TOK_WORDS:  case TOK_SYMBOLS: case TOK_REGEXP:
         case TOK_INTERP_END:
@@ -1406,6 +1422,8 @@ const char *token_kind_name(TokenKind k) {
     switch (k) {
         case TOK_INT:        return "INT";
         case TOK_FLOAT:      return "FLOAT";
+        case TOK_RATIONAL:   return "RATIONAL";
+        case TOK_IMAGINARY:  return "IMAGINARY";
         case TOK_STRING:          return "STRING";
         case TOK_SYMBOL:          return "SYMBOL";
         case TOK_HEREDOC:         return "HEREDOC";
