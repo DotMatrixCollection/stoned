@@ -516,6 +516,19 @@ static const char *defined_expr(Eval *ev, Env *env, Node *node) {
     }
 }
 
+static void fire_method_added(Eval *ev, Env *env, Value klass, const char *mname, Node *site) {
+    if (klass.kind != VAL_CLASS) return;
+    Value hook;
+    if (env_get(klass.klass->class_env, "self.method_added", &hook) && !val_is_signal(hook)) {
+        Value sym = val_symbol(mname);
+        dispatch_method(ev, env, klass, "method_added", &sym, 1, NULL, site, 0, 1);
+        /* ignore errors from the hook — it's informational */
+        ev->current_exception = val_nil();
+        ev->exception_class = NULL;
+        ev->exception_msg[0] = '\0';
+    }
+}
+
 Value eval_node(Eval *ev, Env *env, Node *node) {
     if (!node || ev->errored) return val_nil();
 
@@ -1078,6 +1091,8 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                                 def_target = self_val.klass->class_env;
                             env_define(ev->arena, def_target, node->def.name,
                                        val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
+                            if (self_val.kind == VAL_CLASS)
+                                fire_method_added(ev, env, self_val, node->def.name, node);
                             /* module_function: also add self.name as a public module method */
                             if (self_val.kind == VAL_CLASS && self_val.klass &&
                                 self_val.klass->is_module && is_module_function_mode(env)) {
@@ -1111,6 +1126,8 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     if (!would_shadow) {
                         env_define(ev->arena, def_target, node->def.name,
                                    val_method(node, ev->top_env, current_method_visibility(env), ev->current_file));
+                        if (self_val.kind == VAL_CLASS)
+                            fire_method_added(ev, env, self_val, node->def.name, node);
                         /* module_function: also add self.name as a public module method */
                         if (self_val.kind == VAL_CLASS && self_val.klass &&
                             self_val.klass->is_module && is_module_function_mode(env)) {

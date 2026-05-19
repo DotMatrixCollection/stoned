@@ -403,10 +403,16 @@ static Value dispatch_dynamic_send(Eval *ev, Env *env, Value recv, const char *d
             if (klass.kind == VAL_CLASS)
                 found = ruby_class_find_instance_method(klass.klass, mname, &method, &owner);
         }
-        if (found && method.kind == VAL_METHOD && method.method.visibility == METHOD_PROTECTED)
-            return eval_raise_class(ev, site, "NoMethodError",
-                                    "protected method '%s' called for an instance of %s",
-                                    mname, value_class_name(ev, recv));
+        if (found && method.kind == VAL_METHOD) {
+            if (method.method.visibility == METHOD_PROTECTED)
+                return eval_raise_class(ev, site, "NoMethodError",
+                                        "protected method '%s' called for an instance of %s",
+                                        mname, value_class_name(ev, recv));
+            if (method.method.visibility == METHOD_PRIVATE)
+                return eval_raise_class(ev, site, "NoMethodError",
+                                        "private method '%s' called for an instance of %s",
+                                        mname, value_class_name(ev, recv));
+        }
         return eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for %s", mname, val_kind_name(recv.kind));
     }
     int explicit_receiver = public_only ? 0 : -1;
