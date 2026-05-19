@@ -60,6 +60,7 @@ static size_t rune_pattern_ranges(const char *pat, RuneRange *ranges, size_t cap
     size_t count = 0;
     size_t i = 0;
     size_t len = strlen(pat);
+    if (len > 0 && pat[0] == '^') i = 1; /* skip '^' — negate handled by caller */
     while (i < len && count < cap) {
         uint32_t first = 0, second = 0;
         size_t w1 = 0, w2 = 0;
@@ -1440,22 +1441,33 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "String#tr requires two arguments"); return 1; }
         const char *from_pat = val_to_s(ev->arena, args[0]);
         const char *to_pat   = val_to_s(ev->arena, args[1]);
+        int negate_tr = (from_pat[0] == '^');
         uint32_t from_chars[1024], to_chars[1024];
         size_t from_len = rune_pattern_chars(from_pat, from_chars, 1024);
         size_t to_len   = rune_pattern_chars(to_pat,   to_chars,   1024);
-        if (from_len == 0 || to_len == 0) { *out = recv; return 1; }
+        if (to_len == 0) { *out = recv; return 1; }
         size_t slen = strlen(s);
         char *buf = arena_alloc(ev->arena, slen * 4 + 1);
         size_t used = 0;
         for (size_t i = 0; i < slen;) {
-            uint32_t cp = 0;
+            uint32_t cp = 0, new_cp = 0;
             size_t width = 0, outw = 0;
             char enc[4];
-            size_t idx;
             utf8_decode_one(s + i, slen - i, &cp, &width);
-            idx = rune_index_in_chars(cp, from_chars, from_len);
-            if (idx != (size_t)-1) cp = to_chars[idx < to_len ? idx : to_len - 1];
-            outw = utf8_encode_one(cp, enc);
+            size_t idx = rune_index_in_chars(cp, from_chars, from_len);
+            if (negate_tr) {
+                /* negate: replace chars NOT in from_chars */
+                if (idx == (size_t)-1)
+                    new_cp = to_chars[to_len - 1];  /* replace with last char of to */
+                else
+                    new_cp = cp;  /* keep as-is */
+            } else {
+                if (idx != (size_t)-1)
+                    new_cp = to_chars[idx < to_len ? idx : to_len - 1];
+                else
+                    new_cp = cp;
+            }
+            outw = utf8_encode_one(new_cp, enc);
             memcpy(buf + used, enc, outw);
             used += outw;
             i += width;
@@ -1466,23 +1478,28 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "count") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#count requires an argument"); return 1; }
+        const char *pat = val_to_s(ev->arena, args[0]);
+        int negate = (pat[0] == '^');
         RuneRange ranges[256];
-        size_t range_count = rune_pattern_ranges(val_to_s(ev->arena, args[0]), ranges, 256);
-        int64_t n = 0;
+        size_t range_count = rune_pattern_ranges(pat, ranges, 256);
+        int64_t cnt = 0;
         for (size_t i = 0, slen = strlen(s); i < slen;) {
             uint32_t cp = 0;
             size_t width = 0;
             utf8_decode_one(s + i, slen - i, &cp, &width);
-            if (rune_in_ranges(cp, ranges, range_count)) n++;
+            int in_set = rune_in_ranges(cp, ranges, range_count);
+            if (negate ? !in_set : in_set) cnt++;
             i += width;
         }
-        *out = val_int(n);
+        *out = val_int(cnt);
         return 1;
     }
     if (strcmp(name, "delete") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#delete requires an argument"); return 1; }
+        const char *del_pat = val_to_s(ev->arena, args[0]);
+        int negate_del = (del_pat[0] == '^');
         RuneRange ranges[256];
-        size_t range_count = rune_pattern_ranges(val_to_s(ev->arena, args[0]), ranges, 256);
+        size_t range_count = rune_pattern_ranges(del_pat, ranges, 256);
         size_t slen = strlen(s);
         char *buf = arena_alloc(ev->arena, slen + 1);
         size_t j = 0;
@@ -1490,7 +1507,9 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             uint32_t cp = 0;
             size_t width = 0;
             utf8_decode_one(s + i, slen - i, &cp, &width);
-            if (!rune_in_ranges(cp, ranges, range_count)) {
+            int in_set = rune_in_ranges(cp, ranges, range_count);
+            int should_delete = negate_del ? !in_set : in_set;
+            if (!should_delete) {
                 memcpy(buf + j, s + i, width);
                 j += width;
             }
