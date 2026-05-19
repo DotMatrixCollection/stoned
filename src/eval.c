@@ -560,8 +560,25 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
 
         case NODE_LVAR: {
             Value v;
-            /* If marked as local by parser but not yet assigned, Ruby returns nil (not NameError) */
-            if (!env_get(env, node->sval, &v)) return val_nil();
+            /* If marked as local by parser but not yet assigned, Ruby returns nil (not NameError).
+               But first check: if the name is not in the env at all and self has this method,
+               treat it as a zero-arg method call (Ruby: bare names call self's methods). */
+            if (!env_get(env, node->sval, &v)) {
+                Value self = val_nil();
+                env_get(env, "self", &self);
+                if (self.kind == VAL_OBJECT && self.obj->klass.kind == VAL_CLASS) {
+                    Value m; RubyClass *owner = NULL;
+                    if (ruby_class_find_instance_method(self.obj->klass.klass, node->sval, &m, &owner))
+                        return call_method_value(ev, env, self, m, owner, node->sval, NULL, 0, NULL, node);
+                }
+                return val_nil();
+            }
+            /* VAL_METHOD from def in env: call it, don't return the raw method object */
+            if (v.kind == VAL_METHOD) {
+                Value self = val_nil();
+                env_get(env, "self", &self);
+                return call_method_value(ev, env, self, v, NULL, node->sval, NULL, 0, NULL, node);
+            }
             return v;
         }
         case NODE_IVAR: {

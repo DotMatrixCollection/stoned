@@ -221,6 +221,7 @@ Token lexer_next(Lexer *l);
 Token lexer_peek(Lexer *l);
 void  lexer_consume(Lexer *l);
 void  lexer_mark_local(Lexer *l, const char *name);
+int   lexer_is_local(Lexer *l, const char *name);
 
 const char *token_kind_name(TokenKind k);
 

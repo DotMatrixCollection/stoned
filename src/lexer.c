@@ -109,6 +109,10 @@ static int is_local_var(Lexer *l, const char *name) {
     return 0;
 }
 
+int lexer_is_local(Lexer *l, const char *name) {
+    return is_local_var(l, name);
+}
+
 void lexer_mark_local(Lexer *l, const char *name) {
     if (!name) return;
     for (LexLocalVar *e = l->local_vars; e; e = e->next)
@@ -208,16 +212,31 @@ static Token scan_number(Lexer *l, size_t start, uint32_t sline, uint32_t scol) 
 /* String scanning (single-quoted, no interpolation)                   */
 /* ------------------------------------------------------------------ */
 static Token scan_string_sq(Lexer *l, size_t start, uint32_t sline, uint32_t scol) {
-    /* opening ' already consumed */
-    size_t content_start = l->pos;
+    /* opening ' already consumed; Ruby single-quoted: only \\ and \' are special */
+    size_t cap = 64;
+    char *buf = arena_alloc(l->arena, cap);
+    size_t blen = 0;
+#define SQ_PUSH(ch) do { \
+    if (blen + 1 >= cap) { char *nb = arena_alloc(l->arena, cap * 2); \
+        memcpy(nb, buf, blen); buf = nb; cap *= 2; } \
+    buf[blen++] = (ch); } while(0)
     while (!at_end(l)) {
         char c = peek_ch(l);
         if (c == '\'') break;
-        if (c == '\\' && peek2(l) == '\'') { advance(l); }
+        if (c == '\\') {
+            char next = peek2(l);
+            if (next == '\'' || next == '\\') {
+                advance(l); /* skip backslash; next char is the literal */
+                c = peek_ch(l);
+            }
+        }
+        SQ_PUSH(c);
         advance(l);
     }
+#undef SQ_PUSH
+    buf[blen] = '\0';
     Token t = make_tok(l, TOK_STRING, start, sline, scol);
-    t.sval = intern(l, l->src + content_start, l->pos - content_start);
+    t.sval = intern(l, buf, blen);
     if (!at_end(l)) advance(l); /* consume closing ' */
     return t;
 }

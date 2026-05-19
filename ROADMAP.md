@@ -532,3 +532,6 @@ These were previously roadmap items and are now implemented in the current tree:
 - `Struct#each`, `#each_pair`, `#[]`, `#[]=`; Struct subclasses now include Enumerable so `map`/`select`/`min`/`sum`/etc. work directly on struct instances
 - `String#[]=` (index, [index,len], range, and substring forms); `StringIO` expanded with read-position tracking (`pos`, `seek`, `rewind`, `eof?`, `gets`, `readline`, `readlines`, `each_line`, `read(n)`, `getc`); `$/` global initialized to `"\n"`; `$0`/`$PROGRAM_NAME` initialized from the script filename
 - `Enumerator::Yielder` and `Enumerator.new { |y| ... }` block form (eager collection); `Object#to_enum`/`#enum_for` added to Kernel prelude
+- Single-quoted string `'\\'` and `'\''` now correctly unescape (was storing raw backslash bytes)
+- Bare method calls in `case/when then` bodies now work: NODE_LVAR on a name not in the env now falls through to a self method dispatch rather than returning nil; same fix covers any context where the parser produces NODE_LVAR for an unrecognized bare name
+- `require 'json'` now provides a full JSON module with `parse`, `generate`, `dump`, `load`, and `pretty_generate`
