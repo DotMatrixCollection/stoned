@@ -3561,6 +3561,8 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         val_object_set_ivar(ev->arena, obj, "__method_name__", val_string(ev->arena, mname));
         val_object_set_ivar(ev->arena, obj, "__method__", method_val);
         val_object_set_ivar(ev->arena, obj, "__owner__", recv);
+        if (method_val.kind != VAL_METHOD || !method_val.method.def_node)
+            val_object_set_ivar(ev->arena, obj, "__native_arity__", val_int(builtin_method_arity(mname)));
         *out = obj;
         return 1;
     }

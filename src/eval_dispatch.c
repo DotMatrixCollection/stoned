@@ -105,7 +105,7 @@ static NativeBinding *native_binding(Value v) {
 }
 
 /* Return known arity for a builtin method name, or -2 if unknown. */
-static int builtin_method_arity(const char *mname) {
+int builtin_method_arity(const char *mname) {
     /* Zero-param methods */
     static const char *zero[] = {
         "to_f","to_i","to_r","to_c","to_s","to_str","to_sym","to_a","to_h","to_proc",
