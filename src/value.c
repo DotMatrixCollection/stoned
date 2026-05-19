@@ -270,7 +270,7 @@ const char *val_to_s(Arena *a, Value v) {
                 if (sym_key)
                     total += strlen(h->keys[i].sval) + 4; /* "key: " */
                 else
-                    total += strlen(val_inspect(a, h->keys[i])) + 4;
+                    total += strlen(val_inspect(a, h->keys[i])) + 6; /* " => " */
                 total += strlen(val_inspect(a, h->vals[i]));
             }
             buf = arena_alloc(a, total);
@@ -282,7 +282,7 @@ const char *val_to_s(Arena *a, Value v) {
                     strcat(buf, ": ");
                 } else {
                     strcat(buf, val_inspect(a, h->keys[i]));
-                    strcat(buf, "=>");
+                    strcat(buf, " => ");
                 }
                 strcat(buf, val_inspect(a, h->vals[i]));
             }

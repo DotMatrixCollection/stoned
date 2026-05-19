@@ -1,6 +1,6 @@
 John
 30
-{"name"=>"John", "age"=>"30"}
+{"name" => "John", "age" => "30"}
 ["name", "age"]
 2024-01-15
 2024
