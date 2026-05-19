@@ -987,6 +987,9 @@ Value eval_raise_class(Eval *ev, Node *n, const char *class_name, const char *fm
         vsnprintf(raw_msg, sizeof(raw_msg), fmt, ap);
         va_end(ap);
         ev->current_exception = build_exception(ev, class_name, raw_msg);
+        /* Set __cause__ if inside a rescue block (rescue_context holds the caught exception) */
+        if (ev->rescue_context.kind == VAL_OBJECT)
+            val_object_set_ivar(ev->arena, ev->current_exception, "__cause__", ev->rescue_context);
         if (n) set_exception_origin(ev->arena, ev->current_exception, n->span.line, n->span.col);
         format_exception_summary(ev, class_name, raw_msg);
         if (n) {
@@ -1003,6 +1006,12 @@ Value eval_raise_encoding_error(Eval *ev, Node *n, const char *context) {
 
 Value eval_raise_value(Eval *ev, Node *n, Value exc) {
     if (ev->exception_msg[0] == '\0') {
+        /* Set __cause__ if inside a rescue block */
+        if (ev->rescue_context.kind == VAL_OBJECT && exc.kind == VAL_OBJECT) {
+            Value existing_cause = val_nil();
+            if (!val_object_get_ivar(exc, "__cause__", &existing_cause) || existing_cause.kind == VAL_NIL)
+                val_object_set_ivar(ev->arena, exc, "__cause__", ev->rescue_context);
+        }
         ev->current_exception = exc;
         ev->exception_class = exception_value_class_name(exc);
         snprintf(ev->exception_msg, sizeof(ev->exception_msg), "%s: %s",

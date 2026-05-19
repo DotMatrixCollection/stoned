@@ -4999,6 +4999,12 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = val_string(ev->arena, buf);
             return 1;
         }
+        if (strcmp(name, "cause") == 0) {
+            Value cause = val_nil();
+            val_object_get_ivar(recv, "__cause__", &cause);
+            *out = cause;
+            return 1;
+        }
         if (strcmp(name, "exception") == 0) {
             int ok = 1;
             if (argc == 0 || (argc == 1 && val_equal(recv, args[0]))) {

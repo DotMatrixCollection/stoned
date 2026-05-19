@@ -536,3 +536,4 @@ These were previously roadmap items and are now implemented in the current tree:
 - Bare method calls in `case/when then` bodies now work: NODE_LVAR on a name not in the env now falls through to a self method dispatch rather than returning nil; same fix covers any context where the parser produces NODE_LVAR for an unrecognized bare name
 - `require 'json'` now provides a full JSON module with `parse`, `generate`, `dump`, `load`, and `pretty_generate`
 - `require 'set'` now provides a full `Set` class backed by Hash with all standard operations (`&`, `|`, `-`, `+`, subset/superset predicates, Enumerable)
+- `Exception#cause` tracks the exception that was active when a new one is raised inside a rescue block
