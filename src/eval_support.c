@@ -148,6 +148,41 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
             continue;
         }
 
+        /* Named reference with type: %<key>type — look up key, then format with type */
+        if (fmt[i] == '<') {
+            const char *kstart = fmt + i + 1;
+            const char *kend = strchr(kstart, '>');
+            if (!kend) {
+                free(buf); return eval_raise_class(ev, site, "ArgumentError", "malformed named reference: unclosed '<'");
+            }
+            size_t klen = (size_t)(kend - kstart);
+            char key[256]; if (klen >= sizeof(key)) klen = sizeof(key) - 1;
+            memcpy(key, kstart, klen); key[klen] = '\0';
+            char *key_copy = arena_alloc(ev->arena, klen + 1);
+            memcpy(key_copy, key, klen + 1);
+            Value hash_arg = (argc == 1 && args[0].kind == VAL_HASH) ? args[0] : val_nil();
+            Value sym_key = val_symbol(key_copy);
+            Value str_key = val_string(ev->arena, key);
+            Value val = val_nil();
+            if (hash_arg.kind == VAL_HASH) {
+                if (!val_hash_get(hash_arg.hash, sym_key, &val))
+                    val_hash_get(hash_arg.hash, str_key, &val);
+            }
+            i = (size_t)(kend - fmt) + 1; /* now at type char */
+            /* Now parse the type specifier and format the value */
+            Value fake_args[1] = { val };
+            /* Build a mini format string from the type char */
+            char mini_fmt[4] = { '%', fmt[i], '\0', '\0' };
+            /* i stays at type char position; outer for-loop will do i++ */
+            Value mini_result = eval_format_string(ev, env, mini_fmt, fake_args, 1, site);
+            if (val_is_signal(mini_result)) { free(buf); return mini_result; }
+            const char *sv = mini_result.kind == VAL_STRING ? mini_result.sval : val_to_s(ev->arena, val);
+            if (!append_dynamic(&buf, &cap, &used, sv, strlen(sv))) {
+                free(buf); return eval_raise_class(ev, site, "RuntimeError", "out of memory");
+            }
+            continue;
+        }
+
         /* Collect flags, width, precision, type into a single format spec */
         char spec[64] = "%";
         size_t slen = 1;
