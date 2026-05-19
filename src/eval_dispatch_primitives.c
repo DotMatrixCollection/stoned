@@ -1425,40 +1425,34 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         return 1;
     }
-    if (strcmp(name, "lines") == 0) {
+    if (strcmp(name, "each_line") == 0 || strcmp(name, "lines") == 0) {
+        /* Optional separator argument */
+        const char *sep = (argc > 0 && args[0].kind == VAL_STRING) ? args[0].sval : "\n";
+        size_t seplen = sep ? strlen(sep) : 0;
         Value arr = val_array_new();
         const char *p = s;
-        while (*p) {
-            const char *nl = strchr(p, '\n');
-            if (nl) {
-                val_array_push(&arr, val_string_n(ev->arena, p, (size_t)(nl - p + 1)));
-                p = nl + 1;
-            } else {
-                val_array_push(&arr, val_string(ev->arena, p));
-                break;
+        size_t slen = strlen(s);
+        if (seplen == 0) {
+            /* nil separator: return whole string as one line */
+            val_array_push(&arr, recv);
+        } else {
+            while (*p) {
+                const char *found = strstr(p, sep);
+                Value line;
+                if (found) {
+                    line = val_string_n(ev->arena, p, (size_t)(found - p + seplen));
+                    p = found + seplen;
+                } else {
+                    line = val_string(ev->arena, p);
+                    p += strlen(p);
+                }
+                val_array_push(&arr, line);
             }
         }
-        *out = arr;
-        return 1;
-    }
-    if (strcmp(name, "each_line") == 0) {
-        if (!blk) {
-            /* No block: return array of lines */
-            *out = dispatch_method(ev, env, recv, "lines", args, argc, blk, site, 0, 1);
-            return 1;
-        }
-        const char *p = s;
-        while (*p) {
-            const char *nl = strchr(p, '\n');
-            Value line;
-            if (nl) {
-                line = val_string_n(ev->arena, p, (size_t)(nl - p + 1));
-                p = nl + 1;
-            } else {
-                line = val_string(ev->arena, p);
-                p += strlen(p);
-            }
-            Value r = call_block(ev, env, *blk, &line, 1, site);
+        (void)slen;
+        if (!blk || strcmp(name, "lines") == 0) { *out = arr; return 1; }
+        for (size_t i = 0; i < arr.array->len; i++) {
+            Value r = call_block(ev, env, *blk, &arr.array->elems[i], 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(r, out)) return 1;
         }

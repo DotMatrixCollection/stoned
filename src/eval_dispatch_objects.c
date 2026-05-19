@@ -3241,6 +3241,11 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
 
+    if (strcmp(name, "nesting") == 0 && recv.kind == VAL_CLASS &&
+        strcmp(recv.klass->name, "Module") == 0) {
+        /* Module.nesting returns [] in most contexts (no nesting tracking) */
+        *out = val_array_new(); return 1;
+    }
     if (strcmp(name, "constants") == 0) {
         Value arr = val_array_new();
         if (strcmp(recv.klass->name, "Module") == 0) {
