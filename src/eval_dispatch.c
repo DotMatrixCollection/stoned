@@ -1243,14 +1243,17 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         Value v = args[0];
         if (v.kind == VAL_ARRAY) return v;
         if (v.kind == VAL_NIL) return val_array_new();
-        if (!val_responds_to(ev, v, "to_a", 1)) {
-            Value arr = val_array_new();
-            val_array_push(&arr, v);
-            return arr;
+        /* Try to_ary first (implicit coercion), then to_a */
+        if (val_responds_to(ev, v, "to_ary", 1)) {
+            Value c = dispatch_method(ev, env, v, "to_ary", NULL, 0, NULL, site, 0, -1);
+            if (!val_is_signal(c) && c.kind == VAL_ARRAY) return c;
+            ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
         }
-        Value converted = dispatch_method(ev, env, v, "to_a", NULL, 0, NULL, site, 0, -1);
-        if (val_is_signal(converted)) return converted;
-        if (converted.kind == VAL_ARRAY) return converted;
+        if (val_responds_to(ev, v, "to_a", 1)) {
+            Value converted = dispatch_method(ev, env, v, "to_a", NULL, 0, NULL, site, 0, -1);
+            if (!val_is_signal(converted) && converted.kind == VAL_ARRAY) return converted;
+            ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+        }
         Value arr = val_array_new();
         val_array_push(&arr, v);
         return arr;
