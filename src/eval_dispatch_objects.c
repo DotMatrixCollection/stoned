@@ -2378,6 +2378,33 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         return 1;
     }
+    if (strcmp(name, "pipe") == 0 && strcmp(recv.klass->name, "IO") == 0) {
+        int fds[2];
+        if (pipe(fds) != 0) { *out = eval_raise_class(ev, site, "IOError", "pipe(2) failed"); return 1; }
+        FILE *rfp = fdopen(fds[0], "rb");
+        FILE *wfp = fdopen(fds[1], "wb");
+        if (!rfp || !wfp) {
+            if (rfp) fclose(rfp); else close(fds[0]);
+            if (wfp) fclose(wfp); else close(fds[1]);
+            *out = eval_raise_class(ev, site, "IOError", "IO.pipe: fdopen failed");
+            return 1;
+        }
+        NativeFile *r_nf = alloc_native_file(ev->arena, rfp, 1);
+        NativeFile *w_nf = alloc_native_file(ev->arena, wfp, 1);
+        Value reader = val_object(ev->arena, recv);
+        reader.obj->native = r_nf;
+        val_object_set_ivar(ev->arena, reader, "mode",   val_string(ev->arena, "r"));
+        val_object_set_ivar(ev->arena, reader, "closed", val_false());
+        val_object_set_ivar(ev->arena, reader, "sync",   val_false());
+        Value writer = val_object(ev->arena, recv);
+        writer.obj->native = w_nf;
+        val_object_set_ivar(ev->arena, writer, "mode",   val_string(ev->arena, "w"));
+        val_object_set_ivar(ev->arena, writer, "closed", val_false());
+        val_object_set_ivar(ev->arena, writer, "sync",   val_false());
+        Value pair = val_array_new();
+        val_array_push(&pair, reader); val_array_push(&pair, writer);
+        *out = pair; return 1;
+    }
     if (strcmp(name, "console_size") == 0 && strcmp(recv.klass->name, "IO") == 0) {
         if (argc != 0) {
             *out = wrong_arg_count(ev, site, argc, 0);

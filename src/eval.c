@@ -2583,7 +2583,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "end\n";
 
     static const char *prelude_rational =
-        "class Rational\n"
+        "class Rational < Numeric\n"
         "  include Comparable\n"
         "  attr_reader :numerator, :denominator\n"
         "\n"
@@ -2769,7 +2769,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  Rational.new(num, den)\n"
         "end\n"
         "\n"
-        "class Complex\n"
+        "class Complex < Numeric\n"
         "  attr_reader :real, :imaginary\n"
         "  alias imag imaginary\n"
         "\n"
