@@ -206,7 +206,9 @@ static int const_path_segment_is_call(Parser *p, Token name_tok) {
 static int range_rhs_omitted(Parser *p) {
     return check(p, TOK_RPAREN) || check(p, TOK_RBRACKET) || check(p, TOK_RBRACE) ||
            check(p, TOK_COMMA) || check(p, TOK_NEWLINE) || check(p, TOK_SEMICOLON) ||
-           check(p, TOK_EOF) || check(p, TOK_END);
+           check(p, TOK_EOF) || check(p, TOK_END) || check(p, TOK_THEN) ||
+           check(p, TOK_DO) || check(p, TOK_IF) || check(p, TOK_UNLESS) ||
+           check(p, TOK_WHILE) || check(p, TOK_UNTIL);
 }
 
 static Node *parse_expr_continue(Parser *p, Node *left, int min_bp);

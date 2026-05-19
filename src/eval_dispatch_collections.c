@@ -1963,10 +1963,22 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
 }
 
 static int range_include_value(Eval *ev, Env *env, RubyRange *r, Value v, Node *site) {
-    /* Fast path for integer ranges */
+    /* Fast path for integer ranges with defined endpoints */
     if (r->begin_val.kind == VAL_INT && r->end_val.kind == VAL_INT && v.kind == VAL_INT) {
         return v.ival >= r->begin_val.ival &&
                (r->exclusive ? v.ival < r->end_val.ival : v.ival <= r->end_val.ival);
+    }
+    /* Endless range: end is nil — any value >= begin is included */
+    if (r->end_val.kind == VAL_NIL) {
+        if (r->begin_val.kind == VAL_NIL) return 1; /* (nil..nil) = all */
+        Value cmp_lo = dispatch_method(ev, env, v, "<=>", &r->begin_val, 1, NULL, site, 0, 1);
+        return cmp_lo.kind == VAL_INT && cmp_lo.ival >= 0;
+    }
+    /* Beginless range: begin is nil — any value <= end is included */
+    if (r->begin_val.kind == VAL_NIL) {
+        Value cmp_hi = dispatch_method(ev, env, v, "<=>", &r->end_val, 1, NULL, site, 0, 1);
+        if (cmp_hi.kind != VAL_INT) return 0;
+        return r->exclusive ? cmp_hi.ival < 0 : cmp_hi.ival <= 0;
     }
     /* General: use <=> comparison */
     Value cmp_lo = dispatch_method(ev, env, v, "<=>", &r->begin_val, 1, NULL, site, 0, 1);
