@@ -935,8 +935,15 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         int limit = (argc > 1 && args[1].kind == VAL_INT) ? (int)args[1].ival : -1;
         int is_locations = (strcmp(name, "caller_locations") == 0);
         Value loc_class = val_nil();
-        if (is_locations)
-            env_get(ev->top_env, "Thread::Backtrace::Location", &loc_class);
+        if (is_locations) {
+            Value thread_c;
+            if (env_get(ev->top_env, "Thread", &thread_c) && thread_c.kind == VAL_CLASS) {
+                Value bt_mod;
+                if (env_get(thread_c.klass->class_env, "Backtrace", &bt_mod) &&
+                    bt_mod.kind == VAL_CLASS)
+                    env_get(bt_mod.klass->class_env, "Location", &loc_class);
+            }
+        }
         Value arr = val_array_new();
         for (int fi = ev->frame_count - 1 - skip; fi >= 0; fi--) {
             if (limit >= 0 && (int)arr.array->len >= limit) break;
