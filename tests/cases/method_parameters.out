@@ -1,0 +1,6 @@
+true
+[[:req, :a], [:opt, :b], [:rest, :rest], [:block, :blk]]
+true
+[[:req, :a], [:opt, :b], [:rest, :rest], [:block, :blk]]
+[]
+[]

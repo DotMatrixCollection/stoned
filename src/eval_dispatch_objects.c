@@ -64,6 +64,29 @@ static uint64_t method_value_identity_hash(Value v) {
     }
 }
 
+static Value method_params_description(Eval *ev, Value method_val) {
+    Value arr = val_array_new();
+    if (method_val.kind != VAL_METHOD || !method_val.method.def_node)
+        return arr;
+    NodeList *params = method_val.method.def_node->kind == NODE_BLOCK
+        ? method_val.method.def_node->block.params
+        : method_val.method.def_node->def.params;
+    for (NodeList *pl = params; pl; pl = pl->next) {
+        if (!pl->node || pl->node->kind != NODE_PARAM) continue;
+        Value pair = val_array_new();
+        const char *ptype = pl->node->param.splat ? "rest" :
+                            pl->node->param.block_param ? "block" :
+                            pl->node->param.keyword_splat ? "keyrest" :
+                            pl->node->param.keyword_param ? "key" :
+                            pl->node->param.default_val ? "opt" : "req";
+        val_array_push(&pair, val_symbol(ptype));
+        if (pl->node->param.name)
+            val_array_push(&pair, val_symbol(pl->node->param.name));
+        val_array_push(&arr, pair);
+    }
+    return arr;
+}
+
 static const char *file_fopen_mode(const char *mode) {
     if (!mode) return NULL;
     size_t mode_len = strcspn(mode, ":");
@@ -4146,6 +4169,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 }
                 return 1;
             }
+            if (strcmp(name, "parameters") == 0) {
+                Value method_val;
+                if (val_object_get_ivar(recv, "__method__", &method_val))
+                    *out = method_params_description(ev, method_val);
+                else
+                    *out = val_array_new();
+                return 1;
+            }
             if (strcmp(name, "source_location") == 0) {
                 Value method_val;
                 if (val_object_get_ivar(recv, "__method__", &method_val) && method_val.kind == VAL_METHOD
@@ -4245,6 +4276,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     else
                         *out = val_int(-1);
                 }
+                return 1;
+            }
+            if (strcmp(name, "parameters") == 0) {
+                Value method_val;
+                if (val_object_get_ivar(recv, "__method__", &method_val))
+                    *out = method_params_description(ev, method_val);
+                else
+                    *out = val_array_new();
                 return 1;
             }
             if (strcmp(name, "source_location") == 0) {
