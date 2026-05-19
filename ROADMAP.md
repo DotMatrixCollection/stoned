@@ -498,3 +498,33 @@ These were previously roadmap items and are now implemented in the current tree:
 - `Kernel#caller` and `#caller_locations` return the frame stack
 - `IO.write`, `File.binread`/`IO.binread` class methods added
 - `require "timeout"` stub; `Timeout.timeout(sec, &blk)` passes through
+- `throw`/`catch` now propagates through iterator block boundaries: VAL_THROW added to `flow_signal_out` so throw inside times/each/map etc. unwinds correctly
+- Struct member writers (`member=`) generated alongside readers; uses synthetic AST for the def body
+- `Array#flatten` calls `to_ary` on user objects for implicit array coercion
+- `Array#sum` with non-numeric initial value (array/string concatenation) works
+- `Hash#each`/`Range#each` blockless return an Enumerator
+- `Hash#compact`/`Hash#compact!`, `Hash#fetch_values`, `Hash#any?`/`none?` without block check emptiness
+- `Integer#ceil/floor/round/truncate` with negative precision (e.g. 1234.ceil(-2) = 1300)
+- `Array#intersection`, `#union`, `#difference` (Ruby 2.7+ named aliases)
+- `String#partition`, `String#rpartition`
+- `String#tr`, `#count`, `#delete` with `^` negation prefix now work correctly
+- `String#dump` as inspect alias
+- `String#match(regexp, pos)` start position argument
+- `Integer#div` (floor division), `Integer#modulo` (floor modulo)
+- `Kernel#Array()` tries `to_ary` before `to_a`
+- `Range#sum` with block iterates and accumulates block values
+- `Proc#===` calls the proc for `case/when` pattern matching
+- `Object#!=` delegates to `==` instead of pointer identity
+- `Object#clone` copies singleton class/methods
+- `Object#method_missing` default defined in prelude with correct error message
+- `Float#to_s` → `"Infinity"`, `"-Infinity"`, `"NaN"` (MRI-compatible)
+- `Integer(nil)` raises TypeError; `format %b` with width/padding fixed
+- String bang methods raise FrozenError on frozen strings
+- `Method#name`, `#owner`, `#receiver`, `#unbind`; `UnboundMethod#name`, `#owner`
+- `Class#include?` checks transitively included modules
+- `module_function` (no-arg) creates module-level methods and marks private
+- `alias_method` works for built-in class methods via VAL_SYMBOL forwarding
+- `Array[start,length]=` subarray assignment; `Array#reverse!`
+- `Array#join` dispatches Ruby `to_s` on user objects
+- `Comparable#==` in prelude; `Struct keyword_init:`; `Integer(str, base)`; `Hash()` kernel function
+- `String#%` named format references `%{key}`; `bundler/dsl.rb` uses real `instance_eval`
