@@ -1859,6 +1859,35 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         array_flatten_into(ev, env, pairs, &result, depth);
         *out = result; return 1;
     }
+    if (strcmp(name, "default") == 0) {
+        if (argc > 0) {
+            /* Hash#default(key) - return default for that key */
+            if (h->default_proc.kind == VAL_BLOCK) {
+                Value bargs[2] = { recv, args[0] };
+                *out = call_block(ev, env, h->default_proc, bargs, 2, site);
+            } else {
+                *out = h->default_value;
+            }
+        } else {
+            *out = h->default_proc.kind == VAL_BLOCK ? val_nil() : h->default_value;
+        }
+        return 1;
+    }
+    if (strcmp(name, "default=") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        h->default_value = args[0];
+        h->default_proc = val_nil();
+        *out = args[0]; return 1;
+    }
+    if (strcmp(name, "default_proc") == 0) {
+        *out = h->default_proc.kind == VAL_BLOCK ? h->default_proc : val_nil(); return 1;
+    }
+    if (strcmp(name, "default_proc=") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        if (args[0].kind == VAL_BLOCK) { h->default_proc = args[0]; h->default_value = val_nil(); }
+        else if (args[0].kind == VAL_NIL) { h->default_proc = val_nil(); }
+        *out = args[0]; return 1;
+    }
     if (strcmp(name, "fetch_values") == 0) {
         Value result = val_array_new();
         for (int i = 0; i < argc; i++) {
