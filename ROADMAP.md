@@ -464,3 +464,37 @@ These were previously roadmap items and are now implemented in the current tree:
 - `exit` / `abort` raise rescuable `SystemExit` instead of calling C `exit()` directly; `exit!` keeps the bypass behavior; `SystemExit#status` and `#success?` added; `SystemExit` and `IndexError` registered in the builtin class table with correct hierarchy (`SystemExit < Exception`, `IndexError < StandardError`, `KeyError < IndexError`)
 - Custom exception `initialize` with more than one parameter now works: the strict `argc > 1` guard in exception `new` was rejecting calls before the user `initialize` could run; detection of user-defined init now hoists before the arity gate and uses a relaxed message fallback
 - `abort` added as a kernel method: prints message to stderr and raises `SystemExit` with status 1
+- Class instance variables (`@foo` on self when self is VAL_CLASS): read, write (assign_target), compound assign (NODE_OP_ASSIGN), and instance_variable_get/set/defined? all now correct; fixes `@attr ||= val` memoization in module/class methods
+- `Enumerator` class with `next`/`peek`/`rewind`/`each`/`size`/`with_index`/`with_object`; `Array#each` blockless returns an Enumerator; `Enumerator::Lazy` nested inside the class
+- `FrozenError` on `instance_variable_set` for frozen objects; and on all String bang methods (`gsub!`, `sub!`, `upcase!`, `downcase!`, etc.)
+- `module_function` no-arg form now creates module-level methods AND marks private; NODE_DEF in both code paths updated to detect the mode and auto-add `self.method_name`
+- `Object#method_missing` default defined in prelude: raises `NoMethodError` with the original method name; super chains from user method_missing impls now produce correct error messages
+- `Object#!=` for user objects now calls `==` and negates instead of using pointer identity; fixes Comparable-based `!=`
+- `Object#clone` now copies the singleton_env (singleton methods); `Object#dup` still doesn't
+- `Proc#===` calls the proc with the argument and checks truthiness; enables `case/when ->(x) { x > 0 }` patterns
+- `alias_method` for built-in class methods: stores a VAL_SYMBOL forwarding entry; primitive dispatch checks class_env for aliases after failing C dispatch
+- `Class#include?` checks transitively included modules (was one-level-only)
+- `Array[start, length]` subarray form fixed (was returning single element at start)
+- `Array[start, length]=` subarray assignment added
+- `Array#reverse!` added
+- `Array#join` now dispatches Ruby `to_s` on user objects (was using C val_to_s)
+- `Float` Infinity/NaN now renders as `"Infinity"`, `"-Infinity"`, `"NaN"` (not platform C output)
+- `Integer(nil)` now raises TypeError
+- `format`/`sprintf` `%b` with width/padding now works correctly
+- `Method#name`, `Method#owner`, `Method#receiver`, `Method#unbind`; `UnboundMethod#name`, `#owner` added
+- `Comparable#==` added to prelude (uses `<=>`)
+- `Struct.new(keyword_init: true)` strips the option hash from member names; keyword_init structs accept keyword args at construction
+- `Integer(str, base)` accepts optional base argument
+- `Hash()` kernel function added (nil→{}, hash→identity, else TypeError); `Hash` added to `kernel_const_call_name` so `Hash(expr)` parses as a call
+- `String#%` named format references `%{key}` implemented
+- `bundler/dsl.rb` rewritten from line-by-line regex to real `instance_eval`; `eval_gemfile` uses a dir stack for relative path resolution
+- `rand(range)` correctly returns random integer in the range
+- `respond_to?` tables enriched for String, nil, Hash
+- `Hash#sort` dispatches via the pair-array path (same as sort_by)
+- `String+` tries `to_str` coercion before raising TypeError
+- `Forwardable#def_delegator` handles `@ivar` accessor names
+- `defined?` can appear as a command argument (parser `TOK_DEFINED` in `can_be_arg`)
+- `String#oct` defaults to base 8 for unprefixed strings
+- `Kernel#caller` and `#caller_locations` return the frame stack
+- `IO.write`, `File.binread`/`IO.binread` class methods added
+- `require "timeout"` stub; `Timeout.timeout(sec, &blk)` passes through
