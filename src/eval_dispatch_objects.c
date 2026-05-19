@@ -1439,7 +1439,7 @@ const char *primitive_class_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Class") == 0)
         return "superclass,instance_methods,public_instance_methods,private_instance_methods,protected_instance_methods,new,name,ancestors";
     if (strcmp(klass_name, "Dir") == 0)
-        return "pwd,chdir,mkdir,glob";
+        return "pwd,chdir,mkdir,glob,[],children,entries,exist?,exists?,home";
     if (strcmp(klass_name, "File") == 0)
         return "open,read,write,binread,foreach,readlines,exist?,exists?";
     if (strcmp(klass_name, "IO") == 0)
