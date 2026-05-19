@@ -794,7 +794,8 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = result; return 1;
     }
     if (strcmp(name, "flatten") == 0) {
-        int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : -1;
+        int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival :
+                   (argc > 0 && args[0].kind == VAL_FLOAT) ? (int)args[0].fval : -1;
         Value result = val_array_new();
         array_flatten_into(ev, env, recv, &result, depth);
         *out = result;
@@ -860,7 +861,8 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "flatten!") == 0) {
-        int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : -1;
+        int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival :
+                   (argc > 0 && args[0].kind == VAL_FLOAT) ? (int)args[0].fval : -1;
         Value result = val_array_new();
         array_flatten_into(ev, env, recv, &result, depth);
         int changed = result.array->len != recv.array->len;
