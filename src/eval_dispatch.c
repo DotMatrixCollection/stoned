@@ -678,6 +678,7 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     ev->call_depth--;
     ev->current_file = saved_file;
     if (result.kind == VAL_RETURN && result.jump.target_env == method_env) return *result.jump.wrapped;
+    if (result.kind == VAL_BREAK && blk != NULL) return *result.jump.wrapped;
     return result;
 }
 
