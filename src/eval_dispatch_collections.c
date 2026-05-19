@@ -1466,7 +1466,18 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         for (int i = 0; i < argc; i++) {
             if (args[i].kind != VAL_HASH) { *out = eval_raise_class(ev, site, "TypeError", "Hash#merge! requires Hash arguments"); return 1; }
             RubyHash *other = args[i].hash;
-            for (size_t j = 0; j < other->len; j++) val_hash_set(h, other->keys[j], other->vals[j]);
+            for (size_t j = 0; j < other->len; j++) {
+                Value existing = val_nil();
+                if (blk && val_hash_get(h, other->keys[j], &existing)) {
+                    /* Conflict: call block(key, old_value, new_value) */
+                    Value bargs[3] = { other->keys[j], existing, other->vals[j] };
+                    Value resolved = call_block(ev, env, *blk, bargs, 3, site);
+                    if (val_is_signal(resolved)) { *out = resolved; return 1; }
+                    val_hash_set(h, other->keys[j], resolved);
+                } else {
+                    val_hash_set(h, other->keys[j], other->vals[j]);
+                }
+            }
         }
         *out = recv; return 1;
     }
