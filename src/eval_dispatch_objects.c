@@ -1244,6 +1244,14 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
 
     /* Kernel.method forwards to top-level builtin_kernel */
     if (strcmp(recv.klass->name, "Kernel") == 0) {
+        if (strcmp(name, "const_get") == 0) {
+            if (argc < 1) { *out = val_nil(); return 1; }
+            const char *cname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+            if (!cname) { *out = val_nil(); return 1; }
+            Value v = val_nil();
+            env_get(ev->top_env, cname, &v);
+            *out = v; return 1;
+        }
         /* instance_method(:name) — return UnboundMethod wrapping the named method */
         if (strcmp(name, "instance_method") == 0) {
             if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
@@ -3336,7 +3344,10 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         const char *cname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
         if (!cname) { *out = val_nil(); return 1; }
         Value v = val_nil();
-        if (recv.klass->class_env) env_get(recv.klass->class_env, cname, &v);
+        if (recv.klass->class_env && env_get(recv.klass->class_env, cname, &v) && v.kind != VAL_NIL)
+            { *out = v; return 1; }
+        /* Fall back to top-level constants (Object, Kernel, Module, etc. all share globals) */
+        env_get(ev->top_env, cname, &v);
         *out = v; return 1;
     }
     /* ---- Class reflection ---- */

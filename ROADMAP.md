@@ -548,3 +548,4 @@ These were previously roadmap items and are now implemented in the current tree:
 - `File.readlines(path, chomp: true)` now strips newlines (the `chomp:` kwarg was previously ignored)
 - `Binding#eval(src)` and `Binding#receiver` added
 - `Kernel#fail` added as alias for `raise`
+- `Module#const_get` falls back to top-level env (fixes `Kernel.const_get("Array")` etc.)
