@@ -1983,6 +1983,12 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             /* Block form: evaluate block with self = receiver */
             Env *ieval_env = env_new(ev->arena, blk->block.closure, 0);
             env_define(ev->arena, ieval_env, "self", recv);
+            /* For instance_eval on an object, set singleton_target so def creates singleton methods.
+               For class_eval/module_eval on a class, use nil (def creates instance methods). */
+            if (strcmp(name, "instance_eval") == 0 && recv.kind == VAL_OBJECT)
+                env_define(ev->arena, ieval_env, "__singleton_target__", recv);
+            else if (recv.kind == VAL_CLASS)
+                env_define(ev->arena, ieval_env, "__singleton_target__", val_nil());
             Value bargs[1] = { recv };
             Value ieval_block = *blk;
             ieval_block.block.closure = ieval_env;
