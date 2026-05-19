@@ -451,7 +451,18 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "each_with_object") == 0) {
-        if (!blk || argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "each_with_object requires block and init"); return 1; }
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "each_with_object requires block and init"); return 1; }
+        if (!blk) {
+            Value arr = val_array_new();
+            for (size_t i = 0; i < recv.array->len; i++) {
+                Value pair = val_array_new();
+                val_array_push(&pair, recv.array->elems[i]);
+                val_array_push(&pair, args[0]);
+                val_array_push(&arr, pair);
+            }
+            *out = wrap_result_as_enumerator(ev, env, arr, site);
+            return 1;
+        }
         Value acc = args[0];
         for (size_t i = 0; i < recv.array->len; i++) {
             Value bargs[2] = { recv.array->elems[i], acc };
@@ -1808,7 +1819,21 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "each_with_object") == 0) {
-        if (!blk || argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "each_with_object requires block and init"); return 1; }
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "each_with_object requires block and init"); return 1; }
+        if (!blk) {
+            Value arr = val_array_new();
+            for (size_t i = 0; i < h->len; i++) {
+                Value pair = val_array_new();
+                Value entry = val_array_new();
+                val_array_push(&entry, h->keys[i]);
+                val_array_push(&entry, h->vals[i]);
+                val_array_push(&pair, entry);
+                val_array_push(&pair, args[0]);
+                val_array_push(&arr, pair);
+            }
+            *out = wrap_result_as_enumerator(ev, env, arr, site);
+            return 1;
+        }
         Value acc = args[0];
         for (size_t i = 0; i < h->len; i++) {
             Value pair = val_array_new();
