@@ -416,6 +416,16 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         *out = arr;
         return 1;
     }
+    if (strcmp(name, "ceildiv") == 0) {
+        if (argc < 1 || args[0].kind != VAL_INT) { *out = eval_raise_class(ev, site, "TypeError", "Integer#ceildiv requires an Integer"); return 1; }
+        int64_t b = args[0].ival;
+        if (b == 0) { *out = eval_raise_class(ev, site, "ZeroDivisionError", "divided by 0"); return 1; }
+        /* ceil(a/b) = -((-a) / b) in Ruby (floor div on negated value) */
+        int64_t q = n / b, r = n % b;
+        if (r != 0 && ((r ^ b) > 0)) q++;  /* round up if same sign as divisor */
+        *out = val_int(q);
+        return 1;
+    }
     if (strcmp(name, "digits") == 0) {
         int64_t base = argc >= 1 && args[0].kind == VAL_INT ? args[0].ival : 10;
         if (base < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "invalid radix %lld", (long long)base); return 1; }
