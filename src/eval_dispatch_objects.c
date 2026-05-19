@@ -505,9 +505,12 @@ static Value file_open_stream(Eval *ev, const char *path, const char *mode, Node
 static Value file_close_stream(Eval *ev, Value recv, Node *site) {
     NativeFile *nf = native_file(recv);
     if (!nf || !nf->fp) return val_nil();
-    if (nf->owns_fp && fclose(nf->fp) != 0) {
-        nf->fp = NULL;
-        return eval_raise_class(ev, site, "IOError", "cannot close file");
+    if (nf->owns_fp) {
+        int rc = nf->is_pipe ? pclose(nf->fp) : fclose(nf->fp);
+        if (rc != 0 && !nf->is_pipe) {
+            nf->fp = NULL;
+            return eval_raise_class(ev, site, "IOError", "cannot close file");
+        }
     }
     nf->fp = NULL;
     return val_nil();
@@ -2154,6 +2157,48 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         return 1;
     }
+    if (strcmp(name, "popen") == 0 && strcmp(recv.klass->name, "IO") == 0) {
+        if (argc < 1 || args[0].kind != VAL_STRING) {
+            *out = argc < 1 ? wrong_arg_count(ev, site, argc, 1)
+                            : implicit_string_conversion_error(ev, args[0], site);
+            return 1;
+        }
+        const char *cmd = args[0].sval;
+        const char *pipe_mode = "r";
+        if (argc >= 2 && args[1].kind == VAL_STRING) pipe_mode = args[1].sval;
+
+        FILE *fp = popen(cmd, pipe_mode[0] == 'w' ? "w" : "r");
+        if (!fp) {
+            int err = errno;
+            *out = eval_raise_class(ev, site, errno_class_name(err), "%s - %s", strerror(err), cmd);
+            return 1;
+        }
+
+        NativeFile *nf = alloc_native_file(ev->arena, fp, 1);
+        nf->is_pipe = 1;
+
+        Value wrapper = val_nil();
+        wrapper.kind = VAL_OBJECT;
+        wrapper.obj  = (RubyObject *)nf;
+
+        Value io_obj = val_object(ev->arena, recv);
+        val_object_set_ivar(ev->arena, io_obj, "mode",
+                            val_string(ev->arena, pipe_mode[0] == 'w' ? "w" : "r"));
+        val_object_set_ivar(ev->arena, io_obj, "closed", val_false());
+        val_object_set_ivar(ev->arena, io_obj, "sync", val_false());
+        io_obj.obj->native = wrapper.obj;
+
+        if (blk) {
+            Value result = call_block(ev, env, *blk, &io_obj, 1, site);
+            file_close_stream(ev, io_obj, site);
+            val_object_set_ivar(ev->arena, io_obj, "closed", val_true());
+            if (result.kind == VAL_BREAK) result = *result.jump.wrapped;
+            *out = result;
+        } else {
+            *out = io_obj;
+        }
+        return 1;
+    }
     if (strcmp(name, "console_size") == 0 && strcmp(recv.klass->name, "IO") == 0) {
         if (argc != 0) {
             *out = wrong_arg_count(ev, site, argc, 0);
@@ -2783,7 +2828,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             }
             return 1;
         }
-        if (strcmp(name, "delete") == 0) {
+        if (strcmp(name, "delete") == 0 || strcmp(name, "unlink") == 0) {
             if (argc < 1) {
                 *out = wrong_arg_count(ev, site, argc, 1);
             } else {

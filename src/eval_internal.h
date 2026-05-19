@@ -24,6 +24,7 @@ static inline const char *errno_class_name(int err) {
 typedef struct {
     FILE *fp;
     int   owns_fp;
+    int   is_pipe;   /* 1 if opened via popen — use pclose to close */
 } NativeFile;
 
 typedef struct {

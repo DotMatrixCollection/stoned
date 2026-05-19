@@ -540,3 +540,6 @@ These were previously roadmap items and are now implemented in the current tree:
 - `instance_eval` block form now correctly routes `def` to the receiver's singleton class (was storing in block frame)
 - `require 'date'` now provides a full `Date` class with Julian Day Number arithmetic, `parse`, `strftime`, Comparable, `today`, `leap?`, `yday`, `wday`, `next_day`/`prev_day`
 - `Time.now`, `Time.new(y,m,d,h,min,sec)`, `Time.at`, `Time.local`/`utc`/`gm` added; Time instances now expose `year`, `month`, `day`, `hour`, `min`, `sec`, `wday`, `yday`, `strftime`
+- `IO.popen(cmd) { |f| ... }` added using `popen(3)` with `is_pipe` flag on `NativeFile` for `pclose` on close
+- `require 'tempfile'` now provides `Tempfile.new`/`Tempfile.create` with `write`/`close`/`unlink` lifecycle
+- `File.unlink` added as alias for `File.delete`
