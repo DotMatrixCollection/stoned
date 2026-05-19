@@ -292,6 +292,23 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         }
         return 1;
     }
+    if (strcmp(name, "div") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        int64_t b = args[0].kind == VAL_INT ? args[0].ival : (int64_t)args[0].fval;
+        if (b == 0) { *out = eval_raise_class(ev, site, "ZeroDivisionError", "divided by 0"); return 1; }
+        /* floor division */
+        int64_t q = n / b;
+        if ((n ^ b) < 0 && q * b != n) q--;
+        *out = val_int(q); return 1;
+    }
+    if (strcmp(name, "modulo") == 0 || strcmp(name, "%") == 0 || strcmp(name, "mod") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        int64_t b = args[0].kind == VAL_INT ? args[0].ival : (int64_t)args[0].fval;
+        if (b == 0) { *out = eval_raise_class(ev, site, "ZeroDivisionError", "divided by 0"); return 1; }
+        int64_t r = n % b;
+        if (r != 0 && (r ^ b) < 0) r += b;  /* floor modulo */
+        *out = val_int(r); return 1;
+    }
     if (strcmp(name, "remainder") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
         int64_t b = args[0].kind == VAL_INT ? args[0].ival : (int64_t)args[0].fval;
