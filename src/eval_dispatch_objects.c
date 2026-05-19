@@ -1385,6 +1385,16 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
 
         env_define(ev->arena, klass.klass->class_env, "__struct_members__", members);
 
+        /* Include Enumerable so map/select/min/etc. work on struct instances */
+        Value enumerable_mod;
+        if (env_get(ev->top_env, "Enumerable", &enumerable_mod) &&
+            enumerable_mod.kind == VAL_CLASS && enumerable_mod.klass->is_module) {
+            RubyModuleInclusion *inc = arena_alloc(ev->arena, sizeof(RubyModuleInclusion));
+            inc->mod = enumerable_mod.klass;
+            inc->next = klass.klass->included_modules;
+            klass.klass->included_modules = inc;
+        }
+
         /* Evaluate optional block in context of the new Struct class */
         if (blk && blk->kind == VAL_BLOCK && blk->block.block_node) {
             env_set(ev->arena, klass.klass->class_env, "self", klass);
@@ -3534,6 +3544,71 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     if (!val_equal(v1, v2)) { *out = val_false(); return 1; }
                 }
                 *out = val_true(); return 1;
+            }
+            if (strcmp(name, "each") == 0) {
+                if (!blk) { *out = recv; return 1; }
+                for (size_t i = 0; i < sm.array->len; i++) {
+                    if (sm.array->elems[i].kind != VAL_STRING) continue;
+                    Value v = val_nil();
+                    val_object_get_ivar(recv, sm.array->elems[i].sval, &v);
+                    Value r = call_block(ev, env, *blk, &v, 1, site);
+                    if (ev->errored) { *out = val_nil(); return 1; }
+                    if (flow_signal_out(r, out)) return 1;
+                }
+                *out = recv; return 1;
+            }
+            if (strcmp(name, "each_pair") == 0) {
+                if (!blk) { *out = recv; return 1; }
+                for (size_t i = 0; i < sm.array->len; i++) {
+                    if (sm.array->elems[i].kind != VAL_STRING) continue;
+                    Value bargs[2];
+                    bargs[0] = val_symbol(sm.array->elems[i].sval);
+                    bargs[1] = val_nil();
+                    val_object_get_ivar(recv, sm.array->elems[i].sval, &bargs[1]);
+                    Value r = call_block(ev, env, *blk, bargs, 2, site);
+                    if (ev->errored) { *out = val_nil(); return 1; }
+                    if (flow_signal_out(r, out)) return 1;
+                }
+                *out = recv; return 1;
+            }
+            if (strcmp(name, "[]") == 0 && argc == 1) {
+                if (args[0].kind == VAL_INT) {
+                    int64_t idx = args[0].ival;
+                    if (idx < 0) idx += (int64_t)sm.array->len;
+                    if (idx < 0 || idx >= (int64_t)sm.array->len) { *out = val_nil(); return 1; }
+                    Value key = sm.array->elems[idx];
+                    if (key.kind != VAL_STRING) { *out = val_nil(); return 1; }
+                    Value v = val_nil();
+                    val_object_get_ivar(recv, key.sval, &v);
+                    *out = v; return 1;
+                }
+                if (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) {
+                    Value v = val_nil();
+                    val_object_get_ivar(recv, args[0].sval, &v);
+                    *out = v; return 1;
+                }
+                *out = val_nil(); return 1;
+            }
+            if (strcmp(name, "[]=") == 0 && argc == 2) {
+                if (args[0].kind == VAL_INT) {
+                    int64_t idx = args[0].ival;
+                    if (idx < 0) idx += (int64_t)sm.array->len;
+                    if (idx < 0 || idx >= (int64_t)sm.array->len) {
+                        *out = eval_raise_class(ev, site, "IndexError",
+                                                "offset %ld too large for struct (size:%zu)",
+                                                (long)args[0].ival, sm.array->len);
+                        return 1;
+                    }
+                    Value key = sm.array->elems[idx];
+                    if (key.kind != VAL_STRING) { *out = val_nil(); return 1; }
+                    val_object_set_ivar(ev->arena, recv, key.sval, args[1]);
+                    *out = args[1]; return 1;
+                }
+                if (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) {
+                    val_object_set_ivar(ev->arena, recv, args[0].sval, args[1]);
+                    *out = args[1]; return 1;
+                }
+                *out = val_nil(); return 1;
             }
         }
     }

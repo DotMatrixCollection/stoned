@@ -529,3 +529,4 @@ These were previously roadmap items and are now implemented in the current tree:
 - `Comparable#==` in prelude; `Struct keyword_init:`; `Integer(str, base)`; `Hash()` kernel function
 - `String#%` named format references `%{key}`; `bundler/dsl.rb` uses real `instance_eval`
 - `Enumerable#first(n)`: n-argument form returns first n elements; also fixed `break` from user-defined `yield`-based iterators escaping the method call instead of terminating it
+- `Struct#each`, `#each_pair`, `#[]`, `#[]=`; Struct subclasses now include Enumerable so `map`/`select`/`min`/`sum`/etc. work directly on struct instances
