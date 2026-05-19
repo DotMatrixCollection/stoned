@@ -1848,6 +1848,23 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         array_flatten_into(ev, env, pairs, &result, depth);
         *out = result; return 1;
     }
+    if (strcmp(name, "fetch_values") == 0) {
+        Value result = val_array_new();
+        for (int i = 0; i < argc; i++) {
+            Value v = val_nil();
+            if (val_hash_get(h, args[i], &v)) {
+                val_array_push(&result, v);
+            } else if (blk) {
+                Value r = call_block(ev, env, *blk, &args[i], 1, site);
+                if (val_is_signal(r)) { *out = r; return 1; }
+                val_array_push(&result, r);
+            } else {
+                *out = eval_raise_class(ev, site, "KeyError", "key not found: %s", val_inspect(ev->arena, args[i]));
+                return 1;
+            }
+        }
+        *out = result; return 1;
+    }
     if (strcmp(name, "compact") == 0) {
         Value result = val_hash_new(ev->arena);
         for (size_t i = 0; i < h->len; i++)
