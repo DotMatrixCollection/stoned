@@ -3789,6 +3789,12 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 *out = loc;
                 return 1;
             }
+            if (strcmp(name, "receiver") == 0) {
+                if (!binding || !binding->env) { *out = val_nil(); return 1; }
+                Value self_val;
+                if (env_get(binding->env, "self", &self_val)) { *out = self_val; return 1; }
+                *out = val_nil(); return 1;
+            }
         }
 
         if (strcmp(kname, "Time") == 0) {

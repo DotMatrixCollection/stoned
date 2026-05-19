@@ -1689,6 +1689,18 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (argc != 0) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         return val_bool(recv.kind == VAL_NIL);
     }
+    /* Binding#eval — needs eval_string_in_context which is static here */
+    if (recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS &&
+        strcmp(recv.obj->klass.klass->name, "Binding") == 0 && strcmp(name, "eval") == 0) {
+        if (argc < 1 || args[0].kind != VAL_STRING)
+            return eval_raise_class(ev, site, "ArgumentError", "Binding#eval requires a String");
+        NativeBinding *b = (NativeBinding *)recv.obj->native;
+        Env *benv = b ? b->env : env;
+        const char *bfile = (argc >= 2 && args[1].kind == VAL_STRING) ? args[1].sval
+                          : b && b->file ? b->file : "(eval)";
+        int64_t bline = (argc >= 3 && args[2].kind == VAL_INT) ? args[2].ival : 1;
+        return eval_string_in_context(ev, benv, args[0].sval, benv, bfile, bline, site);
+    }
     if (recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS &&
         strcmp(recv.obj->klass.klass->name, "Pathname") == 0) {
         Value path = val_nil();
