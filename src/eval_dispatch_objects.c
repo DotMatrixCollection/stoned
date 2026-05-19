@@ -3681,6 +3681,40 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
 
         if (strcmp(kname, "Method") == 0) {
+            if (strcmp(name, "name") == 0 || strcmp(name, "original_name") == 0) {
+                Value mname;
+                if (val_object_get_ivar(recv, "__method_name__", &mname) && mname.kind == VAL_STRING)
+                    *out = val_symbol(mname.sval);
+                else
+                    *out = val_nil();
+                return 1;
+            }
+            if (strcmp(name, "owner") == 0) {
+                Value owner;
+                if (val_object_get_ivar(recv, "__owner__", &owner))
+                    *out = owner;
+                else
+                    *out = val_nil();
+                return 1;
+            }
+            if (strcmp(name, "receiver") == 0) {
+                Value receiver;
+                if (val_object_get_ivar(recv, "__receiver__", &receiver))
+                    *out = receiver;
+                else
+                    *out = val_nil();
+                return 1;
+            }
+            if (strcmp(name, "unbind") == 0) {
+                /* Return an UnboundMethod with the same method info */
+                Value ubm_klass;
+                if (!env_get(ev->top_env, "UnboundMethod", &ubm_klass) || ubm_klass.kind != VAL_CLASS) { *out = val_nil(); return 1; }
+                Value ubm = val_object(ev->arena, ubm_klass);
+                Value mname_v, method_v;
+                if (val_object_get_ivar(recv, "__method_name__", &mname_v)) val_object_set_ivar(ev->arena, ubm, "__method_name__", mname_v);
+                if (val_object_get_ivar(recv, "__method__", &method_v)) val_object_set_ivar(ev->arena, ubm, "__method__", method_v);
+                *out = ubm; return 1;
+            }
             if (strcmp(name, "call") == 0 || strcmp(name, "[]") == 0 ||
                 strcmp(name, "bind_call") == 0) {
                 Value receiver, method_name_v;
@@ -3725,6 +3759,23 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
 
         if (strcmp(kname, "UnboundMethod") == 0) {
+            if (strcmp(name, "name") == 0 || strcmp(name, "original_name") == 0) {
+                Value mname;
+                if (val_object_get_ivar(recv, "__method_name__", &mname) && mname.kind == VAL_STRING)
+                    *out = val_symbol(mname.sval);
+                else
+                    *out = val_nil();
+                return 1;
+            }
+            if (strcmp(name, "owner") == 0) {
+                Value owner;
+                if (val_object_get_ivar(recv, "__owner__", &owner))
+                    *out = owner;
+                else { /* Infer from method def */
+                    *out = val_nil();
+                }
+                return 1;
+            }
             if (strcmp(name, "arity") == 0) {
                 Value method_val;
                 if (val_object_get_ivar(recv, "__method__", &method_val) && method_val.kind == VAL_METHOD)

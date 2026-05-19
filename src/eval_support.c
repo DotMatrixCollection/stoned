@@ -245,16 +245,36 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
                 break;
             }
             case 'b': {
-                /* Binary — C doesn't have %b, do it manually */
+                /* Binary — C doesn't have %b, implement with width/pad support */
                 int64_t n = v.kind == VAL_INT ? v.ival : 0;
-                if (n == 0) { tmp[0]='0'; tmp[1]='\0'; piece_len=1; break; }
                 char bitbuf[70]; int bi = 0;
-                uint64_t un = (uint64_t)n;
-                while (un) { bitbuf[bi++] = (un & 1) ? '1' : '0'; un >>= 1; }
-                /* reverse */
-                for (int li=0, ri=bi-1; li<ri; li++,ri--) { char c=bitbuf[li]; bitbuf[li]=bitbuf[ri]; bitbuf[ri]=c; }
+                if (n == 0) { bitbuf[bi++] = '0'; }
+                else {
+                    uint64_t un = (uint64_t)n;
+                    while (un) { bitbuf[bi++] = (un & 1) ? '1' : '0'; un >>= 1; }
+                    for (int li=0, ri=bi-1; li<ri; li++,ri--) { char c=bitbuf[li]; bitbuf[li]=bitbuf[ri]; bitbuf[ri]=c; }
+                }
                 bitbuf[bi] = '\0';
-                piece = bitbuf; piece_len = bi;
+                /* Extract width and padding char from spec */
+                int width = 0; char pad_char = ' '; int left_align = 0;
+                const char *sp = spec + 1; /* skip leading % */
+                if (*sp == '-') { left_align = 1; sp++; }
+                if (*sp == '0') { pad_char = '0'; sp++; }
+                while (*sp >= '0' && *sp <= '9') { width = width * 10 + (*sp - '0'); sp++; }
+                if (width > 0 && bi < width) {
+                    int pad = width - bi;
+                    if (left_align) {
+                        memcpy(tmp, bitbuf, (size_t)bi);
+                        memset(tmp + bi, ' ', (size_t)pad);
+                        tmp[bi + pad] = '\0';
+                    } else {
+                        memset(tmp, pad_char, (size_t)pad);
+                        memcpy(tmp + pad, bitbuf, (size_t)bi + 1);
+                    }
+                    piece = tmp; piece_len = (size_t)width;
+                } else {
+                    piece = bitbuf; piece_len = (size_t)bi;
+                }
                 break;
             }
             case 'c': {
