@@ -1811,7 +1811,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                         if (val_hash_get(args[1].hash, mkey, &hval))
                             hrepl = val_to_s(ev->arena, hval);
                         else
-                            hrepl = val_string_n(ev->arena, s + m.beg, mlen2).sval;
+                            hrepl = "";  /* key not found: replace with empty string */
                         regex_match_free(&m);
                         size_t hrlen = strlen(hrepl);
                         while (used + hrlen + 1 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }
@@ -1904,7 +1904,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     if (args[1].kind == VAL_HASH) {
                         Value mkey = val_string_n(ev->arena, p, nlen);
                         Value hval;
-                        repl = val_hash_get(args[1].hash, mkey, &hval) ? val_to_s(ev->arena, hval) : val_string_n(ev->arena, p, nlen).sval;
+                        repl = val_hash_get(args[1].hash, mkey, &hval) ? val_to_s(ev->arena, hval) : "";
                     } else {
                         repl = val_to_s(ev->arena, args[1]);
                     }
