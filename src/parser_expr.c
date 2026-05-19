@@ -992,6 +992,17 @@ Node *parse_primary(Parser *p) {
                 call->call.args = args;
                 return call;
             }
+            /* Adjacent string literal concatenation: "hello" "world" → "hello world" */
+            while (peek(p).kind == TOK_STRING && peek(p).ival != 1) {
+                Token nt = advance(p);
+                size_t la = str->sval ? strlen(str->sval) : 0;
+                size_t lb = nt.sval ? strlen(nt.sval) : 0;
+                char *cat = arena_alloc(p->arena, la + lb + 1);
+                if (str->sval) memcpy(cat, str->sval, la);
+                if (nt.sval) memcpy(cat + la, nt.sval, lb);
+                cat[la + lb] = '\0';
+                str->sval = cat;
+            }
             return str;
         }
         case TOK_REGEXP: {
@@ -1012,6 +1023,7 @@ Node *parse_primary(Parser *p) {
             advance(p);
             Node *n = node_new(p->arena, NODE_ROPE, s);
             RopeNode *rope = NULL;
+            parse_one_interp_string:
             while (1) {
                 Token seg = peek(p);
                 if (seg.kind == TOK_INTERP_END || seg.kind == TOK_EOF) { advance(p); break; }
@@ -1033,6 +1045,19 @@ Node *parse_primary(Parser *p) {
                 error(p, "unexpected token inside string interpolation", seg.line, seg.col);
                 advance(p);
                 break;
+            }
+            /* Adjacent string literal concatenation */
+            if (!is_backtick) {
+                if (peek(p).kind == TOK_INTERP_BEG && peek(p).ival != 1) {
+                    advance(p); /* consume the opening " of the next string */
+                    goto parse_one_interp_string;
+                }
+                if (peek(p).kind == TOK_STRING && peek(p).ival != 1) {
+                    Token sq = advance(p);
+                    const char *sv = sq.sval ? sq.sval : "";
+                    RopeNode *lit = rope_lit(p->arena, sv, strlen(sv));
+                    rope = rope ? rope_cat(p->arena, rope, lit) : lit;
+                }
             }
             if (!rope) rope = rope_lit(p->arena, "", 0);
             n->interp.rope = rope;
