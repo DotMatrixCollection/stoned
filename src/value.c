@@ -231,10 +231,18 @@ const char *val_to_s(Arena *a, Value v) {
             return buf;
         case VAL_FLOAT:
             buf = arena_alloc(a, 64);
-            snprintf(buf, 64, "%g", v.fval);
-            /* ensure a decimal point is present so 1.0 doesn't print as "1" */
-            if (!strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'n') && !strchr(buf, 'i'))
-                strncat(buf, ".0", 64 - strlen(buf) - 1);
+            if (v.fval != v.fval) { /* NaN */
+                memcpy(buf, "NaN", 4);
+            } else if (v.fval == 1.0/0.0) {
+                memcpy(buf, "Infinity", 9);
+            } else if (v.fval == -1.0/0.0) {
+                memcpy(buf, "-Infinity", 10);
+            } else {
+                snprintf(buf, 64, "%g", v.fval);
+                /* ensure a decimal point is present so 1.0 doesn't print as "1" */
+                if (!strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'n') && !strchr(buf, 'i'))
+                    strncat(buf, ".0", 64 - strlen(buf) - 1);
+            }
             return buf;
         case VAL_STRING: return v.sval ? v.sval : "";
         case VAL_SYMBOL: return v.sval ? v.sval : "";

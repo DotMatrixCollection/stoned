@@ -1173,6 +1173,8 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         if (argc < 1 || argc > 2) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         Value v = args[0];
         int explicit_base = (argc == 2 && args[1].kind == VAL_INT) ? (int)args[1].ival : 0;
+        if (v.kind == VAL_NIL) return eval_raise_class(ev, site, "TypeError", "can't convert nil into Integer");
+        if (v.kind == VAL_BOOL) return explicit_base == 0 ? eval_raise_class(ev, site, "TypeError", "can't convert %s into Integer", v.bval ? "true" : "false") : eval_raise_class(ev, site, "TypeError", "wrong argument type");
         if (v.kind == VAL_INT) return v;
         if (v.kind == VAL_FLOAT && explicit_base == 0) return val_int((int64_t)v.fval);
         if (v.kind == VAL_STRING) {
