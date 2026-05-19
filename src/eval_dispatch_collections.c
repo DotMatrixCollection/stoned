@@ -963,6 +963,39 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = (strcmp(name, "delete_if") == 0 || w != orig) ? recv : val_nil();
         return 1;
     }
+    if (strcmp(name, "slice!") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        int64_t alen = (int64_t)recv.array->len;
+        int64_t idx, len;
+        if (args[0].kind == VAL_RANGE) {
+            RubyRange *r = args[0].range;
+            idx = r->begin_val.kind == VAL_INT ? r->begin_val.ival : 0;
+            int64_t end = r->end_val.kind == VAL_INT ? r->end_val.ival : alen;
+            if (idx < 0) idx += alen;
+            if (end < 0) end += alen;
+            if (!r->exclusive) end++;
+            len = end - idx;
+        } else if (args[0].kind == VAL_INT) {
+            idx = args[0].ival;
+            if (idx < 0) idx += alen;
+            len = (argc >= 2 && args[1].kind == VAL_INT) ? args[1].ival : 1;
+        } else { *out = val_nil(); return 1; }
+        if (idx < 0 || idx > alen || len < 0) { *out = val_nil(); return 1; }
+        if (idx + len > alen) len = alen - idx;
+        /* Extract the removed portion */
+        Value removed = val_array_new();
+        for (int64_t i = idx; i < idx + len; i++) val_array_push(&removed, recv.array->elems[i]);
+        /* Compact remaining elements */
+        int64_t tail = alen - (idx + len);
+        for (int64_t i = 0; i < tail; i++) recv.array->elems[idx + i] = recv.array->elems[idx + len + i];
+        recv.array->len = (size_t)(alen - len);
+        /* Return removed element (not array) for single-index form without length */
+        if (argc == 1 && args[0].kind == VAL_INT && removed.array->len == 1)
+            *out = removed.array->elems[0];
+        else
+            *out = removed;
+        return 1;
+    }
     if (strcmp(name, "to_h") == 0) {
         Value result = val_hash_new(ev->arena);
         if (blk) {
