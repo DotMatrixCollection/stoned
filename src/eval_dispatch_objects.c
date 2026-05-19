@@ -4285,6 +4285,16 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 *out = make_bound_method_proc(ev, receiver, method_name_v.sval, method_object_arity(recv));
                 return 1;
             }
+            if (strcmp(name, "curry") == 0) {
+                Value self_proc = val_nil();
+                dispatch_object(ev, env, recv, "to_proc", NULL, 0, NULL, site, &self_proc, 0, 0);
+                if (self_proc.kind != VAL_BLOCK) {
+                    *out = val_nil();
+                    return 1;
+                }
+                *out = dispatch_method(ev, env, self_proc, "curry", args, argc, blk, site, 0, 1);
+                return 1;
+            }
             /* Method#>> and Method#<< — composition, same semantics as Proc#>>/<<  */
             if (strcmp(name, ">>") == 0 || strcmp(name, "<<") == 0) {
                 if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
