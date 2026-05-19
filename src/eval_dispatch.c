@@ -1760,15 +1760,20 @@ Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name, 
     rest_p->param.splat = 1;
     rest_p->param.name = "__bound_args__";
     NodeList *params = nodelist_append(a, NULL, rest_p);
-    Node *recv_var = node_new(a, NODE_LVAR, s);
-    recv_var->sval = "__bound_recv__";
     Node *args_var = node_new(a, NODE_LVAR, s);
     args_var->sval = "__bound_args__";
     Node *splat_arg = node_new(a, NODE_UNOP, s);
     splat_arg->unop.op = "*";
     splat_arg->unop.operand = args_var;
     Node *call_node = node_new(a, NODE_CALL, s);
-    call_node->call.recv = recv_var;
+    /* nil receiver = top-level method; use bare call to avoid nil.method dispatch */
+    if (receiver.kind != VAL_NIL) {
+        Node *recv_var = node_new(a, NODE_LVAR, s);
+        recv_var->sval = "__bound_recv__";
+        call_node->call.recv = recv_var;
+    } else {
+        call_node->call.recv = NULL;
+    }
     call_node->call.method = method_name;
     call_node->call.args = nodelist_append(a, NULL, splat_arg);
     call_node->call.block = NULL;
@@ -2306,13 +2311,72 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             static const char *obj_builtins[] = {
                 "class", "nil?", "is_a?", "kind_of?", "instance_of?", "respond_to?",
                 "equal?", "==", "!=", "freeze", "frozen?", "itself", "tap", "then", "yield_self", "object_id",
-            "instance_eval", "class_eval", "module_eval",
+                "instance_eval", "class_eval", "module_eval",
                 "send", "__send__", "public_send", "extend", "methods", "public_methods",
-                "private_methods", "protected_methods", "method", "inspect", "to_s", NULL
+                "private_methods", "protected_methods", "method", "inspect", "to_s",
+                "dup", "clone", "hash", "eql?", NULL
             };
             for (int i = 0; obj_builtins[i]; i++) {
                 if (!sym_in_array(&arr, obj_builtins[i]))
                     val_array_push(&arr, val_symbol(obj_builtins[i]));
+            }
+            /* Add primitive-type-specific methods via responds_to probe */
+            {
+                const char **prim_list = NULL;
+                /* Find the right list by probing builtin_primitive_responds_to */
+                static const char *probe_int[] = {
+                    "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "<=>",
+                    "<<", ">>", "&", "|", "^", "~", "[]", "to_i", "to_f", "to_r", "to_c",
+                    "abs", "even?", "odd?", "zero?", "nonzero?", "positive?", "negative?",
+                    "gcd", "lcm", "pow", "divmod", "ceil", "floor", "round", "truncate",
+                    "times", "upto", "downto", "succ", "next", "pred", "chr", "digits",
+                    "integer?", "bit_length", "size", "coerce", NULL };
+                static const char *probe_float[] = {
+                    "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "<=>",
+                    "to_f", "to_i", "to_r", "abs", "ceil", "floor", "round", "truncate",
+                    "zero?", "nan?", "infinite?", "finite?", "positive?", "negative?",
+                    "nonzero?", "divmod", "coerce", NULL };
+                static const char *probe_str[] = {
+                    "+", "*", "<<", "%", "[]", "[]=", "=~", "length", "size", "empty?",
+                    "upcase", "downcase", "strip", "chars", "bytes", "split", "scan",
+                    "match", "match?", "sub", "gsub", "include?", "start_with?", "end_with?",
+                    "index", "rindex", "replace", "chomp", "chop", "reverse", "capitalize",
+                    "swapcase", "ljust", "rjust", "center", "to_sym", "to_i", "to_f",
+                    "each_char", "each_byte", "each_line", "tr", "count", "delete",
+                    "encode", "encoding", "bytesize", "insert", "prepend", "concat",
+                    "slice", "slice!", "delete_prefix", "delete_suffix", NULL };
+                static const char *probe_arr[] = {
+                    "+", "-", "&", "|", "*", "<<", "[]", "[]=", "push", "pop", "shift",
+                    "unshift", "length", "size", "count", "empty?", "first", "last",
+                    "reverse", "flatten", "uniq", "sort", "compact", "zip", "join",
+                    "include?", "index", "find_index", "rindex", "each", "map", "select",
+                    "reject", "reduce", "inject", "any?", "all?", "none?", "min", "max",
+                    "sum", "sample", "shuffle", "rotate", "combination", "permutation",
+                    "product", "transpose", "assoc", "rassoc", "delete", NULL };
+                static const char *probe_hash[] = {
+                    "[]", "[]=", "fetch", "keys", "values", "length", "size", "count",
+                    "empty?", "merge", "merge!", "update", "each", "each_pair",
+                    "each_key", "each_value", "select", "reject", "map", "any?",
+                    "all?", "none?", "delete", "has_key?", "key?", "has_value?",
+                    "to_a", "to_h", "transform_values", "transform_keys",
+                    "invert", "slice", "except", NULL };
+                static const char *probe_sym[] = {
+                    "to_s", "to_sym", "to_proc", "id2name", "inspect",
+                    "upcase", "downcase", "length", "size", NULL };
+
+                if (recv.kind == VAL_INT)    prim_list = probe_int;
+                else if (recv.kind == VAL_FLOAT)  prim_list = probe_float;
+                else if (recv.kind == VAL_STRING) prim_list = probe_str;
+                else if (recv.kind == VAL_ARRAY)  prim_list = probe_arr;
+                else if (recv.kind == VAL_HASH)   prim_list = probe_hash;
+                else if (recv.kind == VAL_SYMBOL) prim_list = probe_sym;
+
+                if (prim_list) {
+                    for (int pi = 0; prim_list[pi]; pi++) {
+                        if (!sym_in_array(&arr, prim_list[pi]))
+                            val_array_push(&arr, val_symbol(prim_list[pi]));
+                    }
+                }
             }
         }
         return arr;
