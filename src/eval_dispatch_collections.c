@@ -1454,7 +1454,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             if (val_hash_get(h, args[0], &found)) *out = found;
             else if (argc > 1) *out = args[1];
             else if (blk) *out = call_block(ev, env, *blk, &args[0], 1, site);
-            else *out = eval_raise_class(ev, site, "KeyError", "Hash#fetch: key not found");
+            else *out = eval_raise_class(ev, site, "KeyError", "key not found: %s", val_inspect(ev->arena, args[0]));
         }
         return 1;
     }
