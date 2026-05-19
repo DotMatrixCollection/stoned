@@ -1498,7 +1498,23 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = result; return 1;
     }
     if (strcmp(name, "each") == 0 || strcmp(name, "each_pair") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) {
+            /* Return Enumerator wrapping the key-value pairs as arrays */
+            Value enum_class;
+            if (env_get(ev->top_env, "Enumerator", &enum_class) && enum_class.kind == VAL_CLASS) {
+                Value pairs = val_array_new();
+                for (size_t i = 0; i < h->len; i++) {
+                    Value pair = val_array_new();
+                    val_array_push(&pair, h->keys[i]);
+                    val_array_push(&pair, h->vals[i]);
+                    val_array_push(&pairs, pair);
+                }
+                Value r = dispatch_method(ev, env, enum_class, "new", &pairs, 1, NULL, site, 0, 1);
+                if (!val_is_signal(r)) { *out = r; return 1; }
+                ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+            }
+            *out = recv; return 1;
+        }
         for (size_t i = 0; i < h->len; i++) {
             Value bargs[2] = { h->keys[i], h->vals[i] };
             Value r = call_block(ev, env, *blk, bargs, 2, site);
@@ -1994,6 +2010,16 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         int64_t hi = r->end_val.kind == VAL_INT ? r->end_val.ival : INT64_MAX;
         if (!blk) {
             if (infinite) { *out = eval_raise_class(ev, site, "TypeError", "Range#each: cannot build array from infinite range"); return 1; }
+            /* Return Enumerator for finite integer range */
+            Value enum_class;
+            if (env_get(ev->top_env, "Enumerator", &enum_class) && enum_class.kind == VAL_CLASS) {
+                Value arr = val_array_new();
+                for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++)
+                    val_array_push(&arr, val_int(i));
+                Value eres = dispatch_method(ev, env, enum_class, "new", &arr, 1, NULL, site, 0, 1);
+                if (!val_is_signal(eres)) { *out = eres; return 1; }
+                ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+            }
             Value arr = val_array_new();
             for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++)
                 val_array_push(&arr, val_int(i));
