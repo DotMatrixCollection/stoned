@@ -6,7 +6,7 @@ example.com:443
 debug=true, verbose=false
 x=1 y=10 rest={}
 x=1 y=20 rest={}
-x=1 y=20 rest={:z=>30}
+x=1 y=20 rest={z: 30}
 local:9000
 local:9000
 local:80

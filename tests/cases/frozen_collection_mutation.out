@@ -5,6 +5,6 @@ array concat: FrozenError
 [1, 2, 3]
 true
 hash []=: FrozenError
-{:a=>1}
+{a: 1}
 string <<: FrozenError
 hello

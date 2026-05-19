@@ -265,15 +265,25 @@ const char *val_to_s(Arena *a, Value v) {
         case VAL_HASH: {
             RubyHash *h = v.hash;
             size_t total = 3;
-            for (size_t i = 0; i < h->len; i++)
-                total += strlen(val_inspect(a, h->keys[i])) + 4
-                       + strlen(val_inspect(a, h->vals[i]));
+            for (size_t i = 0; i < h->len; i++) {
+                int sym_key = h->keys[i].kind == VAL_SYMBOL && h->keys[i].sval;
+                if (sym_key)
+                    total += strlen(h->keys[i].sval) + 4; /* "key: " */
+                else
+                    total += strlen(val_inspect(a, h->keys[i])) + 4;
+                total += strlen(val_inspect(a, h->vals[i]));
+            }
             buf = arena_alloc(a, total);
             buf[0] = '{'; buf[1] = '\0';
             for (size_t i = 0; i < h->len; i++) {
                 if (i) strcat(buf, ", ");
-                strcat(buf, val_inspect(a, h->keys[i]));
-                strcat(buf, "=>");
+                if (h->keys[i].kind == VAL_SYMBOL && h->keys[i].sval) {
+                    strcat(buf, h->keys[i].sval);
+                    strcat(buf, ": ");
+                } else {
+                    strcat(buf, val_inspect(a, h->keys[i]));
+                    strcat(buf, "=>");
+                }
                 strcat(buf, val_inspect(a, h->vals[i]));
             }
             strcat(buf, "}");

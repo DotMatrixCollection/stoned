@@ -3,7 +3,7 @@ Point
 #<struct Point x=3, y=4>
 [:x, :y]
 [3, 4]
-{:x=>3, :y=>4}
+{x: 3, y: 4}
 15
 Box(3x5)
 #<struct Box w=3, h=5>
