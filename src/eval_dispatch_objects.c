@@ -4428,13 +4428,21 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             }
             if (strcmp(name, "bind") == 0) {
                 if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+                Value owner_v = val_nil();
                 Value method_name_v, method_val;
-                if (!val_object_get_ivar(recv, "__method_name__", &method_name_v) ||
+                if (!val_object_get_ivar(recv, "__owner__", &owner_v) ||
+                    !val_object_get_ivar(recv, "__method_name__", &method_name_v) ||
                     !val_object_get_ivar(recv, "__method__", &method_val)) {
                     *out = val_nil(); return 1;
                 }
-                Value owner_v, nat_v;
-                val_object_get_ivar(recv, "__owner__", &owner_v);
+                if (!val_is_a(args[0], owner_v)) {
+                    const char *owner_name = (owner_v.kind == VAL_CLASS && owner_v.klass && owner_v.klass->name)
+                        ? owner_v.klass->name : "Object";
+                    *out = eval_raise_class(ev, site, "TypeError",
+                                            "bind argument must be an instance of %s", owner_name);
+                    return 1;
+                }
+                Value nat_v;
                 val_object_get_ivar(recv, "__native_arity__", &nat_v);
                 *out = build_method_object(ev, args[0], method_name_v, method_val, owner_v, nat_v);
                 return 1;
