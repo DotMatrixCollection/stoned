@@ -1823,6 +1823,12 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                 val_object_set_ivar(ev->arena, copy, iv->name, iv->val);
             copy.obj->native = recv.obj->native;
             if (is_clone && recv.obj->frozen) copy.obj->frozen = 1;
+            /* clone copies the singleton class (singleton methods) */
+            if (is_clone && recv.obj->singleton_env) {
+                copy.obj->singleton_env = env_new(ev->arena, NULL, 1);
+                for (EnvEntry *e = recv.obj->singleton_env->vars; e; e = e->next)
+                    env_define(ev->arena, copy.obj->singleton_env, e->name, e->val);
+            }
             return copy;
         }
         if (recv.kind == VAL_HASH) {
