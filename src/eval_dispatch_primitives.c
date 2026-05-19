@@ -1026,21 +1026,25 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         return 1;
     }
-    if (strcmp(name, "delete_prefix") == 0) {
+    if (strcmp(name, "delete_prefix") == 0 || strcmp(name, "delete_prefix!") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#delete_prefix requires an argument"); return 1; }
+        int bang = (name[strlen(name)-1] == '!');
+        if (bang && recv.frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String"); return 1; }
         const char *prefix = val_to_s(ev->arena, args[0]);
         size_t plen = strlen(prefix);
         if (strncmp(s, prefix, plen) == 0) *out = val_string(ev->arena, s + plen);
-        else *out = val_string(ev->arena, s);
+        else *out = bang ? val_nil() : val_string(ev->arena, s);
         return 1;
     }
-    if (strcmp(name, "delete_suffix") == 0) {
+    if (strcmp(name, "delete_suffix") == 0 || strcmp(name, "delete_suffix!") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#delete_suffix requires an argument"); return 1; }
+        int bang = (name[strlen(name)-1] == '!');
+        if (bang && recv.frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String"); return 1; }
         const char *suffix = val_to_s(ev->arena, args[0]);
         size_t slen = strlen(s), suflen = strlen(suffix);
         if (slen >= suflen && strcmp(s + slen - suflen, suffix) == 0)
             *out = val_string_n(ev->arena, s, slen - suflen);
-        else *out = val_string(ev->arena, s);
+        else *out = bang ? val_nil() : val_string(ev->arena, s);
         return 1;
     }
     if (strcmp(name, "split") == 0) {
