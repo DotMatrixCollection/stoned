@@ -538,3 +538,5 @@ These were previously roadmap items and are now implemented in the current tree:
 - `require 'set'` now provides a full `Set` class backed by Hash with all standard operations (`&`, `|`, `-`, `+`, subset/superset predicates, Enumerable)
 - `Exception#cause` tracks the exception that was active when a new one is raised inside a rescue block
 - `instance_eval` block form now correctly routes `def` to the receiver's singleton class (was storing in block frame)
+- `require 'date'` now provides a full `Date` class with Julian Day Number arithmetic, `parse`, `strftime`, Comparable, `today`, `leap?`, `yday`, `wday`, `next_day`/`prev_day`
+- `Time.now`, `Time.new(y,m,d,h,min,sec)`, `Time.at`, `Time.local`/`utc`/`gm` added; Time instances now expose `year`, `month`, `day`, `hour`, `min`, `sec`, `wday`, `yday`, `strftime`

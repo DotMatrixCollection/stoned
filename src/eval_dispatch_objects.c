@@ -4,6 +4,7 @@
 #include "eval_internal.h"
 #include "utf8.h"
 #include <math.h>
+#include <time.h>
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -1278,6 +1279,49 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         *out = h;
         return 1;
+    }
+
+    if (strcmp(recv.klass->name, "Time") == 0) {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        if (strcmp(name, "now") == 0 || strcmp(name, "new") == 0) {
+            if (argc == 0) {
+                *out = build_time_value(ev, ts.tv_sec, ts.tv_nsec);
+            } else {
+                /* Time.new(year, month, day, hour=0, min=0, sec=0) */
+                struct tm tm = {0};
+                tm.tm_year = (argc >= 1 && args[0].kind == VAL_INT ? (int)args[0].ival : 1970) - 1900;
+                tm.tm_mon  = (argc >= 2 && args[1].kind == VAL_INT ? (int)args[1].ival : 1) - 1;
+                tm.tm_mday = (argc >= 3 && args[2].kind == VAL_INT ? (int)args[2].ival : 1);
+                tm.tm_hour = (argc >= 4 && args[3].kind == VAL_INT ? (int)args[3].ival : 0);
+                tm.tm_min  = (argc >= 5 && args[4].kind == VAL_INT ? (int)args[4].ival : 0);
+                tm.tm_sec  = (argc >= 6 && args[5].kind == VAL_INT ? (int)args[5].ival : 0);
+                tm.tm_isdst = -1;
+                time_t t = mktime(&tm);
+                *out = build_time_value(ev, (int64_t)t, 0);
+            }
+            return 1;
+        }
+        if (strcmp(name, "at") == 0) {
+            int64_t sec = argc >= 1 && args[0].kind == VAL_INT ? args[0].ival : 0;
+            *out = build_time_value(ev, sec, 0);
+            return 1;
+        }
+        if (strcmp(name, "local") == 0 || strcmp(name, "mktime") == 0 ||
+            strcmp(name, "gm") == 0 || strcmp(name, "utc") == 0) {
+            struct tm tm = {0};
+            tm.tm_year = (argc >= 1 && args[0].kind == VAL_INT ? (int)args[0].ival : 1970) - 1900;
+            tm.tm_mon  = (argc >= 2 && args[1].kind == VAL_INT ? (int)args[1].ival : 1) - 1;
+            tm.tm_mday = (argc >= 3 && args[2].kind == VAL_INT ? (int)args[2].ival : 1);
+            tm.tm_hour = (argc >= 4 && args[3].kind == VAL_INT ? (int)args[3].ival : 0);
+            tm.tm_min  = (argc >= 5 && args[4].kind == VAL_INT ? (int)args[4].ival : 0);
+            tm.tm_sec  = (argc >= 6 && args[5].kind == VAL_INT ? (int)args[5].ival : 0);
+            tm.tm_isdst = -1;
+            time_t t = mktime(&tm);
+            *out = build_time_value(ev, (int64_t)t, 0);
+            return 1;
+        }
+        return 0;
     }
 
     if (strcmp(recv.klass->name, "Struct") == 0 && strcmp(name, "new") == 0) {
@@ -3696,6 +3740,61 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             if (!nt) {
                 *out = eval_raise_class(ev, site, "RuntimeError", "invalid Time object");
                 return 1;
+            }
+            if (strcmp(name, "to_i") == 0 || strcmp(name, "tv_sec") == 0) {
+                *out = val_int(nt->sec);
+                return 1;
+            }
+            if (strcmp(name, "to_f") == 0) {
+                *out = val_float((double)nt->sec + (double)nt->nsec / 1e9);
+                return 1;
+            }
+            if (strcmp(name, "tv_nsec") == 0 || strcmp(name, "nsec") == 0) {
+                *out = val_int(nt->nsec);
+                return 1;
+            }
+            /* Decompose into struct tm for named accessors */
+            {
+                time_t t = (time_t)nt->sec;
+                struct tm *tm = localtime(&t);
+                if (tm) {
+                    if (strcmp(name, "year")  == 0) { *out = val_int(tm->tm_year + 1900); return 1; }
+                    if (strcmp(name, "month") == 0 || strcmp(name, "mon") == 0)
+                        { *out = val_int(tm->tm_mon + 1); return 1; }
+                    if (strcmp(name, "day")   == 0 || strcmp(name, "mday") == 0)
+                        { *out = val_int(tm->tm_mday); return 1; }
+                    if (strcmp(name, "hour")  == 0) { *out = val_int(tm->tm_hour); return 1; }
+                    if (strcmp(name, "min")   == 0) { *out = val_int(tm->tm_min);  return 1; }
+                    if (strcmp(name, "sec")   == 0) { *out = val_int(tm->tm_sec);  return 1; }
+                    if (strcmp(name, "wday")  == 0) { *out = val_int(tm->tm_wday); return 1; }
+                    if (strcmp(name, "yday")  == 0) { *out = val_int(tm->tm_yday + 1); return 1; }
+                    if (strcmp(name, "isdst") == 0 || strcmp(name, "dst?") == 0)
+                        { *out = val_bool(tm->tm_isdst > 0); return 1; }
+                    if (strcmp(name, "utc?") == 0 || strcmp(name, "gmt?") == 0)
+                        { *out = val_false(); return 1; }
+                    if (strcmp(name, "strftime") == 0) {
+                        const char *fmt = (argc >= 1 && args[0].kind == VAL_STRING) ? args[0].sval : "%Y-%m-%d %H:%M:%S";
+                        char buf[256];
+                        strftime(buf, sizeof(buf), fmt, tm);
+                        *out = val_string(ev->arena, buf);
+                        return 1;
+                    }
+                    if (strcmp(name, "inspect") == 0 || strcmp(name, "to_s") == 0) {
+                        char buf[64];
+                        strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S %z", tm);
+                        *out = val_string(ev->arena, buf);
+                        return 1;
+                    }
+                    if (strcmp(name, "utc") == 0 || strcmp(name, "gmtime") == 0 ||
+                        strcmp(name, "localtime") == 0) {
+                        *out = recv; return 1;
+                    }
+                    if (strcmp(name, "zone") == 0) {
+                        char buf[64]; strftime(buf, sizeof(buf), "%Z", tm);
+                        *out = val_string(ev->arena, buf);
+                        return 1;
+                    }
+                }
             }
             if (strcmp(name, "to_i") == 0) {
                 *out = val_int(nt->sec);
