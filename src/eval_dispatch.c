@@ -880,12 +880,27 @@ static const char *dispatch_inspect(Eval *ev, Env *env, Value v, Node *site) {
             vs[i] = dispatch_inspect(ev, env, h->vals[i], site);
             total += strlen(ks[i]) + 2 + strlen(vs[i]) + (i < h->len - 1 ? 2 : 0);
         }
+        /* Recompute total with symbol-key shorthand */
+        total = 2;
+        for (size_t i = 0; i < h->len; i++) {
+            int sym_k = h->keys[i].kind == VAL_SYMBOL && h->keys[i].sval;
+            total += (sym_k ? strlen(h->keys[i].sval) + 2 : strlen(ks[i]) + 4)
+                   + strlen(vs[i]) + (i < h->len - 1 ? 2 : 0);
+        }
         char *buf = arena_alloc(ev->arena, total + 1);
         size_t j = 0; buf[j++] = '{';
         for (size_t i = 0; i < h->len; i++) {
-            size_t klen = strlen(ks[i]), vlen = strlen(vs[i]);
-            memcpy(buf + j, ks[i], klen); j += klen;
-            buf[j++] = '='; buf[j++] = '>';
+            if (h->keys[i].kind == VAL_SYMBOL && h->keys[i].sval) {
+                const char *kn = h->keys[i].sval;
+                size_t klen = strlen(kn);
+                memcpy(buf + j, kn, klen); j += klen;
+                buf[j++] = ':'; buf[j++] = ' ';
+            } else {
+                size_t klen = strlen(ks[i]);
+                memcpy(buf + j, ks[i], klen); j += klen;
+                buf[j++] = ' '; buf[j++] = '='; buf[j++] = '>'; buf[j++] = ' ';
+            }
+            size_t vlen = strlen(vs[i]);
             memcpy(buf + j, vs[i], vlen); j += vlen;
             if (i < h->len - 1) { buf[j++] = ','; buf[j++] = ' '; }
         }

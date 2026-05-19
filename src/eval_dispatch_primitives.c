@@ -1999,9 +1999,21 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (value_is_regexp(args[0])) {
-            Value md = regexp_search_value(ev, args[0], recv, 0, site);
-            if (ev->errored) { *out = md; return 1; }
-            *out = val_bool(md.kind != VAL_NIL);
+            /* match? must NOT set $~ or other match globals */
+            Regex *compiled = (Regex *)args[0].obj->native;
+            if (!compiled) {
+                Value src;
+                if (val_object_get_ivar(args[0], "source", &src) && src.kind == VAL_STRING) {
+                    RegexError rerr = {0};
+                    regex_compile(ev->arena, src.sval, 0, &compiled, &rerr);
+                    args[0].obj->native = compiled;
+                }
+            }
+            if (!compiled) { *out = val_false(); return 1; }
+            RegexMatch rm = {0, 0, 0, NULL, NULL};
+            int64_t pos = (argc >= 2 && args[1].kind == VAL_INT) ? args[1].ival : 0;
+            RegexStatus st = regex_search(compiled, s, strlen(s), (int)pos, &rm);
+            *out = val_bool(st == REGEX_OK);
             return 1;
         }
         *out = val_bool(strstr(s, val_to_s(ev->arena, args[0])) != NULL);

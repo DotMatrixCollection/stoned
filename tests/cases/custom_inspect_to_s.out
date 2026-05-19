@@ -1,4 +1,4 @@
 Point(1, 2)
 (1, 2)
 [Point(1, 2), Point(3, 4)]
-{:origin=>Point(0, 0), :dest=>Point(3, 4)}
+{origin: Point(0, 0), dest: Point(3, 4)}

@@ -4433,9 +4433,22 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     *out = eval_raise_class(ev, site, "ArgumentError", "Regexp#match? requires an argument");
                     return 1;
                 }
-                Value md = regexp_search_value(ev, recv, args[0], 0, site);
-                if (ev->errored) { *out = md; return 1; }
-                *out = val_bool(md.kind != VAL_NIL);
+                /* match? must NOT set $~ or other match globals */
+                if (args[0].kind != VAL_STRING) { *out = val_false(); return 1; }
+                Regex *compiled = (Regex *)recv.obj->native;
+                if (!compiled) {
+                    Value src;
+                    if (val_object_get_ivar(recv, "source", &src) && src.kind == VAL_STRING) {
+                        RegexError rerr = {0};
+                        regex_compile(ev->arena, src.sval, 0, &compiled, &rerr);
+                        recv.obj->native = compiled;
+                    }
+                }
+                if (!compiled) { *out = val_false(); return 1; }
+                RegexMatch rm = {0, 0, 0, NULL, NULL};
+                int64_t pos = (argc >= 2 && args[1].kind == VAL_INT) ? args[1].ival : 0;
+                RegexStatus st = regex_search(compiled, args[0].sval, strlen(args[0].sval), (int)pos, &rm);
+                *out = val_bool(st == REGEX_OK);
                 return 1;
             }
             if (strcmp(name, "=~") == 0) {
