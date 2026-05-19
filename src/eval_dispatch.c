@@ -2270,7 +2270,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                 if (!include_super) break;
                 kc = (kc->superclass.kind == VAL_CLASS) ? kc->superclass.klass : NULL;
             }
-            if (vis_mask & 1) {
+            if (include_super && (vis_mask & 1)) {
                 for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
                     const char *plist = primitive_class_methods_for_class(k->name);
                     if (!plist) continue;
@@ -2287,7 +2287,6 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                         if (!end) break;
                         p = end + 1;
                     }
-                    if (!include_super) break;
                 }
             }
         }
