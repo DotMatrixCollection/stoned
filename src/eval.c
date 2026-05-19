@@ -481,6 +481,9 @@ static const char *defined_expr(Eval *ev, Env *env, Node *node) {
         }
         case NODE_SELF:
             return "self";
+        case NODE_ASSIGN:
+        case NODE_OP_ASSIGN:
+            return "assignment";
         case NODE_NIL:
             return "nil";
         case NODE_TRUE:

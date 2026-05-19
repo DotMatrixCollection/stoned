@@ -257,6 +257,13 @@ static Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *s
         for (int i = 0; i < argc; i++)
             copy_module_methods(ev, *slot, args[i].klass, 0);
     }
+    /* Fire Module.extended(base) hook for each extended module */
+    for (int i = 0; i < argc; i++) {
+        if (args[i].kind != VAL_CLASS) continue;
+        Value cm;
+        if (env_get(args[i].klass->class_env, "self.extended", &cm) && cm.kind == VAL_METHOD)
+            call_method_value(ev, ev->top_env, args[i], cm, args[i].klass, "extended", &self, 1, NULL, site);
+    }
     return self;
 }
 

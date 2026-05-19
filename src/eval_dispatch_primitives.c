@@ -416,6 +416,11 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         *out = arr;
         return 1;
     }
+    if (strcmp(name, "bit_length") == 0) {
+        uint64_t v = (uint64_t)(n < 0 ? ~n : n);
+        *out = val_int(v == 0 ? 0 : 64 - __builtin_clzll(v));
+        return 1;
+    }
     if (strcmp(name, "ceildiv") == 0) {
         if (argc < 1 || args[0].kind != VAL_INT) { *out = eval_raise_class(ev, site, "TypeError", "Integer#ceildiv requires an Integer"); return 1; }
         int64_t b = args[0].ival;
