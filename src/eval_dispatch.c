@@ -1271,7 +1271,7 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
         return eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into Hash", value_class_name(ev, v));
     }
-    if (strcmp(name, "raise") == 0) {
+    if (strcmp(name, "raise") == 0 || strcmp(name, "fail") == 0) {
         const char *class_name = "RuntimeError";
         const char *msg = "RuntimeError";
         if (argc == 0 && ev->rescue_context.kind == VAL_OBJECT &&
