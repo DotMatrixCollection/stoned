@@ -2199,6 +2199,23 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         int64_t hi = r->exclusive ? r->end_val.ival - 1 : r->end_val.ival;
         int64_t init = argc > 0 && args[0].kind == VAL_INT ? args[0].ival : 0;
         if (hi < lo) { *out = val_int(init); return 1; }
+        if (blk) {
+            /* sum with block: iterate and accumulate */
+            Value acc = val_int(init);
+            for (int64_t i = lo; i <= hi; i++) {
+                Value arg = val_int(i);
+                Value r_val = call_block(ev, env, *blk, &arg, 1, site);
+                if (val_is_signal(r_val)) { *out = r_val; return 1; }
+                if (acc.kind == VAL_INT && r_val.kind == VAL_INT)
+                    acc.ival += r_val.ival;
+                else {
+                    double a = acc.kind == VAL_FLOAT ? acc.fval : (double)acc.ival;
+                    double c = r_val.kind == VAL_FLOAT ? r_val.fval : (double)r_val.ival;
+                    acc = val_float(a + c);
+                }
+            }
+            *out = acc; return 1;
+        }
         *out = val_int(init + (hi - lo + 1) * (lo + hi) / 2); return 1;
     }
 
