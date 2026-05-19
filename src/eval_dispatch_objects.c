@@ -1452,6 +1452,16 @@ const char *primitive_class_methods_for_class(const char *klass_name) {
         return "[],new";
     if (strcmp(klass_name, "Array") == 0)
         return "[],new";
+    if (strcmp(klass_name, "Encoding") == 0)
+        return "find,default_external,default_internal,default_external=,default_internal=";
+    if (strcmp(klass_name, "Math") == 0)
+        return "sqrt,cbrt,sin,cos,tan,asin,acos,atan,atan2,exp,log,log2,log10,hypot,pow,floor,ceil,ldexp";
+    if (strcmp(klass_name, "Fiber") == 0)
+        return "new,yield,current";
+    if (strcmp(klass_name, "Proc") == 0)
+        return "new";
+    if (strcmp(klass_name, "Pathname") == 0)
+        return "new";
     if (strcmp(klass_name, "Regexp") == 0)
         return "new,escape,quote,union";
     if (strcmp(klass_name, "Time") == 0)
