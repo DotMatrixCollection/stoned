@@ -121,6 +121,7 @@ static int builtin_method_arity(const char *mname) {
         "upcase!","downcase!","capitalize!","swapcase!","strip!","lstrip!","rstrip!",
         "chomp!","chop!","reverse!","squeeze!","unicode_normalize","ascii_only?",
         "valid_encoding?","force_encoding","b","hex","oct","dump","undump",
+        "next","peek","rewind","size","to_a","next_values","peek_values",
         /* block-taking Enumerable/Array methods: block not counted in arity */
         "each","map","collect","select","filter","reject","find","detect","any?","all?",
         "none?","each_with_index","flat_map","collect_concat","group_by","sort_by",
@@ -145,7 +146,7 @@ static int builtin_method_arity(const char *mname) {
         "is_a?","kind_of?","instance_of?",
         "instance_variable_get","instance_variable_defined?",
         "const_get","const_defined?",
-        "upto","downto",
+        "upto","downto","with_index","with_object",
         NULL
     };
     for (int i = 0; one[i]; i++)
