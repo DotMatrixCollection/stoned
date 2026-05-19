@@ -120,6 +120,17 @@ static Value build_unbound_method_object(Eval *ev, Value klass_v, Value method_n
     return obj;
 }
 
+static Value method_display_string(Eval *ev, const char *prefix, Value owner_v, Value method_name_v) {
+    const char *owner_name = (owner_v.kind == VAL_CLASS && owner_v.klass && owner_v.klass->name)
+        ? owner_v.klass->name : "Object";
+    const char *method_name = method_name_v.kind == VAL_STRING && method_name_v.sval
+        ? method_name_v.sval : "?";
+    size_t len = strlen(prefix) + strlen(owner_name) + strlen(method_name) + 8;
+    char *buf = arena_alloc(ev->arena, len);
+    snprintf(buf, len, "#<%s: %s#%s>", prefix, owner_name, method_name);
+    return val_string(ev->arena, buf);
+}
+
 static const char *file_fopen_mode(const char *mode) {
     if (!mode) return NULL;
     size_t mode_len = strcspn(mode, ":");
@@ -4097,6 +4108,13 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
 
         if (strcmp(kname, "Method") == 0) {
+            if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0) {
+                Value owner_v = val_nil(), method_name_v = val_nil();
+                val_object_get_ivar(recv, "__owner__", &owner_v);
+                val_object_get_ivar(recv, "__method_name__", &method_name_v);
+                *out = method_display_string(ev, "Method", owner_v, method_name_v);
+                return 1;
+            }
             if (strcmp(name, "name") == 0 || strcmp(name, "original_name") == 0) {
                 Value mname;
                 if (val_object_get_ivar(recv, "__method_name__", &mname) && mname.kind == VAL_STRING)
@@ -4278,6 +4296,13 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
 
         if (strcmp(kname, "UnboundMethod") == 0) {
+            if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0) {
+                Value owner_v = val_nil(), method_name_v = val_nil();
+                val_object_get_ivar(recv, "__owner__", &owner_v);
+                val_object_get_ivar(recv, "__method_name__", &method_name_v);
+                *out = method_display_string(ev, "UnboundMethod", owner_v, method_name_v);
+                return 1;
+            }
             if (strcmp(name, "name") == 0 || strcmp(name, "original_name") == 0) {
                 Value mname;
                 if (val_object_get_ivar(recv, "__method_name__", &mname) && mname.kind == VAL_STRING)

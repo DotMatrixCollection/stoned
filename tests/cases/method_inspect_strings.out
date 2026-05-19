@@ -1,0 +1,6 @@
+#<Method: T#foo>
+#<Method: T#foo>
+#<UnboundMethod: T#foo>
+#<UnboundMethod: T#foo>
+#<Method: Array#each>
+#<UnboundMethod: Array#each>
