@@ -2038,6 +2038,12 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     }
     if (strcmp(name, "===") == 0 && recv.kind != VAL_CLASS && recv.kind != VAL_RANGE) {
         if (argc < 1) return val_false();
+        /* Proc#===: call the proc with the argument */
+        if (recv.kind == VAL_BLOCK) {
+            Value result = call_block(ev, env, recv, args, argc, site);
+            if (val_is_signal(result)) return result;
+            return val_bool(val_truthy(result));
+        }
         if (recv.kind == VAL_OBJECT) {
             Value m; RubyClass *owner;
             if (ruby_class_find_instance_method(recv.obj->klass.klass, "===", &m, &owner))
