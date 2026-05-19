@@ -295,6 +295,10 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     if (strcmp(name, "infinite?") == 0) { *out = val_nil(); return 1; }
     if (strcmp(name, "finite?") == 0) { *out = val_true(); return 1; }
     if (strcmp(name, "nan?") == 0) { *out = val_false(); return 1; }
+    if (strcmp(name, "real?") == 0) { *out = val_true(); return 1; }
+    if (strcmp(name, "integer?") == 0) { *out = val_true(); return 1; }
+    if (strcmp(name, "real") == 0) { *out = recv; return 1; }
+    if (strcmp(name, "imaginary") == 0) { *out = val_int(0); return 1; }
     if (strcmp(name, "chr") == 0) {
         if (n < 0 || n > 0x10FFFF) { *out = eval_raise_class(ev, site, "RangeError", "%lld out of char range", (long long)n); return 1; }
         if (n <= 127) {
@@ -619,6 +623,10 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(name, "nan?") == 0)      { *out = val_bool(isnan(f)); return 1; }
     if (strcmp(name, "finite?") == 0)   { *out = val_bool(isfinite(f)); return 1; }
+    if (strcmp(name, "real?") == 0)     { *out = val_true(); return 1; }
+    if (strcmp(name, "integer?") == 0)  { *out = val_false(); return 1; }
+    if (strcmp(name, "real") == 0)      { *out = recv; return 1; }
+    if (strcmp(name, "imaginary") == 0) { *out = val_int(0); return 1; }
     if (strcmp(name, "infinite?") == 0) {
         *out = isinf(f) ? val_int(f > 0 ? 1 : -1) : val_nil();
         return 1;
