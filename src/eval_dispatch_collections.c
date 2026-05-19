@@ -2072,6 +2072,31 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
 
     if (strcmp(name, "each") == 0) {
+        /* String range: iterate through successive characters */
+        if (r->begin_val.kind == VAL_STRING && (r->end_val.kind == VAL_STRING || r->end_val.kind == VAL_NIL)) {
+            const char *cur = r->begin_val.sval ? r->begin_val.sval : "";
+            const char *end_s = r->end_val.kind == VAL_STRING && r->end_val.sval ? r->end_val.sval : NULL;
+            if (!blk) { *out = recv; return 1; }
+            /* Simple ASCII string succession for now */
+            char next_buf[16]; strncpy(next_buf, cur, 15); next_buf[15] = '\0';
+            for (int iters = 0; iters < 1000; iters++) {
+                Value cur_val = val_string(ev->arena, next_buf);
+                if (end_s) {
+                    int cmp = strcmp(next_buf, end_s);
+                    if (r->exclusive ? cmp >= 0 : cmp > 0) break;
+                }
+                Value r2 = call_block(ev, env, *blk, &cur_val, 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r2, out)) return 1;
+                if (!end_s) break;
+                /* Compute successor */
+                Value succ_val;
+                dispatch_string(ev, env, cur_val, "succ", NULL, 0, NULL, NULL, &succ_val);
+                if (succ_val.kind != VAL_STRING) break;
+                strncpy(next_buf, succ_val.sval, 15); next_buf[15] = '\0';
+            }
+            *out = recv; return 1;
+        }
         if (r->begin_val.kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range#each requires Integer range"); return 1; }
         /* Allow Float::INFINITY as end for lazy/break-able iteration */
@@ -2157,6 +2182,26 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
                         val_array_push(&arr, cur); break;
                     }
                 }
+            }
+            *out = arr; return 1;
+        }
+        /* String range: build array via successive succ calls */
+        if (r->begin_val.kind == VAL_STRING) {
+            const char *cur = r->begin_val.sval ? r->begin_val.sval : "";
+            const char *end_s = r->end_val.kind == VAL_STRING && r->end_val.sval ? r->end_val.sval : NULL;
+            Value arr = val_array_new();
+            char nb[64]; strncpy(nb, cur, 63); nb[63] = '\0';
+            for (int iters = 0; iters < 10000; iters++) {
+                Value cv = val_string(ev->arena, nb);
+                if (end_s) {
+                    int cmp = strcmp(nb, end_s);
+                    if (r->exclusive ? cmp >= 0 : cmp > 0) break;
+                }
+                val_array_push(&arr, cv);
+                if (!end_s) break;
+                Value sv; dispatch_string(ev, env, cv, "succ", NULL, 0, NULL, NULL, &sv);
+                if (sv.kind != VAL_STRING) break;
+                strncpy(nb, sv.sval, 63); nb[63] = '\0';
             }
             *out = arr; return 1;
         }
@@ -2306,6 +2351,22 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = recv; return 1;
     }
 
+    if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0 ||
+        strcmp(name, "select") == 0 || strcmp(name, "filter") == 0 ||
+        strcmp(name, "flat_map") == 0 || strcmp(name, "each_with_index") == 0 ||
+        strcmp(name, "each_with_object") == 0 || strcmp(name, "each_slice") == 0 ||
+        strcmp(name, "each_cons") == 0 || strcmp(name, "reduce") == 0 ||
+        strcmp(name, "inject") == 0 || strcmp(name, "find") == 0 ||
+        strcmp(name, "detect") == 0 || strcmp(name, "all?") == 0 ||
+        strcmp(name, "any?") == 0 || strcmp(name, "none?") == 0) {
+        /* For string ranges, convert to array first */
+        if (r->begin_val.kind == VAL_STRING) {
+            Value arr;
+            dispatch_range(ev, env, recv, "to_a", NULL, 0, NULL, site, &arr);
+            if (arr.kind == VAL_ARRAY)
+                return dispatch_array(ev, env, arr, name, args, argc, blk, site, out);
+        }
+    }
     if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
         if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#map requires a block"); return 1; }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
