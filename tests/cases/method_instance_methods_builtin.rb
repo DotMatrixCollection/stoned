@@ -1,0 +1,5 @@
+puts Method.instance_methods(false).include?(:arity)
+puts Method.instance_methods(false).include?(:curry)
+puts Method.instance_methods(false).include?(:clone)
+puts UnboundMethod.instance_methods(false).include?(:bind)
+puts UnboundMethod.instance_methods(false).include?(:clone)
