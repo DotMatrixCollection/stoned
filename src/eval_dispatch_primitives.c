@@ -1495,6 +1495,15 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             for (int ci = 0; ci < count && si < slen; ci++) {
                 switch (dir) {
                     case 'C': case 'c': val_array_push(&arr, val_int((dir=='c')?(int8_t)(unsigned char)s[si]:(unsigned char)s[si])); si++; break;
+                    case 'S': case 's': if (si+2<=slen) { uint16_t v2; memcpy(&v2,s+si,2); val_array_push(&arr,val_int((dir=='s')?(int16_t)v2:(uint16_t)v2)); si+=2; } break;
+                    case 'L': case 'l': if (si+4<=slen) { uint32_t v4; memcpy(&v4,s+si,4); val_array_push(&arr,val_int((dir=='l')?(int32_t)v4:(uint32_t)v4)); si+=4; } break;
+                    case 'Q': case 'q': if (si+8<=slen) { uint64_t v8; memcpy(&v8,s+si,8); val_array_push(&arr,val_int((int64_t)v8)); si+=8; } break;
+                    case 'N': if (si+4<=slen) { uint32_t v4=((uint8_t)s[si]<<24)|((uint8_t)s[si+1]<<16)|((uint8_t)s[si+2]<<8)|(uint8_t)s[si+3]; val_array_push(&arr,val_int((int64_t)v4)); si+=4; } break;
+                    case 'n': if (si+2<=slen) { uint16_t v2=((uint8_t)s[si]<<8)|(uint8_t)s[si+1]; val_array_push(&arr,val_int((int64_t)v2)); si+=2; } break;
+                    case 'V': if (si+4<=slen) { uint32_t v4=(uint8_t)s[si]|((uint8_t)s[si+1]<<8)|((uint8_t)s[si+2]<<16)|((uint8_t)s[si+3]<<24); val_array_push(&arr,val_int((int64_t)v4)); si+=4; } break;
+                    case 'v': if (si+2<=slen) { uint16_t v2=(uint8_t)s[si]|((uint8_t)s[si+1]<<8); val_array_push(&arr,val_int((int64_t)v2)); si+=2; } break;
+                    case 'f': if (si+4<=slen) { float fv; memcpy(&fv,s+si,4); val_array_push(&arr,val_float((double)fv)); si+=4; } break;
+                    case 'd': case 'D': if (si+8<=slen) { double dv; memcpy(&dv,s+si,8); val_array_push(&arr,val_float(dv)); si+=8; } break;
                     case 'A': case 'a': case 'Z': {
                         /* eat until null or end */
                         size_t end = si; while (end < slen && s[end]) end++;
@@ -1768,6 +1777,37 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         buf[used] = '\0';
         *out = val_string_n(ev->arena, buf, used);
+        return 1;
+    }
+    if (strcmp(name, "tr_s") == 0) {
+        /* tr then squeeze translated chars */
+        if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "String#tr_s requires two arguments"); return 1; }
+        /* First do the tr translation */
+        Value tr_result;
+        if (!dispatch_string(ev, env, recv, "tr", args, 2, NULL, site, &tr_result)) tr_result = recv;
+        if (val_is_signal(tr_result)) { *out = tr_result; return 1; }
+        /* Then squeeze chars that appear in to_pat */
+        const char *tr_s = tr_result.sval ? tr_result.sval : "";
+        const char *to_pat = val_to_s(ev->arena, args[1]);
+        uint32_t to_chars[1024];
+        size_t to_len = rune_pattern_chars(to_pat, to_chars, 1024);
+        size_t tlen = strlen(tr_s);
+        char *sq = arena_alloc(ev->arena, tlen + 1);
+        size_t qi = 0;
+        uint32_t prev = 0;
+        for (size_t i = 0; i < tlen;) {
+            uint32_t cp = 0; size_t w = 0;
+            utf8_decode_one(tr_s + i, tlen - i, &cp, &w);
+            int in_to = (to_len == 0) || (rune_index_in_chars(cp, to_chars, to_len) != (size_t)-1);
+            if (!in_to || cp != prev) {
+                char enc[4]; size_t ew = utf8_encode_one(cp, enc);
+                memcpy(sq + qi, enc, ew); qi += ew;
+            }
+            prev = in_to ? cp : 0;
+            i += w;
+        }
+        sq[qi] = '\0';
+        *out = val_string_n(ev->arena, sq, qi);
         return 1;
     }
     if (strcmp(name, "count") == 0) {

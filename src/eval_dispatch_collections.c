@@ -776,6 +776,12 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                     case 'S': case 's': { uint16_t n2 = (uint16_t)(v.kind==VAL_INT ? v.ival : 0); memcpy(out_buf+out_len, &n2, 2); out_len+=2; break; }
                     case 'L': case 'l': { uint32_t n4 = (uint32_t)(v.kind==VAL_INT ? v.ival : 0); memcpy(out_buf+out_len, &n4, 4); out_len+=4; break; }
                     case 'Q': case 'q': { uint64_t n8 = (uint64_t)(v.kind==VAL_INT ? v.ival : 0); memcpy(out_buf+out_len, &n8, 8); out_len+=8; break; }
+                    case 'N': { uint32_t n4 = (uint32_t)(v.kind==VAL_INT ? v.ival : 0); out_buf[out_len]=(n4>>24)&0xFF; out_buf[out_len+1]=(n4>>16)&0xFF; out_buf[out_len+2]=(n4>>8)&0xFF; out_buf[out_len+3]=n4&0xFF; out_len+=4; break; }
+                    case 'n': { uint16_t n2 = (uint16_t)(v.kind==VAL_INT ? v.ival : 0); out_buf[out_len]=(n2>>8)&0xFF; out_buf[out_len+1]=n2&0xFF; out_len+=2; break; }
+                    case 'V': { uint32_t n4 = (uint32_t)(v.kind==VAL_INT ? v.ival : 0); out_buf[out_len]=n4&0xFF; out_buf[out_len+1]=(n4>>8)&0xFF; out_buf[out_len+2]=(n4>>16)&0xFF; out_buf[out_len+3]=(n4>>24)&0xFF; out_len+=4; break; }
+                    case 'v': { uint16_t n2 = (uint16_t)(v.kind==VAL_INT ? v.ival : 0); out_buf[out_len]=n2&0xFF; out_buf[out_len+1]=(n2>>8)&0xFF; out_len+=2; break; }
+                    case 'f': { float f = (float)(v.kind==VAL_FLOAT ? v.fval : v.kind==VAL_INT ? (double)v.ival : 0.0); memcpy(out_buf+out_len, &f, 4); out_len+=4; break; }
+                    case 'd': case 'D': { double d = v.kind==VAL_FLOAT ? v.fval : v.kind==VAL_INT ? (double)v.ival : 0.0; memcpy(out_buf+out_len, &d, 8); out_len+=8; break; }
                     case 'A': case 'a': case 'Z': {
                         const char *sv = (v.kind==VAL_STRING) ? v.sval : "";
                         size_t sl = strlen(sv);
