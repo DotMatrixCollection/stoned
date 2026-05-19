@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -2506,6 +2507,50 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         Value pair = val_array_new();
         val_array_push(&pair, reader); val_array_push(&pair, writer);
         *out = pair; return 1;
+    }
+    if (strcmp(name, "select") == 0 && strcmp(recv.klass->name, "IO") == 0) {
+        if (argc < 1)
+            { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        fd_set rfds, wfds, efds;
+        FD_ZERO(&rfds); FD_ZERO(&wfds); FD_ZERO(&efds);
+        int max_fd = -1;
+        for (int ai = 0; ai < 3 && ai < argc; ai++) {
+            if (args[ai].kind != VAL_ARRAY) continue;
+            fd_set *fset = ai == 0 ? &rfds : ai == 1 ? &wfds : &efds;
+            for (size_t i = 0; i < args[ai].array->len; i++) {
+                NativeFile *nf = native_file(args[ai].array->elems[i]);
+                if (!nf || !nf->fp) continue;
+                int fd = fileno(nf->fp);
+                if (fd < 0) continue;
+                FD_SET(fd, fset);
+                if (fd > max_fd) max_fd = fd;
+            }
+        }
+        if (max_fd < 0) { *out = val_nil(); return 1; }
+        struct timeval tv, *tvp = NULL;
+        if (argc >= 4 && (args[3].kind == VAL_INT || args[3].kind == VAL_FLOAT)) {
+            double t = args[3].kind == VAL_INT ? (double)args[3].ival : args[3].fval;
+            tv.tv_sec  = (time_t)t;
+            tv.tv_usec = (suseconds_t)((t - (double)tv.tv_sec) * 1000000.0);
+            tvp = &tv;
+        }
+        int rc = select(max_fd + 1, &rfds, &wfds, &efds, tvp);
+        if (rc < 0) { *out = eval_raise_class(ev, site, "IOError", "select(2) failed"); return 1; }
+        if (rc == 0) { *out = val_nil(); return 1; }
+        Value result = val_array_new();
+        for (int ai = 0; ai < 3; ai++) {
+            Value sub = val_array_new();
+            fd_set *fset = ai == 0 ? &rfds : ai == 1 ? &wfds : &efds;
+            if (ai < argc && args[ai].kind == VAL_ARRAY) {
+                for (size_t i = 0; i < args[ai].array->len; i++) {
+                    NativeFile *nf = native_file(args[ai].array->elems[i]);
+                    if (nf && nf->fp && FD_ISSET(fileno(nf->fp), fset))
+                        val_array_push(&sub, args[ai].array->elems[i]);
+                }
+            }
+            val_array_push(&result, sub);
+        }
+        *out = result; return 1;
     }
     if (strcmp(name, "console_size") == 0 && strcmp(recv.klass->name, "IO") == 0) {
         if (argc != 0) {
