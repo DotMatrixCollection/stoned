@@ -1711,31 +1711,46 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "each_line") == 0 || strcmp(name, "lines") == 0) {
-        /* Optional separator argument */
-        const char *sep = (argc > 0 && args[0].kind == VAL_STRING) ? args[0].sval : "\n";
+        /* Optional separator argument; chomp: keyword */
+        const char *sep = "\n";
+        int do_chomp = 0;
+        for (int i = 0; i < argc; i++) {
+            if (args[i].kind == VAL_STRING) sep = args[i].sval;
+            else if (args[i].kind == VAL_NIL) sep = NULL;
+            else if (args[i].kind == VAL_HASH) {
+                Value chv = val_nil();
+                Value chopk = val_symbol("chomp");
+                if (val_hash_get(args[i].hash, chopk, &chv)) do_chomp = val_truthy(chv);
+            }
+        }
         size_t seplen = sep ? strlen(sep) : 0;
         Value arr = val_array_new();
         const char *p = s;
-        size_t slen = strlen(s);
-        if (seplen == 0) {
-            /* nil separator: return whole string as one line */
+        if (!sep || seplen == 0) {
             val_array_push(&arr, recv);
         } else {
             while (*p) {
                 const char *found = strstr(p, sep);
                 Value line;
                 if (found) {
-                    line = val_string_n(ev->arena, p, (size_t)(found - p + seplen));
+                    size_t llen = (size_t)(found - p + (do_chomp ? 0 : seplen));
+                    line = val_string_n(ev->arena, p, llen);
                     p = found + seplen;
                 } else {
                     line = val_string(ev->arena, p);
+                    if (do_chomp) {
+                        size_t ll = strlen(p);
+                        if (ll > 0 && p[ll-1] == '\n') {
+                            line = val_string_n(ev->arena, p, ll - (ll>1 && p[ll-2]=='\r' ? 2 : 1));
+                        }
+                    }
                     p += strlen(p);
                 }
                 val_array_push(&arr, line);
             }
         }
-        (void)slen;
-        if (!blk || strcmp(name, "lines") == 0) { *out = arr; return 1; }
+        if (strcmp(name, "lines") == 0) { *out = arr; return 1; }
+        if (!blk) { *out = wrap_as_enumerator(ev, env, arr, site); return 1; }
         for (size_t i = 0; i < arr.array->len; i++) {
             Value r = call_block(ev, env, *blk, &arr.array->elems[i], 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
