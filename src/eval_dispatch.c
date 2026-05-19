@@ -588,7 +588,8 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
         strcmp(name, "public_send") == 0 ||
         strcmp(name, "freeze") == 0 || strcmp(name, "frozen?") == 0 ||
         strcmp(name, "dup") == 0 || strcmp(name, "clone") == 0 ||
-        strcmp(name, "object_id") == 0 || strcmp(name, "hash") == 0 ||
+        strcmp(name, "object_id") == 0 || strcmp(name, "__id__") == 0 ||
+        strcmp(name, "itself") == 0 || strcmp(name, "hash") == 0 ||
         strcmp(name, "to_s") == 0 ||
         strcmp(name, "inspect") == 0 || strcmp(name, "==") == 0 ||
         strcmp(name, "!=") == 0 || strcmp(name, "equal?") == 0 ||
@@ -2134,7 +2135,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         ieval_block.block.closure = ieval_env;
         return call_block(ev, ieval_env, ieval_block, args, argc, site);
     }
-    if (strcmp(name, "object_id") == 0) {
+    if (strcmp(name, "object_id") == 0 || strcmp(name, "__id__") == 0) {
         if (recv.kind == VAL_OBJECT) return val_int((int64_t)(uintptr_t)recv.obj);
         if (recv.kind == VAL_INT) return val_int(recv.ival * 2 + 1);
         return val_int((int64_t)(uintptr_t)recv.sval);
@@ -2272,7 +2273,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (include_super && (vis_mask & 1)) {
             static const char *obj_builtins[] = {
                 "class", "nil?", "is_a?", "kind_of?", "instance_of?", "respond_to?",
-                "equal?", "==", "!=", "freeze", "frozen?", "itself", "tap", "then", "yield_self", "object_id",
+                "equal?", "==", "!=", "freeze", "frozen?", "itself", "tap", "then", "yield_self", "object_id", "__id__",
                 "instance_eval", "class_eval", "module_eval",
                 "send", "__send__", "public_send", "extend", "methods", "public_methods",
                 "private_methods", "protected_methods", "method", "inspect", "to_s",
