@@ -759,6 +759,14 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             utf8_char_at(s, i, &ptr, &width, NULL);
             val_array_push(&arr, val_string_n(ev->arena, ptr, width));
         }
+        if (blk) {
+            for (size_t i = 0; i < arr.array->len; i++) {
+                Value r = call_block(ev, env, *blk, &arr.array->elems[i], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv; return 1;
+        }
         *out = arr;
         return 1;
     }
@@ -944,6 +952,15 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 count++;
             }
             val_array_push(&arr, val_string(ev->arena, p));
+        }
+        /* Remove trailing empty strings when limit is 0 (default) */
+        if (limit == 0) {
+            while (arr.array->len > 0) {
+                Value last = arr.array->elems[arr.array->len - 1];
+                if (last.kind == VAL_STRING && last.sval && last.sval[0] == '\0')
+                    arr.array->len--;
+                else break;
+            }
         }
         *out = arr;
         return 1;
