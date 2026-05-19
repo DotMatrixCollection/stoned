@@ -1149,14 +1149,14 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     if (strcmp(name, "each_char") == 0) {
         size_t chars = utf8_char_count(s);
         if (!blk) {
-            /* blockless: return array of chars */
+            /* blockless: return Enumerator wrapping char array */
             Value arr = val_array_new();
             for (size_t i = 0; i < chars; i++) {
                 const char *ptr = NULL; size_t width = 0;
                 utf8_char_at(s, i, &ptr, &width, NULL);
                 val_array_push(&arr, val_string_n(ev->arena, ptr, width));
             }
-            *out = arr;
+            *out = wrap_as_enumerator(ev, env, arr, site);
         } else {
             for (size_t i = 0; i < chars; i++) {
                 const char *ptr = NULL;
@@ -1244,10 +1244,10 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     if (strcmp(name, "setbyte") == 0) { *out = recv; return 1; }
     if (strcmp(name, "each_byte") == 0) {
         if (!blk) {
-            /* Return array of bytes */
+            /* Return Enumerator wrapping byte array */
             Value arr = val_array_new();
             for (size_t i = 0; s[i]; i++) val_array_push(&arr, val_int((int64_t)(unsigned char)s[i]));
-            *out = arr; return 1;
+            *out = wrap_as_enumerator(ev, env, arr, site); return 1;
         }
         for (size_t i = 0; s[i]; i++) {
             Value byte = val_int((int64_t)(unsigned char)s[i]);
