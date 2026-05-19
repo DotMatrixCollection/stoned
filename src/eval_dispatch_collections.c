@@ -344,13 +344,33 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0) { *out = val_string(ev->arena, val_to_s(ev->arena, recv)); return 1; }
     if (strcmp(name, "join") == 0) {
         const char *sep = argc > 0 ? val_to_s(ev->arena, args[0]) : "";
+        size_t seplen = strlen(sep);
+        /* Collect string representations, dispatching to_s for user objects */
+        const char *strs[4096]; size_t str_lens[4096];
+        size_t n = recv.array->len < 4096 ? recv.array->len : 4096;
         size_t total = 1;
-        for (size_t i = 0; i < recv.array->len; i++) total += strlen(val_to_s(ev->arena, recv.array->elems[i])) + strlen(sep);
+        for (size_t i = 0; i < n; i++) {
+            Value elem = recv.array->elems[i];
+            if (elem.kind == VAL_OBJECT || elem.kind == VAL_CLASS) {
+                /* Call Ruby to_s */
+                Value ts = dispatch_method(ev, env, elem, "to_s", NULL, 0, NULL, site, 0, -1);
+                strs[i] = (!val_is_signal(ts) && ts.kind == VAL_STRING) ? ts.sval : val_to_s(ev->arena, elem);
+            } else if (elem.kind == VAL_ARRAY) {
+                /* Recursively join nested arrays */
+                Value inner_out;
+                dispatch_array(ev, env, elem, "join", args, argc, blk, site, &inner_out);
+                strs[i] = (inner_out.kind == VAL_STRING) ? inner_out.sval : "";
+            } else {
+                strs[i] = val_to_s(ev->arena, elem);
+            }
+            str_lens[i] = strlen(strs[i]);
+            total += str_lens[i] + (i > 0 ? seplen : 0);
+        }
         char *buf = arena_alloc(ev->arena, total);
         buf[0] = '\0';
-        for (size_t i = 0; i < recv.array->len; i++) {
-            if (i) strcat(buf, sep);
-            strcat(buf, val_to_s(ev->arena, recv.array->elems[i]));
+        for (size_t i = 0; i < n; i++) {
+            if (i) { memcpy(buf + strlen(buf), sep, seplen + 1); }
+            memcpy(buf + strlen(buf), strs[i], str_lens[i] + 1);
         }
         *out = val_string(ev->arena, buf); return 1;
     }
