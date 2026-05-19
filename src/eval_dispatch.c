@@ -626,9 +626,11 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
         strcmp(name, "send") == 0 || strcmp(name, "__send__") == 0 ||
         strcmp(name, "public_send") == 0 ||
         strcmp(name, "freeze") == 0 || strcmp(name, "frozen?") == 0 ||
-        strcmp(name, "object_id") == 0 || strcmp(name, "to_s") == 0 ||
+        strcmp(name, "object_id") == 0 || strcmp(name, "hash") == 0 ||
+        strcmp(name, "to_s") == 0 ||
         strcmp(name, "inspect") == 0 || strcmp(name, "==") == 0 ||
         strcmp(name, "!=") == 0 || strcmp(name, "equal?") == 0 ||
+        strcmp(name, "eql?") == 0 ||
         strcmp(name, "method") == 0 || strcmp(name, "tap") == 0 ||
         strcmp(name, "then") == 0 || strcmp(name, "yield_self") == 0)
         return 1;
@@ -1886,6 +1888,11 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     }
     if (strcmp(name, "eql?") == 0) {
         if (argc < 1) return val_false();
+        if (recv.kind == VAL_OBJECT) {
+            Value disp_out;
+            if (dispatch_object(ev, env, recv, "eql?", args, argc, blk, site, &disp_out, public_only, explicit_receiver))
+                return disp_out;
+        }
         /* eql? requires same type and value — differs from == for numeric cross-type */
         if (recv.kind != args[0].kind) return val_false();
         return val_bool(val_equal(recv, args[0]));
@@ -2105,6 +2112,14 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (recv.kind == VAL_OBJECT) return val_int((int64_t)(uintptr_t)recv.obj);
         if (recv.kind == VAL_INT) return val_int(recv.ival * 2 + 1);
         return val_int((int64_t)(uintptr_t)recv.sval);
+    }
+    if (strcmp(name, "hash") == 0) {
+        if (recv.kind == VAL_OBJECT) {
+            Value disp_out;
+            if (dispatch_object(ev, env, recv, "hash", args, argc, blk, site, &disp_out, public_only, explicit_receiver))
+                return disp_out;
+        }
+        return dispatch_method(ev, env, recv, "object_id", NULL, 0, NULL, site, 0, 1);
     }
     if (strcmp(name, "==") == 0) {
         if (argc < 1) return val_false();

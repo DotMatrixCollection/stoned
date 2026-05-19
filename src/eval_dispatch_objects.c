@@ -20,6 +20,50 @@
 #include <termios.h>
 #include <unistd.h>
 
+static uint64_t method_string_hash(const char *s) {
+    uint64_t h = 1469598103934665603ULL;
+    if (!s) return h;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        h ^= (uint64_t)(*p);
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+static int method_value_same_identity(Value a, Value b) {
+    if (a.kind != b.kind) return 0;
+    switch (a.kind) {
+        case VAL_OBJECT: return a.obj == b.obj;
+        case VAL_ARRAY: return a.array == b.array;
+        case VAL_HASH: return a.hash == b.hash;
+        case VAL_CLASS: return a.klass == b.klass;
+        case VAL_BLOCK: return a.block.block_node == b.block.block_node;
+        case VAL_STRING:
+        case VAL_SYMBOL: return a.sval == b.sval || (a.sval && b.sval && strcmp(a.sval, b.sval) == 0);
+        default: return val_equal(a, b);
+    }
+}
+
+static uint64_t method_value_identity_hash(Value v) {
+    switch (v.kind) {
+        case VAL_OBJECT: return (uint64_t)(uintptr_t)v.obj;
+        case VAL_ARRAY: return (uint64_t)(uintptr_t)v.array;
+        case VAL_HASH: return (uint64_t)(uintptr_t)v.hash;
+        case VAL_CLASS: return (uint64_t)(uintptr_t)v.klass;
+        case VAL_BLOCK: return (uint64_t)(uintptr_t)v.block.block_node;
+        case VAL_INT: return (uint64_t)v.ival;
+        case VAL_BOOL: return (uint64_t)(v.bval ? 1 : 0);
+        case VAL_FLOAT: {
+            union { double f; uint64_t u; } bits = { .f = v.fval };
+            return bits.u;
+        }
+        case VAL_STRING:
+        case VAL_SYMBOL: return method_string_hash(v.sval);
+        case VAL_NIL: return 0;
+        default: return (uint64_t)v.kind;
+    }
+}
+
 static const char *file_fopen_mode(const char *mode) {
     if (!mode) return NULL;
     size_t mode_len = strcspn(mode, ":");
@@ -4005,6 +4049,37 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     *out = val_nil();
                 return 1;
             }
+            if (strcmp(name, "==") == 0 || strcmp(name, "eql?") == 0) {
+                if (argc < 1 || !value_is_a_named_class(ev, args[0], "Method")) {
+                    *out = val_false();
+                    return 1;
+                }
+                Value lhs_receiver = val_nil(), rhs_receiver = val_nil();
+                Value lhs_name = val_nil(), rhs_name = val_nil();
+                if (!val_object_get_ivar(recv, "__receiver__", &lhs_receiver) ||
+                    !val_object_get_ivar(args[0], "__receiver__", &rhs_receiver) ||
+                    !val_object_get_ivar(recv, "__method_name__", &lhs_name) ||
+                    !val_object_get_ivar(args[0], "__method_name__", &rhs_name)) {
+                    *out = val_false();
+                    return 1;
+                }
+                *out = val_bool(method_value_same_identity(lhs_receiver, rhs_receiver) &&
+                                lhs_name.kind == VAL_STRING && rhs_name.kind == VAL_STRING &&
+                                strcmp(lhs_name.sval, rhs_name.sval) == 0);
+                return 1;
+            }
+            if (strcmp(name, "hash") == 0) {
+                Value receiver = val_nil(), method_name = val_nil();
+                if (!val_object_get_ivar(recv, "__receiver__", &receiver) ||
+                    !val_object_get_ivar(recv, "__method_name__", &method_name) ||
+                    method_name.kind != VAL_STRING) {
+                    *out = val_int((int64_t)(uintptr_t)recv.obj);
+                    return 1;
+                }
+                uint64_t h = method_value_identity_hash(receiver) ^ (method_string_hash(method_name.sval) << 1);
+                *out = val_int((int64_t)(h & INT64_MAX));
+                return 1;
+            }
             if (strcmp(name, "owner") == 0) {
                 Value owner;
                 if (val_object_get_ivar(recv, "__owner__", &owner))
@@ -4116,6 +4191,37 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     *out = val_symbol(mname.sval);
                 else
                     *out = val_nil();
+                return 1;
+            }
+            if (strcmp(name, "==") == 0 || strcmp(name, "eql?") == 0) {
+                if (argc < 1 || !value_is_a_named_class(ev, args[0], "UnboundMethod")) {
+                    *out = val_false();
+                    return 1;
+                }
+                Value lhs_owner = val_nil(), rhs_owner = val_nil();
+                Value lhs_name = val_nil(), rhs_name = val_nil();
+                if (!val_object_get_ivar(recv, "__owner__", &lhs_owner) ||
+                    !val_object_get_ivar(args[0], "__owner__", &rhs_owner) ||
+                    !val_object_get_ivar(recv, "__method_name__", &lhs_name) ||
+                    !val_object_get_ivar(args[0], "__method_name__", &rhs_name)) {
+                    *out = val_false();
+                    return 1;
+                }
+                *out = val_bool(method_value_same_identity(lhs_owner, rhs_owner) &&
+                                lhs_name.kind == VAL_STRING && rhs_name.kind == VAL_STRING &&
+                                strcmp(lhs_name.sval, rhs_name.sval) == 0);
+                return 1;
+            }
+            if (strcmp(name, "hash") == 0) {
+                Value owner = val_nil(), method_name = val_nil();
+                if (!val_object_get_ivar(recv, "__owner__", &owner) ||
+                    !val_object_get_ivar(recv, "__method_name__", &method_name) ||
+                    method_name.kind != VAL_STRING) {
+                    *out = val_int((int64_t)(uintptr_t)recv.obj);
+                    return 1;
+                }
+                uint64_t h = method_value_identity_hash(owner) ^ (method_string_hash(method_name.sval) << 1) ^ 0x9e3779b97f4a7c15ULL;
+                *out = val_int((int64_t)(h & INT64_MAX));
                 return 1;
             }
             if (strcmp(name, "owner") == 0) {
