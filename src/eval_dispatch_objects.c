@@ -1433,13 +1433,19 @@ int primitive_class_responds_to_name(const char *klass_name, const char *name) {
     return 0;
 }
 
-static const char *primitive_class_methods_for_class(const char *klass_name) {
+const char *primitive_class_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Module") == 0)
         return "constants,instance_methods,public_instance_methods,private_instance_methods,protected_instance_methods,ancestors,include?,included_modules,name";
     if (strcmp(klass_name, "Class") == 0)
         return "superclass,instance_methods,public_instance_methods,private_instance_methods,protected_instance_methods,new,name,ancestors";
     if (strcmp(klass_name, "Dir") == 0)
         return "pwd,chdir,mkdir,glob";
+    if (strcmp(klass_name, "File") == 0)
+        return "open,read,write,binread,foreach,readlines,exist?,exists?";
+    if (strcmp(klass_name, "IO") == 0)
+        return "open,read,write,pipe,binread,foreach,readlines";
+    if (strcmp(klass_name, "Process") == 0)
+        return "pid";
     return NULL;
 }
 

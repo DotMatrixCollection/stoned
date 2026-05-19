@@ -1,0 +1,13 @@
+puts File.respond_to?(:open)
+puts File.respond_to?(:read)
+puts File.respond_to?(:write)
+puts IO.respond_to?(:open)
+puts IO.respond_to?(:pipe)
+puts Process.respond_to?(:pid)
+
+puts File.methods.include?(:open)
+puts File.methods.include?(:read)
+puts File.methods.include?(:write)
+puts IO.methods.include?(:open)
+puts IO.methods.include?(:pipe)
+puts Process.methods.include?(:pid)

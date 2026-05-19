@@ -2272,15 +2272,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             }
             if (include_super && (vis_mask & 1)) {
                 for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
-                    static const char *dummy = "";
-                    (void)dummy;
-                    const char *plist = NULL;
-                    if (strcmp(k->name, "Module") == 0)
-                        plist = "constants,instance_methods,public_instance_methods,private_instance_methods,protected_instance_methods,ancestors,include?,included_modules,name";
-                    else if (strcmp(k->name, "Class") == 0)
-                        plist = "superclass,instance_methods,public_instance_methods,private_instance_methods,protected_instance_methods,new,name,ancestors";
-                    else if (strcmp(k->name, "Dir") == 0)
-                        plist = "pwd,chdir,mkdir,glob";
+                    const char *plist = primitive_class_methods_for_class(k->name);
                     if (!plist) continue;
                     for (const char *p = plist; *p; ) {
                         const char *end = strchr(p, ',');
