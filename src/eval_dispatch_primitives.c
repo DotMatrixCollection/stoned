@@ -1234,6 +1234,34 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = val_int((int64_t)strtoll(p, NULL, base));
         return 1;
     }
+    if (strcmp(name, "partition") == 0 || strcmp(name, "rpartition") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "partition requires an argument"); return 1; }
+        const char *sep = val_to_s(ev->arena, args[0]);
+        size_t seplen = strlen(sep);
+        const char *found = NULL;
+        if (strcmp(name, "partition") == 0) {
+            found = strstr(s, sep);
+        } else {
+            /* rpartition: find last occurrence */
+            const char *p = strstr(s, sep);
+            while (p) { found = p; p = strstr(p + 1, sep); }
+        }
+        Value arr = val_array_new();
+        if (found) {
+            val_array_push(&arr, val_string_n(ev->arena, s, (size_t)(found - s)));
+            val_array_push(&arr, val_string(ev->arena, sep));
+            val_array_push(&arr, val_string(ev->arena, found + seplen));
+        } else if (strcmp(name, "partition") == 0) {
+            val_array_push(&arr, val_string(ev->arena, s));
+            val_array_push(&arr, val_string(ev->arena, ""));
+            val_array_push(&arr, val_string(ev->arena, ""));
+        } else {
+            val_array_push(&arr, val_string(ev->arena, ""));
+            val_array_push(&arr, val_string(ev->arena, ""));
+            val_array_push(&arr, val_string(ev->arena, s));
+        }
+        *out = arr; return 1;
+    }
     if (strcmp(name, "bytes") == 0) {
         Value arr = val_array_new();
         for (size_t i = 0; s[i]; i++)
