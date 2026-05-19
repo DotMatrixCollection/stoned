@@ -4196,6 +4196,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 return 1;
             }
             if (strcmp(name, "call") == 0 || strcmp(name, "[]") == 0 ||
+                strcmp(name, "===") == 0 ||
                 strcmp(name, "bind_call") == 0) {
                 Value receiver, method_name_v;
                 if (!val_object_get_ivar(recv, "__receiver__", &receiver) ||

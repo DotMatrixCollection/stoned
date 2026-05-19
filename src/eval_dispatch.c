@@ -22,7 +22,7 @@ extern char **environ;
 static Value val_class_of(Eval *ev, Value v);
 static Value infer_builtin_method_owner(Eval *ev, Value recv);
 static const char *method_obj_methods[] = {
-    "name", "original_name", "owner", "receiver", "unbind", "call", "[]",
+    "name", "original_name", "owner", "receiver", "unbind", "call", "[]", "===",
     "bind_call", "arity", "parameters", "super_method", "to_proc", "curry", ">>", "<<", "source_location",
     NULL
 };
