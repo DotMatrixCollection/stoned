@@ -3773,8 +3773,19 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     *out = eval_raise_class(ev, site, "RuntimeError", "invalid Method object");
                     return 1;
                 }
-                /* bypass visibility — Method#call always allowed */
-                *out = dispatch_method(ev, env, receiver, method_name_v.sval, args, argc, blk, site, 0, -1);
+                /* Use stored method value if available (avoids redefined-method dispatch) */
+                Value stored_method;
+                if (val_object_get_ivar(recv, "__method__", &stored_method) &&
+                    stored_method.kind == VAL_METHOD && stored_method.method.def_node) {
+                    RubyClass *owner_klass = NULL;
+                    if (receiver.kind == VAL_OBJECT && receiver.obj->klass.kind == VAL_CLASS)
+                        owner_klass = receiver.obj->klass.klass;
+                    *out = call_method_value(ev, env, receiver, stored_method, owner_klass,
+                                             method_name_v.sval, args, argc, blk, site);
+                } else {
+                    /* bypass visibility — Method#call always allowed */
+                    *out = dispatch_method(ev, env, receiver, method_name_v.sval, args, argc, blk, site, 0, -1);
+                }
                 return 1;
             }
             if (strcmp(name, "arity") == 0) {
