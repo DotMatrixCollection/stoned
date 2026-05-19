@@ -191,7 +191,7 @@ Recent Stage 5 progress already landed:
 - `Array#index`/`find_index` (value or block), `Array#rindex` (value or block), `Array#sample`, `Array#shuffle`/`shuffle!`
 - `String#to_i(base)`: now accepts base 2–36 via `strtoll`; `"ff".to_i(16)` = 255, `"1010".to_i(2)` = 10
 - Regex match globals: `$~` (MatchData), `$1`–`$9` (capture groups) now set after every `=~`, `String#match`, `Regexp#match`, and `Regexp#=~`; cleared to nil on no-match. Bug was stack-allocated key strings passed to `global_set` which stores the pointer — fixed with static key table
-- Blockless iterators now return arrays instead of raising `LocalJumpError`: `Integer#times`, `upto`, `downto`, `step`; `Array#each`, `each_with_index`; `Hash#each`/`each_pair`, `each_key`, `each_value`; `Range#each`, `each_with_index` — enables all common chained patterns (`3.times.map {}`, `arr.each_with_index.select {}`, etc.) without a full Enumerator implementation
+- Blockless iterators now return `Enumerator` objects instead of raising `LocalJumpError`: `Integer#times`, `upto`, `downto`, `step`; `Array#each`, `each_with_index`; `Hash#each`/`each_pair`, `each_key`, `each_value`; `Range#each`, `each_with_index` — plus enumerator adapter methods like `with_index`, `with_object`, `peek_values`, and `next_values`
 - Namespaced constant paths (`Foo::Bar`) in parser, eval, and const lookup; `Module.constants`, `Module#constants`; nested constant assignment (`Outer::K = v`); `private_constant`/`public_constant`/`deprecate_constant` no-ops
 - ENV hash populated from host environment; ARGV, RUBY_ENGINE/VERSION/PLATFORM/DESCRIPTION/PATCHLEVEL/REVISION/RELEASE_DATE/COPYRIGHT; Marshal::MAJOR_VERSION/MINOR_VERSION; Thread::Mutex stub with synchronize; Process.pid; rbconfig.rb shim
 - Lexer: 0o/0O octal notation, %r{} percent-regexp literals, ?x char literals, regexp starting with `=` or `=~` now lex correctly
@@ -481,7 +481,7 @@ These were previously roadmap items and are now implemented in the current tree:
 - `Float` Infinity/NaN now renders as `"Infinity"`, `"-Infinity"`, `"NaN"` (not platform C output)
 - `Integer(nil)` now raises TypeError
 - `format`/`sprintf` `%b` with width/padding now works correctly
-- `Method#name`, `Method#owner`, `Method#receiver`, `Method#unbind`; `UnboundMethod#name`, `#owner` added
+- `Method#name`, `Method#owner`, `Method#receiver`, `Method#arity`, `Method#parameters`, `Method#source_location`, `Method#unbind`, method-object equality/hash semantics; `UnboundMethod#name`, `#owner`, `#arity`, `#parameters`, `#source_location`, `#bind`, `#bind_call`
 - `Comparable#==` added to prelude (uses `<=>`)
 - `Struct.new(keyword_init: true)` strips the option hash from member names; keyword_init structs accept keyword args at construction
 - `Integer(str, base)` accepts optional base argument
