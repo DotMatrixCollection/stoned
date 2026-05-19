@@ -919,12 +919,27 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
 
     if (strcmp(name, "caller") == 0 || strcmp(name, "caller_locations") == 0) {
         int skip = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival : 1;
+        int limit = (argc > 1 && args[1].kind == VAL_INT) ? (int)args[1].ival : -1;
+        int is_locations = (strcmp(name, "caller_locations") == 0);
+        Value loc_class = val_nil();
+        if (is_locations)
+            env_get(ev->top_env, "Thread::Backtrace::Location", &loc_class);
         Value arr = val_array_new();
         for (int fi = ev->frame_count - 1 - skip; fi >= 0; fi--) {
+            if (limit >= 0 && (int)arr.array->len >= limit) break;
             char buf[512];
             snprintf(buf, sizeof(buf), "%u:%u:in `%s'",
                      ev->frames[fi].line, ev->frames[fi].col, ev->frames[fi].label);
-            val_array_push(&arr, val_string(ev->arena, buf));
+            if (is_locations && loc_class.kind == VAL_CLASS) {
+                Value loc_args[3];
+                loc_args[0] = val_string(ev->arena, ev->current_file ? ev->current_file : "(unknown)");
+                loc_args[1] = val_int(ev->frames[fi].line);
+                loc_args[2] = val_string(ev->arena, ev->frames[fi].label ? ev->frames[fi].label : "(unknown)");
+                Value loc = dispatch_method(ev, env, loc_class, "new", loc_args, 3, NULL, site, 0, 1);
+                val_array_push(&arr, val_is_signal(loc) ? val_string(ev->arena, buf) : loc);
+            } else {
+                val_array_push(&arr, val_string(ev->arena, buf));
+            }
         }
         return arr;
     }
@@ -1419,8 +1434,7 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
             if (r.kind == VAL_EXCEPTION) {
                 if (ev->current_exception.kind == VAL_OBJECT &&
                     value_is_a_named_class(ev, ev->current_exception, "StopIteration")) {
-                    ev->exception_class = NULL;
-                    ev->current_exception = val_nil();
+                    eval_clear_exception(ev);
                     return val_nil();
                 }
                 return r;
@@ -2182,6 +2196,13 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (strcmp(name, "object_id") == 0 || strcmp(name, "__id__") == 0) {
         if (recv.kind == VAL_OBJECT) return val_int((int64_t)(uintptr_t)recv.obj);
         if (recv.kind == VAL_INT) return val_int(recv.ival * 2 + 1);
+        if (recv.kind == VAL_SYMBOL) {
+            /* Symbols are equal by name, so object_id must be stable across allocations */
+            const char *s = recv.sval ? recv.sval : "";
+            uint64_t h = 14695981039346656037ULL;
+            while (*s) { h ^= (uint8_t)*s++; h *= 1099511628211ULL; }
+            return val_int((int64_t)(h >> 1)); /* shift to keep positive */
+        }
         return val_int((int64_t)(uintptr_t)recv.sval);
     }
     if (strcmp(name, "hash") == 0) {
