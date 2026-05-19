@@ -1,0 +1,8 @@
+Enumerator
+[[10, 0], [20, 1]]
+Enumerator
+[:a, :b]
+Enumerator
+[[[:a, 1], 0], [[:b, 2], 1]]
+Enumerator
+[[3, 0], [4, 1], [5, 2]]

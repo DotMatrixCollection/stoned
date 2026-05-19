@@ -7,6 +7,17 @@
 #include <string.h>
 #include <strings.h>
 
+/* Wrap arr in Enumerator.new(arr); falls back to arr if class not found. */
+static Value wrap_as_enumerator(Eval *ev, Env *env, Value arr, Node *site) {
+    Value enum_class;
+    if (env_get(ev->top_env, "Enumerator", &enum_class) && enum_class.kind == VAL_CLASS) {
+        Value r = dispatch_method(ev, env, enum_class, "new", &arr, 1, NULL, site, 0, 1);
+        if (!val_is_signal(r)) return r;
+        ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+    }
+    return arr;
+}
+
 static void append_utf8_pad(char *buf, size_t *pos, const char *pad, size_t count) {
     size_t pad_chars = utf8_char_count(pad);
     if (pad_chars == 0) return;
@@ -388,7 +399,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         if (!blk) {
             Value arr = val_array_new();
             for (int64_t i = 0; i < n; i++) val_array_push(&arr, val_int(i));
-            *out = arr;
+            *out = wrap_as_enumerator(ev, env, arr, site);
         } else {
             for (int64_t i = 0; i < n; i++) {
                 Value arg = val_int(i);
@@ -406,7 +417,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         if (!blk) {
             Value arr = val_array_new();
             for (int64_t i = n; i <= limit; i++) val_array_push(&arr, val_int(i));
-            *out = arr;
+            *out = wrap_as_enumerator(ev, env, arr, site);
         } else {
             for (int64_t i = n; i <= limit; i++) {
                 Value arg = val_int(i);
@@ -424,7 +435,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         if (!blk) {
             Value arr = val_array_new();
             for (int64_t i = n; i >= limit; i--) val_array_push(&arr, val_int(i));
-            *out = arr;
+            *out = wrap_as_enumerator(ev, env, arr, site);
         } else {
             for (int64_t i = n; i >= limit; i--) {
                 Value arg = val_int(i);
@@ -445,7 +456,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
             Value arr = val_array_new();
             for (double i = (double)n; step > 0 ? i <= limit : i >= limit; i += step)
                 val_array_push(&arr, val_int((int64_t)i));
-            *out = arr;
+            *out = wrap_as_enumerator(ev, env, arr, site);
         } else {
             for (double i = (double)n; step > 0 ? i <= limit : i >= limit; i += step) {
                 Value arg = val_int((int64_t)i);

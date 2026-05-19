@@ -6,6 +6,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Wrap an already-computed result array in Enumerator.new(arr). */
+static Value wrap_result_as_enumerator(Eval *ev, Env *env, Value arr, Node *site) {
+    Value enum_class;
+    if (env_get(ev->top_env, "Enumerator", &enum_class) && enum_class.kind == VAL_CLASS) {
+        Value r = dispatch_method(ev, env, enum_class, "new", &arr, 1, NULL, site, 0, 1);
+        if (!val_is_signal(r)) return r;
+        ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+    }
+    return arr;
+}
+
 static int hash_is_process_env(Eval *ev, RubyHash *h) {
     Value env_hash = val_nil();
     return env_get(ev->top_env, "ENV", &env_hash) &&
@@ -427,7 +438,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 val_array_push(&pair, val_int((int64_t)i));
                 val_array_push(&arr, pair);
             }
-            *out = arr;
+            *out = wrap_result_as_enumerator(ev, env, arr, site);
             return 1;
         }
         for (size_t i = 0; i < recv.array->len; i++) {
@@ -1254,7 +1265,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             }
             *out = recv;
         } else {
-            *out = result;
+            *out = wrap_result_as_enumerator(ev, env, result, site);
         }
         return 1;
     }
@@ -1276,7 +1287,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             }
             *out = recv;
         } else {
-            *out = result;
+            *out = wrap_result_as_enumerator(ev, env, result, site);
         }
         return 1;
     }
@@ -1296,7 +1307,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 if (flow_signal_out(r, out)) return 1;
             }
             *out = recv;
-        } else { *out = result; }
+        } else { *out = wrap_result_as_enumerator(ev, env, result, site); }
         return 1;
     }
     if (strcmp(name, "repeated_permutation") == 0) {
@@ -1315,7 +1326,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 if (flow_signal_out(r, out)) return 1;
             }
             *out = recv;
-        } else { *out = result; }
+        } else { *out = wrap_result_as_enumerator(ev, env, result, site); }
         return 1;
     }
     if (strcmp(name, "product") == 0) {
@@ -1619,7 +1630,20 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "each_with_index") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) {
+            Value arr = val_array_new();
+            for (size_t i = 0; i < h->len; i++) {
+                Value pair = val_array_new();
+                Value entry = val_array_new();
+                val_array_push(&entry, h->keys[i]);
+                val_array_push(&entry, h->vals[i]);
+                val_array_push(&pair, entry);
+                val_array_push(&pair, val_int((int64_t)i));
+                val_array_push(&arr, pair);
+            }
+            *out = wrap_result_as_enumerator(ev, env, arr, site);
+            return 1;
+        }
         for (size_t i = 0; i < h->len; i++) {
             Value pair = val_array_new();
             val_array_push(&pair, h->keys[i]);
@@ -1636,7 +1660,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             Value arr = val_array_new();
             for (size_t i = 0; i < h->len; i++)
                 val_array_push(&arr, strcmp(name, "each_key") == 0 ? h->keys[i] : h->vals[i]);
-            *out = arr; return 1;
+            *out = wrap_result_as_enumerator(ev, env, arr, site); return 1;
         }
         for (size_t i = 0; i < h->len; i++) {
             Value arg = strcmp(name, "each_key") == 0 ? h->keys[i] : h->vals[i];
@@ -1677,6 +1701,44 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             }
             *out = result;
         }
+        return 1;
+    }
+    /* Hash#select! / Hash#filter! / Hash#keep_if — mutate in place, keep matching */
+    if (strcmp(name, "select!") == 0 || strcmp(name, "filter!") == 0 || strcmp(name, "keep_if") == 0) {
+        if (!blk) { *out = recv; return 1; }
+        int changed = 0;
+        for (size_t i = 0; i < h->len; ) {
+            Value bargs[2] = { h->keys[i], h->vals[i] };
+            Value r = call_block(ev, env, *blk, bargs, 2, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            if (!val_truthy(r)) {
+                val_hash_delete(h, h->keys[i]);
+                changed = 1;
+            } else {
+                i++;
+            }
+        }
+        *out = (strcmp(name, "keep_if") == 0 || changed) ? recv : val_nil();
+        return 1;
+    }
+    /* Hash#reject! / Hash#delete_if — mutate in place, remove matching */
+    if (strcmp(name, "reject!") == 0 || strcmp(name, "delete_if") == 0) {
+        if (!blk) { *out = recv; return 1; }
+        int changed = 0;
+        for (size_t i = 0; i < h->len; ) {
+            Value bargs[2] = { h->keys[i], h->vals[i] };
+            Value r = call_block(ev, env, *blk, bargs, 2, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(r, out)) return 1;
+            if (val_truthy(r)) {
+                val_hash_delete(h, h->keys[i]);
+                changed = 1;
+            } else {
+                i++;
+            }
+        }
+        *out = (strcmp(name, "delete_if") == 0 || changed) ? recv : val_nil();
         return 1;
     }
     if (strcmp(name, "any?") == 0 || strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) {
@@ -2224,7 +2286,7 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 val_array_push(&pair, val_int(idx));
                 val_array_push(&arr, pair);
             }
-            *out = arr; return 1;
+            *out = wrap_result_as_enumerator(ev, env, arr, site); return 1;
         }
         int64_t idx = 0;
         for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++, idx++) {

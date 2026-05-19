@@ -1,0 +1,10 @@
+puts 42.method(:+).arity
+puts 42.method(:to_s).arity
+puts 42.method(:even?).arity
+puts 42.method(:between?).arity
+puts "hi".method(:upcase).arity
+puts "hi".method(:length).arity
+puts [].method(:include?).arity
+puts [].method(:push).arity
+puts [].method(:map).arity
+puts [].method(:each_with_index).arity

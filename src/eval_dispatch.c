@@ -103,6 +103,60 @@ static NativeBinding *native_binding(Value v) {
     return (NativeBinding *)v.obj->native;
 }
 
+/* Return known arity for a builtin method name, or -2 if unknown. */
+static int builtin_method_arity(const char *mname) {
+    /* Zero-param methods */
+    static const char *zero[] = {
+        "to_f","to_i","to_r","to_c","to_s","to_str","to_sym","to_a","to_h","to_proc",
+        "inspect","freeze","frozen?","dup","clone","nil?","hash","object_id","__id__",
+        "length","size","empty?","chars","bytes","lines","encoding","bytesize","ord",
+        "upcase","downcase","capitalize","swapcase","strip","lstrip","rstrip","chomp",
+        "chop","reverse","reverse!","succ","next","pred","abs","even?","odd?","zero?",
+        "positive?","negative?","nonzero?","floor","ceil","round","truncate","integer?",
+        "infinite?","finite?","nan?","chr","compact","compact!","uniq","uniq!","sort",
+        "sort!","flatten","transpose","tally","keys","values","invert","each_pair",
+        "class","superclass","name","ancestors","instance_methods","public_methods",
+        "private_methods","protected_methods","methods","respond_to_missing?",
+        "lambda?","arity","call","first","last","min","max","minmax",
+        "upcase!","downcase!","capitalize!","swapcase!","strip!","lstrip!","rstrip!",
+        "chomp!","chop!","reverse!","squeeze!","unicode_normalize","ascii_only?",
+        "valid_encoding?","force_encoding","b","hex","oct","dump","undump",
+        /* block-taking Enumerable/Array methods: block not counted in arity */
+        "each","map","collect","select","filter","reject","find","detect","any?","all?",
+        "none?","each_with_index","flat_map","collect_concat","group_by","sort_by",
+        "min_by","max_by","minmax_by","count","each_slice","each_cons","each_with_object",
+        "tally","chunk","chunk_while","slice_when","map!","collect!","select!","filter!",
+        "reject!","delete_if","keep_if","each_line","each_char","each_byte","each_key",
+        "each_value","shuffle","flatten!","compact!",
+        NULL
+    };
+    for (int i = 0; zero[i]; i++)
+        if (strcmp(mname, zero[i]) == 0) return 0;
+
+    /* One-param methods */
+    static const char *one[] = {
+        "+","-","*","/","%","**","<=>","==","!=","<",">","<=",">=",
+        "&","|","^",">>","<<","===","eql?","equal?",
+        "divmod","gcd","lcm","div","modulo","quo","remainder","coerce",
+        "include?","member?","has_key?","key?","has_value?","value?",
+        "delete","delete_at","index","find_index","rindex","assoc","rassoc",
+        "take","drop","rotate","at","[]",
+        "match","match?","tr",
+        "is_a?","kind_of?","instance_of?",
+        "instance_variable_get","instance_variable_defined?",
+        "const_get","const_defined?",
+        "upto","downto",
+        NULL
+    };
+    for (int i = 0; one[i]; i++)
+        if (strcmp(mname, one[i]) == 0) return 1;
+
+    /* Two-param methods */
+    if (strcmp(mname, "between?") == 0) return 2;
+
+    return -1; /* default: variadic/unknown */
+}
+
 static int is_local_identifier_name(const char *name) {
     if (!name || !name[0] || strcmp(name, "self") == 0)
         return 0;
@@ -2196,6 +2250,11 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         val_object_set_ivar(ev->arena, obj, "__receiver__", recv);
         val_object_set_ivar(ev->arena, obj, "__method_name__", val_string(ev->arena, mname));
         val_object_set_ivar(ev->arena, obj, "__method__", method_val);
+        /* For builtins (no Ruby def_node) store arity from the static table */
+        if (method_val.kind != VAL_METHOD || !method_val.method.def_node) {
+            int nat_arity = builtin_method_arity(mname);
+            val_object_set_ivar(ev->arena, obj, "__native_arity__", val_int(nat_arity));
+        }
         return obj;
     }
 

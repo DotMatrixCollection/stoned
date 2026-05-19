@@ -1097,6 +1097,8 @@ Value regexp_search_value(Eval *ev, Value regexp, Value string, int return_index
     status = regex_search(compiled, string.sval, strlen(string.sval), 0, &match);
     if (status == REGEX_MISMATCH) {
         global_set(ev->arena, &ev->globals, "~", val_nil());
+        global_set(ev->arena, &ev->globals, "`", val_nil());
+        global_set(ev->arena, &ev->globals, "'", val_nil());
         for (int i = 0; i < 9; i++)
             global_set(ev->arena, &ev->globals, cap_keys[i], val_nil());
         return val_nil();
@@ -1108,8 +1110,17 @@ Value regexp_search_value(Eval *ev, Value regexp, Value string, int return_index
     Value md = build_match_data(ev, regexp, string, match);
     global_set(ev->arena, &ev->globals, "~", md);
 
-    /* set $1..$9 from capture groups */
+    /* set $` (pre-match) and $' (post-match) */
     const char *str = string.sval;
+    size_t slen = strlen(str);
+    global_set(ev->arena, &ev->globals, "`",
+               val_string_n(ev->arena, str, (size_t)match.beg));
+    size_t post_start = (size_t)match.end;
+    global_set(ev->arena, &ev->globals, "'",
+               val_string_n(ev->arena, str + post_start,
+                            post_start <= slen ? slen - post_start : 0));
+
+    /* set $1..$9 from capture groups */
     for (size_t i = 0; i < 9; i++) {
         Value cap;
         if (i < match.capture_count && match.cap_beg && match.cap_end && match.cap_beg[i] >= 0) {
@@ -4042,10 +4053,16 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             }
             if (strcmp(name, "arity") == 0) {
                 Value method_val;
-                if (val_object_get_ivar(recv, "__method__", &method_val) && method_val.kind == VAL_METHOD)
+                if (val_object_get_ivar(recv, "__method__", &method_val) && method_val.kind == VAL_METHOD
+                    && method_val.method.def_node)
                     *out = val_int(proc_arity(method_val.method.def_node->def.params, 1));
-                else
-                    *out = val_int(-1);
+                else {
+                    Value nat;
+                    if (val_object_get_ivar(recv, "__native_arity__", &nat) && nat.kind == VAL_INT)
+                        *out = nat;
+                    else
+                        *out = val_int(-1);
+                }
                 return 1;
             }
             if (strcmp(name, "to_proc") == 0) {
@@ -4091,10 +4108,16 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             }
             if (strcmp(name, "arity") == 0) {
                 Value method_val;
-                if (val_object_get_ivar(recv, "__method__", &method_val) && method_val.kind == VAL_METHOD)
+                if (val_object_get_ivar(recv, "__method__", &method_val) && method_val.kind == VAL_METHOD
+                    && method_val.method.def_node)
                     *out = val_int(proc_arity(method_val.method.def_node->def.params, 1));
-                else
-                    *out = val_int(-1);
+                else {
+                    Value nat;
+                    if (val_object_get_ivar(recv, "__native_arity__", &nat) && nat.kind == VAL_INT)
+                        *out = nat;
+                    else
+                        *out = val_int(-1);
+                }
                 return 1;
             }
             if (strcmp(name, "bind_call") == 0) {
