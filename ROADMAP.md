@@ -543,3 +543,5 @@ These were previously roadmap items and are now implemented in the current tree:
 - `IO.popen(cmd) { |f| ... }` added using `popen(3)` with `is_pipe` flag on `NativeFile` for `pclose` on close
 - `require 'tempfile'` now provides `Tempfile.new`/`Tempfile.create` with `write`/`close`/`unlink` lifecycle
 - `File.unlink` added as alias for `File.delete`
+- `Array#uniq` with block now uses block return value as the uniqueness key; `uniq!` added
+- `Mutex` and `Queue`/`SizedQueue` added to core prelude (no require needed); `require 'thread'` also provides them; `Mutex` exposed at top level (was only `Thread::Mutex`)

@@ -801,12 +801,29 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = result;
         return 1;
     }
-    if (strcmp(name, "uniq") == 0) {
+    if (strcmp(name, "uniq") == 0 || strcmp(name, "uniq!") == 0) {
         Value result = val_array_new();
+        Value seen_keys = val_array_new();
         for (size_t i = 0; i < recv.array->len; i++) {
+            Value key = recv.array->elems[i];
+            if (blk) {
+                Value k = call_block(ev, env, *blk, &recv.array->elems[i], 1, site);
+                if (val_is_signal(k)) { *out = k; return 1; }
+                key = k;
+            }
             int found = 0;
-            for (size_t j = 0; j < result.array->len; j++) if (val_equal(result.array->elems[j], recv.array->elems[i])) { found = 1; break; }
-            if (!found) val_array_push(&result, recv.array->elems[i]);
+            for (size_t j = 0; j < seen_keys.array->len; j++)
+                if (val_equal(seen_keys.array->elems[j], key)) { found = 1; break; }
+            if (!found) {
+                val_array_push(&seen_keys, key);
+                val_array_push(&result, recv.array->elems[i]);
+            }
+        }
+        if (strcmp(name, "uniq!") == 0) {
+            if (result.array->len == recv.array->len) { *out = val_nil(); return 1; }
+            recv.array->len = 0;
+            for (size_t i = 0; i < result.array->len; i++) val_array_push(&recv, result.array->elems[i]);
+            *out = recv; return 1;
         }
         *out = result;
         return 1;

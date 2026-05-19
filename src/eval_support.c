@@ -2238,6 +2238,43 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "end\n";
         return eval_ruby_string(ev, date_shim, "date_shim", site);
     }
+    if (strcmp(path, "thread") == 0 || strcmp(path, "thread.rb") == 0) {
+        static const char *thread_shim =
+"class Mutex\n"
+"  def initialize; @locked = false; end\n"
+"  def lock; @locked = true; self; end\n"
+"  def unlock; @locked = false; self; end\n"
+"  def locked?; @locked; end\n"
+"  def try_lock; return false if @locked; @locked = true; true; end\n"
+"  def synchronize\n"
+"    lock\n"
+"    begin; yield; ensure; unlock; end\n"
+"  end\n"
+"end\n"
+"class Queue\n"
+"  def initialize; @arr = []; end\n"
+"  def push(v); @arr << v; self; end\n"
+"  alias enq push\n"
+"  alias << push\n"
+"  def pop(non_block = false)\n"
+"    raise ThreadError, 'queue empty' if non_block && @arr.empty?\n"
+"    @arr.shift\n"
+"  end\n"
+"  alias deq pop\n"
+"  alias shift pop\n"
+"  def size; @arr.size; end\n"
+"  alias length size\n"
+"  def empty?; @arr.empty?; end\n"
+"  def clear; @arr.clear; self; end\n"
+"  def num_waiting; 0; end\n"
+"  def close; self; end\n"
+"end\n"
+"class SizedQueue < Queue\n"
+"  def initialize(max); super(); @max = max; end\n"
+"  def max; @max; end\n"
+"end\n";
+        return eval_ruby_string(ev, thread_shim, "thread_shim", site);
+    }
     if (strcmp(path, "logger") == 0 || strcmp(path, "logger.rb") == 0)
         return val_true();
     if (strcmp(path, "digest") == 0 || strcmp(path, "digest.rb") == 0)

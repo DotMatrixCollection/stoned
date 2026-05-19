@@ -1507,6 +1507,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
             mutex_class.klass->class_env = env_new(arena, ev->top_env, 1);
             env_define(arena, ev->top_env, "Thread::Mutex", mutex_class);
             env_define(arena, thread_mod.klass->class_env, "Mutex", mutex_class);
+            /* Also expose Mutex at top level for convenience */
+            env_define(arena, ev->top_env, "Mutex", mutex_class);
         }
     }
 
@@ -2515,6 +2517,39 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  def self.count_objects; {}; end\n"
         "end\n";
 
+    static const char *prelude_mutex_queue =
+        "class Mutex\n"
+        "  def initialize; @locked = false; end\n"
+        "  def lock; @locked = true; self; end\n"
+        "  def unlock; @locked = false; self; end\n"
+        "  def locked?; @locked; end\n"
+        "  def try_lock; return false if @locked; @locked = true; true; end\n"
+        "  def synchronize; lock; begin; yield; ensure; unlock; end; end\n"
+        "  def owned?; @locked; end\n"
+        "end\n"
+        "class Queue\n"
+        "  def initialize; @arr = []; end\n"
+        "  def push(v); @arr << v; self; end\n"
+        "  alias enq push\n"
+        "  alias << push\n"
+        "  def pop(non_block = false)\n"
+        "    raise ThreadError, 'queue empty' if non_block && @arr.empty?\n"
+        "    @arr.shift\n"
+        "  end\n"
+        "  alias deq pop\n"
+        "  alias shift pop\n"
+        "  def size; @arr.size; end\n"
+        "  alias length size\n"
+        "  def empty?; @arr.empty?; end\n"
+        "  def clear; @arr.clear; self; end\n"
+        "  def num_waiting; 0; end\n"
+        "  def close; self; end\n"
+        "end\n"
+        "class SizedQueue < Queue\n"
+        "  def initialize(max); super(); @max = max; end\n"
+        "  def max; @max; end\n"
+        "end\n";
+
     static const char *prelude_process_status =
         "class Process\n"
         "  class Status\n"
@@ -2532,7 +2567,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         strlen(prelude_comparable) + strlen(prelude_enumerable) + strlen(prelude_core) +
         strlen(prelude_file_constants) + strlen(prelude_rbconfig) +
         strlen(prelude_marshal) + strlen(prelude_signal) +
-        strlen(prelude_process_status) + 2;
+        strlen(prelude_process_status) + strlen(prelude_mutex_queue) + 2;
     char *prelude = arena_alloc(arena, prelude_len);
     prelude[0] = '\0';
     strcat(prelude, prelude_comparable);
@@ -2543,6 +2578,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
     strcat(prelude, prelude_marshal);
     strcat(prelude, prelude_signal);
     strcat(prelude, prelude_process_status);
+    strcat(prelude, prelude_mutex_queue);
 
     Parser parser;
     parser_init(&parser, prelude, strlen(prelude), arena);
