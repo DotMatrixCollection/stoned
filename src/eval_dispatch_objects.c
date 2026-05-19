@@ -1446,6 +1446,12 @@ const char *primitive_class_methods_for_class(const char *klass_name) {
         return "open,read,write,pipe,binread,foreach,readlines";
     if (strcmp(klass_name, "Process") == 0)
         return "pid";
+    if (strcmp(klass_name, "Struct") == 0)
+        return "new";
+    if (strcmp(klass_name, "Hash") == 0)
+        return "[],new";
+    if (strcmp(klass_name, "Array") == 0)
+        return "[],new";
     if (strcmp(klass_name, "Regexp") == 0)
         return "new,escape,quote,union";
     if (strcmp(klass_name, "Time") == 0)
