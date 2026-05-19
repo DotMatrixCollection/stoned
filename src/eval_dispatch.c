@@ -2747,6 +2747,15 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
             return val_float(r);
         }
         if (strcmp(op, "**") == 0) {
+            if (both_int && right.ival < 0) {
+                /* Integer ** negative_integer → Rational(1, base^abs_exp) per Ruby 3+ */
+                Value rat_class;
+                if (env_get(ev->top_env, "Rational", &rat_class) && rat_class.kind == VAL_CLASS) {
+                    double denom = pow(lf, -rf);
+                    Value rat_args[2] = { val_int(1), val_int((int64_t)denom) };
+                    return dispatch_method(ev, env, rat_class, "new", rat_args, 2, NULL, node, 0, 1);
+                }
+            }
             return both_int && right.ival >= 0
                 ? val_int((int64_t)pow((double)left.ival, (double)right.ival))
                 : val_float(pow(lf, rf));

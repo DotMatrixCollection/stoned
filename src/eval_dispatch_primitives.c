@@ -226,6 +226,16 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
             *out = val_float(fmod(lf, rf)); return 1;
         }
         if (strcmp(name, "**") == 0) {
+            if (both_int && r.ival < 0) {
+                /* Integer ** negative_integer → Rational(1, base^abs_exp) per Ruby 3+ */
+                Value rat_class;
+                if (env_get(ev->top_env, "Rational", &rat_class) && rat_class.kind == VAL_CLASS) {
+                    double denom = pow(lf, -rf);
+                    Value rat_args[2] = { val_int(1), val_int((int64_t)denom) };
+                    *out = dispatch_method(ev, env, rat_class, "new", rat_args, 2, NULL, site, 0, 1);
+                    return 1;
+                }
+            }
             *out = (both_int && r.ival >= 0) ? val_int((int64_t)pow(lf, rf)) : val_float(pow(lf, rf));
             return 1;
         }

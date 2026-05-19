@@ -2587,6 +2587,42 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  end\n"
         "end\n";
 
+    static const char *prelude_random =
+        "class Random\n"
+        "  def initialize(seed = nil)\n"
+        "    @state = seed ? seed.to_i & 0xFFFFFFFFFFFFFFFF : (rand(0x7FFFFFFF) ^ object_id)\n"
+        "    @state = 0 if @state == 0\n"
+        "  end\n"
+        "  def rand(n = nil)\n"
+        "    @state = (@state * 6364136223846793005 + 1442695040888963407) & 0xFFFFFFFFFFFFFFFF\n"
+        "    r = @state >> 1\n"
+        "    if n.nil?\n"
+        "      r.to_f / 0x3FFFFFFFFFFFFFFF\n"
+        "    elsif n.is_a?(Range)\n"
+        "      lo = n.begin; hi = n.end\n"
+        "      size = n.exclude_end? ? hi - lo : hi - lo + 1\n"
+        "      lo + (r % size)\n"
+        "    else\n"
+        "      n = n.to_i\n"
+        "      n <= 0 ? r.to_f / 0x3FFFFFFFFFFFFFFF : r % n\n"
+        "    end\n"
+        "  end\n"
+        "  def bytes(n)\n"
+        "    result = []\n"
+        "    n.times { result << rand(256) }\n"
+        "    result.pack('C*')\n"
+        "  end\n"
+        "  DEFAULT = new(0)\n"
+        "  @default = DEFAULT\n"
+        "  def self.rand(n = nil); @default.rand(n); end\n"
+        "  def self.srand(seed = nil)\n"
+        "    old = @default\n"
+        "    @default = new(seed)\n"
+        "    old.object_id\n"
+        "  end\n"
+        "  def self.new_seed; rand(0x7FFFFFFF); end\n"
+        "end\n";
+
     static const char *prelude_process_status =
         "class Process\n"
         "  class Status\n"
@@ -2727,7 +2763,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  def to_i; @numerator / @denominator; end\n"
         "  def to_r; self; end\n"
         "  def frozen?; true; end\n"
-        "  def to_s; \"(#{@numerator}/#{@denominator})\"; end\n"
+        "  def to_s; \"#{@numerator}/#{@denominator}\"; end\n"
         "  def inspect; \"(#{@numerator}/#{@denominator})\"; end\n"
         "\n"
         "  def -@; Rational.new(-@numerator, @denominator); end\n"
@@ -2916,7 +2952,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         strlen(prelude_file_constants) + strlen(prelude_rbconfig) +
         strlen(prelude_marshal) + strlen(prelude_signal) +
         strlen(prelude_process_status) + strlen(prelude_mutex_queue) +
-        strlen(prelude_rational) + 2;
+        strlen(prelude_rational) + strlen(prelude_random) + 2;
     char *prelude = arena_alloc(arena, prelude_len);
     prelude[0] = '\0';
     strcat(prelude, prelude_comparable);
@@ -2929,6 +2965,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
     strcat(prelude, prelude_signal);
     strcat(prelude, prelude_process_status);
     strcat(prelude, prelude_mutex_queue);
+    strcat(prelude, prelude_random);
 
     Parser parser;
     parser_init(&parser, prelude, strlen(prelude), arena);
