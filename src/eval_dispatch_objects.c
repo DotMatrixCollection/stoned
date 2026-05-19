@@ -1392,6 +1392,10 @@ static const char *primitive_methods_for_class(const char *klass_name) {
         return "length,size,count,empty?,first,last,push,pop,shift,unshift,append,prepend,<<,+,-,&,|,*,flatten,compact,uniq,sort,sort_by,reverse,map,collect,select,filter,reject,each,each_with_index,each_with_object,each_slice,each_cons,flat_map,collect_concat,inject,reduce,zip,product,combination,permutation,repeated_combination,repeated_permutation,transpose,assoc,rassoc,sample,shuffle,include?,index,find_index,rindex,to_a,join,min,max,min_by,max_by,minmax,minmax_by,sum,any?,all?,none?,count,tally,group_by,chunk,chunk_while,slice_when,rotate,take,take_while,drop,drop_while,flatten,flatten!,inspect,to_s,freeze,frozen?,dup,clone,pack,[]";
     if (strcmp(klass_name, "Hash") == 0)
         return "keys,values,length,size,empty?,has_key?,has_value?,key?,value?,include?,member?,fetch,merge,merge!,update,delete,each,each_pair,each_key,each_value,map,select,filter,reject,any?,all?,none?,count,sum,flat_map,find,detect,min_by,max_by,sort_by,group_by,each_with_object,transform_keys,transform_values,transform_keys!,transform_values!,to_a,to_h,invert,inspect,to_s,freeze,frozen?,dup,clone,[],[]=";
+    if (strcmp(klass_name, "Binding") == 0)
+        return "eval,local_variable_get,local_variable_set,local_variables,source_location,dup,clone";
+    if (strcmp(klass_name, "IO") == 0)
+        return "puts,print,write,<<,flush,sync,sync=,fileno,to_i,to_int,isatty,tty?,winsize,external_encoding,internal_encoding,wait_readable,ungetc,tell,pos,seek,rewind,eof?,gets,readline,readlines,read,getc,readchar,getbyte,readbyte,each_byte,each_char,each_line,close,closed?,raw,raw!,cooked,cooked!";
     if (strcmp(klass_name, "Method") == 0)
         return "name,original_name,owner,receiver,unbind,call,[],===,bind_call,arity,parameters,super_method,to_proc,curry,source_location,inspect,to_s,clone,dup,hash,eql?";
     if (strcmp(klass_name, "UnboundMethod") == 0)
