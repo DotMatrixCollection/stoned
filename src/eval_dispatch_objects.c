@@ -64,7 +64,7 @@ static uint64_t method_value_identity_hash(Value v) {
     }
 }
 
-static Value method_params_description(Eval *ev, Value method_val) {
+static Value method_params_description(Value method_val) {
     Value arr = val_array_new();
     if (method_val.kind != VAL_METHOD || !method_val.method.def_node)
         return arr;
@@ -85,6 +85,39 @@ static Value method_params_description(Eval *ev, Value method_val) {
         val_array_push(&arr, pair);
     }
     return arr;
+}
+
+static Value build_method_object(Eval *ev, Value receiver, Value method_name_v,
+                                 Value method_val, Value owner_v, Value native_arity_v) {
+    Value m_klass;
+    if (!env_get(ev->top_env, "Method", &m_klass) || m_klass.kind != VAL_CLASS)
+        return val_nil();
+    Value obj = val_object(ev->arena, m_klass);
+    val_object_set_ivar(ev->arena, obj, "__receiver__", receiver);
+    val_object_set_ivar(ev->arena, obj, "__method_name__", method_name_v);
+    val_object_set_ivar(ev->arena, obj, "__method__", method_val);
+    if (owner_v.kind == VAL_CLASS)
+        val_object_set_ivar(ev->arena, obj, "__owner__", owner_v);
+    if (native_arity_v.kind == VAL_INT)
+        val_object_set_ivar(ev->arena, obj, "__native_arity__", native_arity_v);
+    return obj;
+}
+
+static Value build_unbound_method_object(Eval *ev, Value klass_v, Value method_name_v,
+                                         Value method_val, Value owner_v, Value native_arity_v) {
+    Value ubm_klass;
+    if (!env_get(ev->top_env, "UnboundMethod", &ubm_klass) || ubm_klass.kind != VAL_CLASS)
+        return val_nil();
+    Value obj = val_object(ev->arena, ubm_klass);
+    if (klass_v.kind == VAL_CLASS)
+        val_object_set_ivar(ev->arena, obj, "__klass__", klass_v);
+    val_object_set_ivar(ev->arena, obj, "__method_name__", method_name_v);
+    val_object_set_ivar(ev->arena, obj, "__method__", method_val);
+    if (owner_v.kind == VAL_CLASS)
+        val_object_set_ivar(ev->arena, obj, "__owner__", owner_v);
+    if (native_arity_v.kind == VAL_INT)
+        val_object_set_ivar(ev->arena, obj, "__native_arity__", native_arity_v);
+    return obj;
 }
 
 static const char *file_fopen_mode(const char *mode) {
@@ -4121,16 +4154,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             }
             if (strcmp(name, "unbind") == 0) {
                 /* Return an UnboundMethod with the same method info */
-                Value ubm_klass;
-                if (!env_get(ev->top_env, "UnboundMethod", &ubm_klass) || ubm_klass.kind != VAL_CLASS) { *out = val_nil(); return 1; }
-                Value ubm = val_object(ev->arena, ubm_klass);
                 Value mname_v, method_v;
-                if (val_object_get_ivar(recv, "__method_name__", &mname_v)) val_object_set_ivar(ev->arena, ubm, "__method_name__", mname_v);
-                if (val_object_get_ivar(recv, "__method__", &method_v)) val_object_set_ivar(ev->arena, ubm, "__method__", method_v);
                 Value owner_v, nat_v;
-                if (val_object_get_ivar(recv, "__owner__", &owner_v)) val_object_set_ivar(ev->arena, ubm, "__owner__", owner_v);
-                if (val_object_get_ivar(recv, "__native_arity__", &nat_v)) val_object_set_ivar(ev->arena, ubm, "__native_arity__", nat_v);
-                *out = ubm; return 1;
+                val_object_get_ivar(recv, "__method_name__", &mname_v);
+                val_object_get_ivar(recv, "__method__", &method_v);
+                val_object_get_ivar(recv, "__owner__", &owner_v);
+                val_object_get_ivar(recv, "__native_arity__", &nat_v);
+                *out = build_unbound_method_object(ev, owner_v, mname_v, method_v, owner_v, nat_v);
+                return 1;
             }
             if (strcmp(name, "call") == 0 || strcmp(name, "[]") == 0 ||
                 strcmp(name, "bind_call") == 0) {
@@ -4172,9 +4203,40 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             if (strcmp(name, "parameters") == 0) {
                 Value method_val;
                 if (val_object_get_ivar(recv, "__method__", &method_val))
-                    *out = method_params_description(ev, method_val);
+                    *out = method_params_description(method_val);
                 else
                     *out = val_array_new();
+                return 1;
+            }
+            if (strcmp(name, "super_method") == 0) {
+                Value receiver = val_nil(), owner_v = val_nil(), method_name_v = val_nil(), nat_v = val_nil();
+                if (!val_object_get_ivar(recv, "__receiver__", &receiver) ||
+                    !val_object_get_ivar(recv, "__owner__", &owner_v) ||
+                    !val_object_get_ivar(recv, "__method_name__", &method_name_v) ||
+                    owner_v.kind != VAL_CLASS || method_name_v.kind != VAL_STRING) {
+                    *out = val_nil();
+                    return 1;
+                }
+                RubyClass *start = NULL;
+                if (receiver.kind == VAL_OBJECT && receiver.obj->klass.kind == VAL_CLASS)
+                    start = receiver.obj->klass.klass;
+                else if (receiver.kind == VAL_CLASS)
+                    start = receiver.klass;
+                if (!start) { *out = val_nil(); return 1; }
+                Value super_method = val_nil();
+                RubyClass *super_owner = NULL;
+                if (!ruby_class_find_super_method(start, owner_v.klass, method_name_v.sval, &super_method, &super_owner)) {
+                    *out = val_nil();
+                    return 1;
+                }
+                val_object_get_ivar(recv, "__native_arity__", &nat_v);
+                Value super_owner_v = val_nil();
+                if (super_owner && super_owner->name)
+                    env_get(ev->top_env, super_owner->name, &super_owner_v);
+                Value super_nat = val_nil();
+                if (super_method.kind != VAL_METHOD || !super_method.method.def_node)
+                    super_nat = val_int(builtin_method_arity(method_name_v.sval));
+                *out = build_method_object(ev, receiver, method_name_v, super_method, super_owner_v, super_nat);
                 return 1;
             }
             if (strcmp(name, "source_location") == 0) {
@@ -4281,9 +4343,33 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             if (strcmp(name, "parameters") == 0) {
                 Value method_val;
                 if (val_object_get_ivar(recv, "__method__", &method_val))
-                    *out = method_params_description(ev, method_val);
+                    *out = method_params_description(method_val);
                 else
                     *out = val_array_new();
+                return 1;
+            }
+            if (strcmp(name, "super_method") == 0) {
+                Value klass_v = val_nil(), owner_v = val_nil(), method_name_v = val_nil();
+                if (!val_object_get_ivar(recv, "__klass__", &klass_v) ||
+                    !val_object_get_ivar(recv, "__owner__", &owner_v) ||
+                    !val_object_get_ivar(recv, "__method_name__", &method_name_v) ||
+                    klass_v.kind != VAL_CLASS || owner_v.kind != VAL_CLASS || method_name_v.kind != VAL_STRING) {
+                    *out = val_nil();
+                    return 1;
+                }
+                Value super_method = val_nil();
+                RubyClass *super_owner = NULL;
+                if (!ruby_class_find_super_method(klass_v.klass, owner_v.klass, method_name_v.sval, &super_method, &super_owner)) {
+                    *out = val_nil();
+                    return 1;
+                }
+                Value super_owner_v = val_nil();
+                if (super_owner && super_owner->name)
+                    env_get(ev->top_env, super_owner->name, &super_owner_v);
+                Value super_nat = val_nil();
+                if (super_method.kind != VAL_METHOD || !super_method.method.def_node)
+                    super_nat = val_int(builtin_method_arity(method_name_v.sval));
+                *out = build_unbound_method_object(ev, klass_v, method_name_v, super_method, super_owner_v, super_nat);
                 return 1;
             }
             if (strcmp(name, "source_location") == 0) {
@@ -4322,16 +4408,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     !val_object_get_ivar(recv, "__method__", &method_val)) {
                     *out = val_nil(); return 1;
                 }
-                Value m_klass;
-                if (!env_get(ev->top_env, "Method", &m_klass) || m_klass.kind != VAL_CLASS) { *out = val_nil(); return 1; }
-                Value obj = val_object(ev->arena, m_klass);
-                val_object_set_ivar(ev->arena, obj, "__receiver__", args[0]);
-                val_object_set_ivar(ev->arena, obj, "__method_name__", method_name_v);
-                val_object_set_ivar(ev->arena, obj, "__method__", method_val);
                 Value owner_v, nat_v;
-                if (val_object_get_ivar(recv, "__owner__", &owner_v)) val_object_set_ivar(ev->arena, obj, "__owner__", owner_v);
-                if (val_object_get_ivar(recv, "__native_arity__", &nat_v)) val_object_set_ivar(ev->arena, obj, "__native_arity__", nat_v);
-                *out = obj;
+                val_object_get_ivar(recv, "__owner__", &owner_v);
+                val_object_get_ivar(recv, "__native_arity__", &nat_v);
+                *out = build_method_object(ev, args[0], method_name_v, method_val, owner_v, nat_v);
                 return 1;
             }
             return 0;

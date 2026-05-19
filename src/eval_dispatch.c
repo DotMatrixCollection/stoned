@@ -23,11 +23,11 @@ static Value val_class_of(Eval *ev, Value v);
 static Value infer_builtin_method_owner(Eval *ev, Value recv);
 static const char *method_obj_methods[] = {
     "name", "original_name", "owner", "receiver", "unbind", "call", "[]",
-    "bind_call", "arity", "parameters", "to_proc", ">>", "<<", "source_location",
+    "bind_call", "arity", "parameters", "super_method", "to_proc", ">>", "<<", "source_location",
     NULL
 };
 static const char *unbound_method_obj_methods[] = {
-    "name", "original_name", "owner", "arity", "parameters", "bind_call", "bind",
+    "name", "original_name", "owner", "arity", "parameters", "super_method", "bind_call", "bind",
     "source_location", NULL
 };
 
