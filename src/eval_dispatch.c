@@ -2251,6 +2251,8 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         }
         /* For VAL_CLASS, class methods live in klass->class_env keyed as "self.name" */
         if (recv.kind == VAL_CLASS && recv.klass) {
+            if ((vis_mask & 1) && !sym_in_array(&arr, "new"))
+                val_array_push(&arr, val_symbol("new"));
             RubyClass *kc = recv.klass;
             while (kc) {
                 Env *ce = kc->class_env;
