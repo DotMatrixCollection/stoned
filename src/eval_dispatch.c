@@ -2801,7 +2801,19 @@ call_method:
                     val_array_push(&slice, recv.array->elems[i]);
                 return slice;
             }
-            int64_t idx = args[0].ival;
+            /* Array#[start, length] — return subarray */
+            if (argc >= 2 && args[1].kind == VAL_INT) {
+                int64_t start = args[0].kind == VAL_INT ? args[0].ival : 0;
+                int64_t len   = args[1].ival;
+                if (start < 0) start += (int64_t)recv.array->len;
+                if (start < 0 || (size_t)start > recv.array->len || len < 0) return val_nil();
+                if ((size_t)(start + len) > recv.array->len) len = (int64_t)recv.array->len - start;
+                Value slice = val_array_new();
+                for (int64_t i = start; i < start + len; i++)
+                    val_array_push(&slice, recv.array->elems[i]);
+                return slice;
+            }
+            int64_t idx = args[0].kind == VAL_INT ? args[0].ival : 0;
             if (idx < 0) idx = (int64_t)recv.array->len + idx;
             if (idx < 0 || (size_t)idx >= recv.array->len) return val_nil();
             return recv.array->elems[idx];
