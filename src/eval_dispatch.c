@@ -1701,11 +1701,12 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
 
 static Value make_symbol_proc(Eval *ev, const char *method_name);
 
-Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name) {
+Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name, int forced_arity) {
     Arena *a = ev->arena;
     Span s = {0, 0, 0};
     Env *closure = env_new(a, ev->top_env, 0);
     env_define(a, closure, "__bound_recv__", receiver);
+    env_define(a, closure, "__bound_arity__", val_int(forced_arity));
     Node *rest_p = node_new(a, NODE_PARAM, s);
     rest_p->param.splat = 1;
     rest_p->param.name = "__bound_args__";
@@ -2311,8 +2312,13 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             return call_block(ev, env, recv, args, argc, site);
         if (strcmp(name, "lambda?") == 0)
             return val_bool(recv.block.is_lambda);
-        if (strcmp(name, "arity") == 0)
+        if (strcmp(name, "arity") == 0) {
+            Value forced_arity = val_nil();
+            if (recv.block.closure && env_get(recv.block.closure, "__bound_arity__", &forced_arity) &&
+                forced_arity.kind == VAL_INT)
+                return forced_arity;
             return val_int(proc_arity(recv.block.block_node->block.params, recv.block.is_lambda));
+        }
         if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0)
             return val_string(ev->arena, recv.block.is_lambda ? "#<Proc:lambda>" : "#<Proc>");
         if (strcmp(name, "parameters") == 0) {
@@ -2719,7 +2725,7 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             Value recv_iv, mname_iv;
             if (val_object_get_ivar(bp, "__receiver__", &recv_iv) &&
                 val_object_get_ivar(bp, "__method_name__", &mname_iv)) {
-                blk_val = make_bound_method_proc(ev, recv_iv, mname_iv.sval);
+                blk_val = make_bound_method_proc(ev, recv_iv, mname_iv.sval, method_object_arity(bp));
                 blk = &blk_val;
             }
         }

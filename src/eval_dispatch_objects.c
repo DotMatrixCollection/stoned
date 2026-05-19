@@ -87,6 +87,20 @@ static Value method_params_description(Value method_val) {
     return arr;
 }
 
+int method_object_arity(Value method_obj) {
+    Value method_val = val_nil();
+    if (val_object_get_ivar(method_obj, "__method__", &method_val) &&
+        method_val.kind == VAL_METHOD && method_val.method.def_node)
+        return proc_arity(method_val.method.def_node->def.params, 1);
+
+    Value native_arity = val_nil();
+    if (val_object_get_ivar(method_obj, "__native_arity__", &native_arity) &&
+        native_arity.kind == VAL_INT)
+        return (int)native_arity.ival;
+
+    return -1;
+}
+
 static Value build_method_object(Eval *ev, Value receiver, Value method_name_v,
                                  Value method_val, Value owner_v, Value native_arity_v) {
     Value m_klass;
@@ -3707,7 +3721,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     return 0;
 }
 
-Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name);
+Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name, int forced_arity);
 
 int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                     Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
@@ -4205,17 +4219,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 return 1;
             }
             if (strcmp(name, "arity") == 0) {
-                Value method_val;
-                if (val_object_get_ivar(recv, "__method__", &method_val) && method_val.kind == VAL_METHOD
-                    && method_val.method.def_node)
-                    *out = val_int(proc_arity(method_val.method.def_node->def.params, 1));
-                else {
-                    Value nat;
-                    if (val_object_get_ivar(recv, "__native_arity__", &nat) && nat.kind == VAL_INT)
-                        *out = nat;
-                    else
-                        *out = val_int(-1);
-                }
+                *out = val_int(method_object_arity(recv));
                 return 1;
             }
             if (strcmp(name, "parameters") == 0) {
@@ -4278,7 +4282,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     !val_object_get_ivar(recv, "__method_name__", &method_name_v)) {
                     *out = val_nil(); return 1;
                 }
-                *out = make_bound_method_proc(ev, receiver, method_name_v.sval);
+                *out = make_bound_method_proc(ev, receiver, method_name_v.sval, method_object_arity(recv));
                 return 1;
             }
             /* Method#>> and Method#<< — composition, same semantics as Proc#>>/<<  */

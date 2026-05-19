@@ -119,6 +119,7 @@ int ruby_class_find_instance_method(RubyClass *klass, const char *name, Value *o
 int ruby_class_find_super_method(RubyClass *start, RubyClass *after, const char *name, Value *out, RubyClass **owner);
 Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass *owner,
                         const char *name, Value *args, int argc, Value *blk, Node *site);
+int method_object_arity(Value method_obj);
 Value dispatch_method(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                       Value *blk, Node *site, int public_only, int explicit_receiver);
 Value eval_binop(Eval *ev, Env *env, Node *node);
@@ -145,7 +146,7 @@ int sym_in_array(Value *arr, const char *sym_name);
 void collect_own_instance_methods(Env *class_env, Value *arr, int vis_mask);
 void collect_all_instance_methods(RubyClass *klass, Value *arr, int vis_mask,
                                   RubyClass **visited, int *nv);
-Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name);
+Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name, int forced_arity);
 int value_is_regexp(Value v);
 Value regexp_search_value(Eval *ev, Value regexp, Value string, int return_index, Node *site);
 
