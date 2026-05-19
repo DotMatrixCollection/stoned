@@ -4071,6 +4071,21 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 }
                 return 1;
             }
+            if (strcmp(name, "source_location") == 0) {
+                Value method_val;
+                if (val_object_get_ivar(recv, "__method__", &method_val) && method_val.kind == VAL_METHOD
+                    && method_val.method.def_node) {
+                    Value loc = val_array_new();
+                    val_array_push(&loc, method_val.method.def_file
+                        ? val_string(ev->arena, method_val.method.def_file)
+                        : val_string(ev->arena, "(eval)"));
+                    val_array_push(&loc, val_int(method_val.method.def_node->span.line));
+                    *out = loc;
+                } else {
+                    *out = val_nil();
+                }
+                return 1;
+            }
             if (strcmp(name, "to_proc") == 0) {
                 Value receiver, method_name_v;
                 if (!val_object_get_ivar(recv, "__receiver__", &receiver) ||
@@ -4123,6 +4138,21 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                         *out = nat;
                     else
                         *out = val_int(-1);
+                }
+                return 1;
+            }
+            if (strcmp(name, "source_location") == 0) {
+                Value method_val;
+                if (val_object_get_ivar(recv, "__method__", &method_val) && method_val.kind == VAL_METHOD
+                    && method_val.method.def_node) {
+                    Value loc = val_array_new();
+                    val_array_push(&loc, method_val.method.def_file
+                        ? val_string(ev->arena, method_val.method.def_file)
+                        : val_string(ev->arena, "(eval)"));
+                    val_array_push(&loc, val_int(method_val.method.def_node->span.line));
+                    *out = loc;
+                } else {
+                    *out = val_nil();
                 }
                 return 1;
             }

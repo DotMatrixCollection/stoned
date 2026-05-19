@@ -21,6 +21,15 @@ extern char **environ;
 
 static Value val_class_of(Eval *ev, Value v);
 static Value infer_builtin_method_owner(Eval *ev, Value recv);
+static const char *method_obj_methods[] = {
+    "name", "original_name", "owner", "receiver", "unbind", "call", "[]",
+    "bind_call", "arity", "to_proc", ">>", "<<", "source_location",
+    NULL
+};
+static const char *unbound_method_obj_methods[] = {
+    "name", "original_name", "owner", "arity", "bind_call", "bind",
+    "source_location", NULL
+};
 
 /* Store last child exit code in a global; the Ruby prelude wraps it as $?. */
 static void set_child_status(Eval *ev, Env *env __attribute__((unused)),
@@ -661,6 +670,13 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
             else if (strcmp(cn, "Hash") == 0)  probe = val_hash_new(ev->arena);
             else if (strcmp(cn, "Integer") == 0) probe = val_int(0);
             else if (strcmp(cn, "Float") == 0)   probe = val_float(0.0);
+            else if (strcmp(cn, "Method") == 0) {
+                for (int i = 0; method_obj_methods[i]; i++)
+                    if (strcmp(name, method_obj_methods[i]) == 0) return 1;
+            } else if (strcmp(cn, "UnboundMethod") == 0) {
+                for (int i = 0; unbound_method_obj_methods[i]; i++)
+                    if (strcmp(name, unbound_method_obj_methods[i]) == 0) return 1;
+            }
             if (probe.kind != VAL_NIL)
                 return builtin_primitive_responds_to(probe, name);
         }
