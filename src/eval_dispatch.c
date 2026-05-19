@@ -2079,13 +2079,44 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         return val_class_of(ev, recv);
     }
     if (strcmp(name, "singleton_methods") == 0) {
-        /* Return methods defined in the singleton env */
+        int include_super = (argc == 0) || val_truthy(args[0]);
         Value arr = val_array_new();
         Env *singleton_env = value_singleton_env(recv);
         if (singleton_env) {
             for (EnvEntry *e = singleton_env->vars; e; e = e->next) {
                 if (e->val.kind == VAL_METHOD)
-                    val_array_push(&arr, val_symbol(e->name));
+                    if (!sym_in_array(&arr, e->name))
+                        val_array_push(&arr, val_symbol(e->name));
+            }
+        }
+        if (recv.kind == VAL_CLASS && recv.klass) {
+            for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+                Env *ce = k->class_env;
+                for (EnvEntry *e = ce ? ce->vars : NULL; e; e = e->next) {
+                    if (e->val.kind != VAL_METHOD) continue;
+                    const char *mname = e->name;
+                    if (strncmp(mname, "self.", 5) != 0) continue;
+                    mname += 5;
+                    if (!sym_in_array(&arr, mname))
+                        val_array_push(&arr, val_symbol(mname));
+                }
+                const char *plist = primitive_class_methods_for_class(k->name);
+                if (plist) {
+                    for (const char *p = plist; *p; ) {
+                        const char *end = strchr(p, ',');
+                        size_t len = end ? (size_t)(end - p) : strlen(p);
+                        if (len < 128) {
+                            char *mname = arena_alloc(ev->arena, len + 1);
+                            memcpy(mname, p, len);
+                            mname[len] = '\0';
+                            if (!sym_in_array(&arr, mname))
+                                val_array_push(&arr, val_symbol(mname));
+                        }
+                        if (!end) break;
+                        p = end + 1;
+                    }
+                }
+                if (!include_super) break;
             }
         }
         return arr;
