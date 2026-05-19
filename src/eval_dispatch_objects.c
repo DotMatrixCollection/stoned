@@ -1462,6 +1462,14 @@ const char *primitive_class_methods_for_class(const char *klass_name) {
         return "new";
     if (strcmp(klass_name, "Pathname") == 0)
         return "new";
+    if (strcmp(klass_name, "Shellwords") == 0)
+        return "split";
+    if (strcmp(klass_name, "Reline") == 0)
+        return "encoding_system_needs,readmultiline";
+    if (strcmp(klass_name, "Reline::Unicode") == 0)
+        return "encoding_system_needs";
+    if (strcmp(klass_name, "Thread") == 0)
+        return "current,main";
     if (strcmp(klass_name, "Regexp") == 0)
         return "new,escape,quote,union";
     if (strcmp(klass_name, "Time") == 0)
