@@ -791,6 +791,16 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                     case 'v': { uint16_t n2 = (uint16_t)(v.kind==VAL_INT ? v.ival : 0); out_buf[out_len]=n2&0xFF; out_buf[out_len+1]=(n2>>8)&0xFF; out_len+=2; break; }
                     case 'f': { float f = (float)(v.kind==VAL_FLOAT ? v.fval : v.kind==VAL_INT ? (double)v.ival : 0.0); memcpy(out_buf+out_len, &f, 4); out_len+=4; break; }
                     case 'd': case 'D': { double d = v.kind==VAL_FLOAT ? v.fval : v.kind==VAL_INT ? (double)v.ival : 0.0; memcpy(out_buf+out_len, &d, 8); out_len+=8; break; }
+                    case 'G': { /* big-endian double */
+                        double d = v.kind==VAL_FLOAT ? v.fval : v.kind==VAL_INT ? (double)v.ival : 0.0;
+                        uint8_t b[8]; memcpy(b, &d, 8);
+                        for (int bi=7; bi>=0; bi--) out_buf[out_len++] = b[bi];
+                        break; }
+                    case 'g': { /* big-endian float */
+                        float f = (float)(v.kind==VAL_FLOAT ? v.fval : v.kind==VAL_INT ? (double)v.ival : 0.0);
+                        uint8_t b[4]; memcpy(b, &f, 4);
+                        for (int bi=3; bi>=0; bi--) out_buf[out_len++] = b[bi];
+                        break; }
                     case 'A': case 'a': case 'Z': {
                         const char *sv = (v.kind==VAL_STRING) ? v.sval : "";
                         size_t sl = strlen(sv);

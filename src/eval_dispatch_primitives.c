@@ -1543,6 +1543,8 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     case 'v': if (si+2<=slen) { uint16_t v2=(uint8_t)s[si]|((uint8_t)s[si+1]<<8); val_array_push(&arr,val_int((int64_t)v2)); si+=2; } break;
                     case 'f': if (si+4<=slen) { float fv; memcpy(&fv,s+si,4); val_array_push(&arr,val_float((double)fv)); si+=4; } break;
                     case 'd': case 'D': if (si+8<=slen) { double dv; memcpy(&dv,s+si,8); val_array_push(&arr,val_float(dv)); si+=8; } break;
+                    case 'G': if (si+8<=slen) { uint8_t b[8]; for(int bi=7;bi>=0;bi--) b[bi]=s[si+7-bi]; double dv; memcpy(&dv,b,8); val_array_push(&arr,val_float(dv)); si+=8; } break;
+                    case 'g': if (si+4<=slen) { uint8_t b[4]; for(int bi=3;bi>=0;bi--) b[bi]=s[si+3-bi]; float fv; memcpy(&fv,b,4); val_array_push(&arr,val_float((double)fv)); si+=4; } break;
                     case 'A': case 'a': case 'Z': {
                         /* eat until null or end */
                         size_t end = si; while (end < slen && s[end]) end++;
