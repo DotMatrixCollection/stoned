@@ -2786,7 +2786,10 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
         if (strcmp(op, "/") == 0) {
             if (both_int) {
                 if (right.ival == 0) return eval_raise_class(ev, node, "ZeroDivisionError", "divided by 0");
-                return val_int(left.ival / right.ival);
+                /* Ruby integer division always floors (towards negative infinity) */
+                int64_t q = left.ival / right.ival, r = left.ival % right.ival;
+                if (r != 0 && ((r ^ right.ival) < 0)) q--;
+                return val_int(q);
             }
             return val_float(lf / rf);  /* IEEE 754: x/0.0 = Inf or NaN, not an error */
         }

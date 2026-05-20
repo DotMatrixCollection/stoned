@@ -214,7 +214,10 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         if (strcmp(name, "/") == 0) {
             if (both_int) {
                 if (r.ival == 0) { *out = eval_raise_class(ev, site, "ZeroDivisionError", "divided by 0"); return 1; }
-                *out = val_int(n / r.ival); return 1;
+                /* Ruby floor division */
+                int64_t q = n / r.ival, rem = n % r.ival;
+                if (rem != 0 && ((rem ^ r.ival) < 0)) q--;
+                *out = val_int(q); return 1;
             }
             *out = val_float(lf / rf); return 1;
         }
@@ -1610,12 +1613,34 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "rindex") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#rindex requires an argument"); return 1; }
+        size_t slen = strlen(s);
+        size_t limit_byte = (argc >= 2 && args[1].kind == VAL_INT) ? utf8_byte_offset_for_char(s, (size_t)args[1].ival) : slen;
+        if (limit_byte > slen) limit_byte = slen;
+        if (value_is_regexp(args[0])) {
+            Regex *re = (Regex *)args[0].obj->native;
+            if (!re) {
+                Value src; RegexError rerr = {0};
+                if (val_object_get_ivar(args[0], "source", &src) && src.kind == VAL_STRING)
+                    regex_compile(ev->arena, src.sval, 0, &re, &rerr);
+                if (re) args[0].obj->native = re;
+            }
+            if (!re) { *out = val_nil(); return 1; }
+            /* Scan forward, keep last match within limit */
+            long last_match = -1;
+            for (size_t pos = 0; pos <= limit_byte; ) {
+                RegexMatch rm = {0,0,0,NULL,NULL};
+                RegexStatus st = regex_search(re, s, slen, (int)pos, &rm);
+                if (st != REGEX_OK || (size_t)rm.beg > limit_byte) break;
+                last_match = rm.beg;
+                pos = rm.beg == rm.end ? rm.beg + 1 : (size_t)rm.end;
+            }
+            *out = last_match >= 0 ? val_int((int64_t)utf8_char_index_for_byte(s, (size_t)last_match)) : val_nil();
+            return 1;
+        }
         const char *needle = val_to_s(ev->arena, args[0]);
-        size_t nlen = strlen(needle), slen = strlen(s);
-        size_t limit = (argc >= 2 && args[1].kind == VAL_INT) ? utf8_byte_offset_for_char(s, (size_t)args[1].ival) : slen;
-        if (limit > slen) limit = slen;
+        size_t nlen = strlen(needle);
         const char *last = NULL;
-        for (size_t i = 0; i + nlen <= limit + 1 && i <= limit; i++) {
+        for (size_t i = 0; i + nlen <= limit_byte + 1 && i <= limit_byte; i++) {
             if (strncmp(s + i, needle, nlen) == 0) last = s + i;
         }
         *out = last ? val_int((int64_t)utf8_char_index_for_byte(s, (size_t)(last - s))) : val_nil();
