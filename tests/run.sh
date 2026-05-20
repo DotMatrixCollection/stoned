@@ -14,6 +14,11 @@ fi
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
+# Case fixtures intentionally create deterministic /tmp/stoned_* worktrees so
+# expected output paths stay stable. Scrub leftovers from prior interrupted
+# runs up front so stale state does not leak between suite invocations.
+find /tmp -maxdepth 1 -name 'stoned_*' -exec rm -rf {} + 2>/dev/null
+
 total=0
 passed=0
 failed=0
