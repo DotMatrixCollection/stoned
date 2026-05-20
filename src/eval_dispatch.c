@@ -547,7 +547,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "shift", "unshift", "prepend", "reverse", "to_s", "inspect", "join", "include?",
         "each", "each_with_index", "map", "collect", "select", "filter", "reject",
         "reduce", "inject", "any?", "all?", "none?", "min", "max", "sum", "flatten",
-        "uniq", "sort", "compact", "zip", NULL
+        "uniq", "sort", "compact", "zip", "replace", NULL
     };
     static const char *hash_methods[] = {
         "[]", "[]=", "fetch", "has_key?", "key?", "include?", "member?", "has_value?",
@@ -560,7 +560,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "transform_values!", "transform_keys!", "filter_map", "slice", "except",
         "invert", "key", "assoc", "rassoc", "values_at", "fetch_values",
         "group_by", "tally", "flat_map", "zip", "each_with_index", "min", "max",
-        "sum", "reduce", "inject", "first", "take", "drop",
+        "sum", "reduce", "inject", "first", "take", "drop", "replace",
         NULL
     };
     static const char *proc_methods[] = {

@@ -336,6 +336,15 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         *out = args[1]; return 1;
     }
+    if (strcmp(name, "replace") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Array#replace requires an argument"); return 1; }
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
+        if (args[0].kind != VAL_ARRAY) { *out = eval_raise_class(ev, site, "TypeError", "no implicit conversion into Array"); return 1; }
+        if (args[0].array == recv.array) { *out = recv; return 1; }
+        recv.array->len = 0;
+        for (size_t i = 0; i < args[0].array->len; i++) val_array_push(&recv, args[0].array->elems[i]);
+        *out = recv; return 1;
+    }
     if (strcmp(name, "<=>") == 0) {
         if (argc < 1 || args[0].kind != VAL_ARRAY) { *out = val_nil(); return 1; }
         size_t alen = recv.array->len, blen = args[0].array->len;
@@ -2164,6 +2173,21 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             if (!excluded) val_hash_set(result.hash, h->keys[i], h->vals[i]);
         }
         *out = result; return 1;
+    }
+    if (strcmp(name, "replace") == 0) {
+        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Hash#replace requires an argument"); return 1; }
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
+        if (args[0].kind != VAL_HASH) { *out = eval_raise_class(ev, site, "TypeError", "no implicit conversion into Hash"); return 1; }
+        RubyHash *other = args[0].hash;
+        if (other == h) { *out = recv; return 1; }
+        h->len = 0;
+        h->default_value = other->default_value;
+        h->default_proc = other->default_proc;
+        for (size_t i = 0; i < other->len; i++) {
+            val_hash_set(h, other->keys[i], other->vals[i]);
+            sync_process_env_pair(ev, h, other->keys[i], other->vals[i]);
+        }
+        *out = recv; return 1;
     }
     if (strcmp(name, "key") == 0 || strcmp(name, "index") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Hash#key requires a value"); return 1; }
