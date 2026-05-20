@@ -627,6 +627,14 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (strcmp(name, "integer?") == 0)  { *out = val_false(); return 1; }
     if (strcmp(name, "real") == 0)      { *out = recv; return 1; }
     if (strcmp(name, "imaginary") == 0) { *out = val_int(0); return 1; }
+    if (strcmp(name, "to_c") == 0) {
+        Value cplx_class;
+        if (!env_get(ev->top_env, "Complex", &cplx_class) || cplx_class.kind != VAL_CLASS)
+            { *out = val_nil(); return 1; }
+        Value cargs[2] = { recv, val_int(0) };
+        *out = dispatch_method(ev, env, cplx_class, "new", cargs, 2, NULL, site, 0, 1);
+        return 1;
+    }
     if (strcmp(name, "infinite?") == 0) {
         *out = isinf(f) ? val_int(f > 0 ? 1 : -1) : val_nil();
         return 1;
