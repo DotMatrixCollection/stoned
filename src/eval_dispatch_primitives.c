@@ -1586,9 +1586,24 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "index") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#index requires an argument"); return 1; }
-        const char *needle = val_to_s(ev->arena, args[0]);
+        size_t slen = strlen(s);
         size_t offset = (argc >= 2 && args[1].kind == VAL_INT) ? utf8_byte_offset_for_char(s, (size_t)args[1].ival) : 0;
-        if (offset > strlen(s)) { *out = val_nil(); return 1; }
+        if (offset > slen) { *out = val_nil(); return 1; }
+        if (value_is_regexp(args[0])) {
+            Regex *re = (Regex *)args[0].obj->native;
+            if (!re) {
+                Value src; RegexError rerr = {0};
+                if (val_object_get_ivar(args[0], "source", &src) && src.kind == VAL_STRING)
+                    regex_compile(ev->arena, src.sval, 0, &re, &rerr);
+                if (re) args[0].obj->native = re;
+            }
+            if (!re) { *out = val_nil(); return 1; }
+            RegexMatch rm = {0,0,0,NULL,NULL};
+            RegexStatus st = regex_search(re, s, slen, (int)offset, &rm);
+            *out = st == REGEX_OK ? val_int((int64_t)utf8_char_index_for_byte(s, (size_t)rm.beg)) : val_nil();
+            return 1;
+        }
+        const char *needle = val_to_s(ev->arena, args[0]);
         const char *found = strstr(s + offset, needle);
         *out = found ? val_int((int64_t)utf8_char_index_for_byte(s, (size_t)(found - s))) : val_nil();
         return 1;

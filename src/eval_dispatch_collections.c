@@ -546,29 +546,38 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = acc;
         return 1;
     }
-    if (strcmp(name, "any?") == 0 || strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) {
+    if (strcmp(name, "any?") == 0 || strcmp(name, "all?") == 0 ||
+        strcmp(name, "none?") == 0 || strcmp(name, "one?") == 0) {
+        int is_one = strcmp(name, "one?") == 0;
         if (!blk) {
             /* no-block: test element truthiness */
+            int truthy_count = 0;
             for (size_t i = 0; i < recv.array->len; i++) {
                 int t = val_truthy(recv.array->elems[i]);
                 if (strcmp(name, "any?") == 0 && t)  { *out = val_true();  return 1; }
                 if (strcmp(name, "all?") == 0 && !t) { *out = val_false(); return 1; }
                 if (strcmp(name, "none?") == 0 && t) { *out = val_false(); return 1; }
+                if (is_one && t) { truthy_count++; if (truthy_count > 1) { *out = val_false(); return 1; } }
             }
+            if (is_one) { *out = val_bool(truthy_count == 1); return 1; }
             *out = strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0 ? val_true() : val_false();
             return 1;
         }
         {
-            *out = strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0 ? val_true() : val_false();
+            int truthy_count = 0;
+            *out = (strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) ? val_true() : val_false();
             for (size_t i = 0; i < recv.array->len; i++) {
                 Value arg = recv.array->elems[i];
                 Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (r.kind == VAL_EXCEPTION) { *out = r; return 1; }
-                if (strcmp(name, "any?") == 0 && val_truthy(r)) { *out = val_true(); return 1; }
-                if (strcmp(name, "all?") == 0 && !val_truthy(r)) { *out = val_false(); return 1; }
-                if (strcmp(name, "none?") == 0 && val_truthy(r)) { *out = val_false(); return 1; }
+                int t = val_truthy(r);
+                if (strcmp(name, "any?") == 0 && t) { *out = val_true(); return 1; }
+                if (strcmp(name, "all?") == 0 && !t) { *out = val_false(); return 1; }
+                if (strcmp(name, "none?") == 0 && t) { *out = val_false(); return 1; }
+                if (is_one && t) { truthy_count++; if (truthy_count > 1) { *out = val_false(); return 1; } }
             }
+            if (is_one) *out = val_bool(truthy_count == 1);
         }
         return 1;
     }
