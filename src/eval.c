@@ -1140,6 +1140,10 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                         Value g = eval_node(ev, binding_env, in->in_clause.guard);
                         if (val_is_signal(g) || !val_truthy(g)) continue;
                     }
+                    /* Publish captured bindings into the enclosing scope (Ruby semantics:
+                       pattern variables are visible after the case/in block) */
+                    for (EnvEntry *e = binding_env->vars; e; e = e->next)
+                        env_define(ev->arena, env, e->name, e->val);
                     return eval_node(ev, binding_env, in->in_clause.body);
                 }
             }

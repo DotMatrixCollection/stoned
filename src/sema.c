@@ -151,6 +151,36 @@ static void collect_assignment_target(Sema *s, Node *target, NodeList *excl) {
     }
 }
 
+static void collect_pattern_caps(Sema *s, Node *pat) {
+    if (!pat) return;
+    switch (pat->kind) {
+        case NODE_PATTERN_CAPTURE:
+            if (pat->pattern_capture.name)
+                scope_add(s, pat->pattern_capture.name);
+            collect_pattern_caps(s, pat->pattern_capture.pattern);
+            break;
+        case NODE_PATTERN_ARRAY:
+            for (NodeList *l = pat->pattern_collection.elements; l; l = l->next)
+                collect_pattern_caps(s, l->node);
+            if (pat->pattern_collection.rest_name)
+                scope_add(s, pat->pattern_collection.rest_name);
+            if (pat->pattern_collection.pre_rest_name)
+                scope_add(s, pat->pattern_collection.pre_rest_name);
+            break;
+        case NODE_PATTERN_HASH:
+            for (NodeList *l = pat->pattern_collection.elements; l; l = l->next)
+                collect_pattern_caps(s, l->node);
+            if (pat->pattern_collection.rest_name)
+                scope_add(s, pat->pattern_collection.rest_name);
+            break;
+        case NODE_PATTERN_OR:
+            collect_pattern_caps(s, pat->pattern_or.left);
+            collect_pattern_caps(s, pat->pattern_or.right);
+            break;
+        default: break;
+    }
+}
+
 static void collect(Sema *s, Node *node, NodeList *excl) {
     if (!node) return;
 
@@ -240,6 +270,20 @@ static void collect(Sema *s, Node *node, NodeList *excl) {
 
         case NODE_MODULE:
             break;
+
+        case NODE_PATCASE: {
+            collect(s, node->patcase.subject, excl);
+            for (NodeList *l = node->patcase.ins; l; l = l->next) {
+                Node *in = l->node;
+                if (!in || in->kind != NODE_IN) continue;
+                /* Collect capture names from the pattern */
+                collect_pattern_caps(s, in->in_clause.pattern);
+                collect(s, in->in_clause.guard, excl);
+                collect(s, in->in_clause.body, excl);
+            }
+            collect(s, node->patcase.else_body, excl);
+            break;
+        }
 
         default:
             break;
@@ -510,6 +554,17 @@ static void resolve(Sema *s, Node *node) {
         case NODE_PROGRAM:
             for (NodeList *l = node->body.stmts; l; l = l->next)
                 resolve(s, l->node);
+            break;
+
+        case NODE_PATCASE:
+            resolve(s, node->patcase.subject);
+            for (NodeList *l = node->patcase.ins; l; l = l->next) {
+                Node *in = l->node;
+                if (!in || in->kind != NODE_IN) continue;
+                resolve(s, in->in_clause.guard);
+                resolve(s, in->in_clause.body);
+            }
+            resolve(s, node->patcase.else_body);
             break;
 
         default:
