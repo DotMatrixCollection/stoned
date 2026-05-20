@@ -246,7 +246,11 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         if (strcmp(name, "<=")  == 0) { *out = val_bool(lf <= rf); return 1; }
         if (strcmp(name, ">")   == 0) { *out = val_bool(lf >  rf); return 1; }
         if (strcmp(name, ">=")  == 0) { *out = val_bool(lf >= rf); return 1; }
-        if (strcmp(name, "<=>") == 0) { *out = val_int(lf < rf ? -1 : lf > rf ? 1 : 0); return 1; }
+        if (strcmp(name, "<=>") == 0) {
+            /* nil for incomparable types */
+            if (r.kind != VAL_INT && r.kind != VAL_FLOAT) { *out = val_nil(); return 1; }
+            *out = val_int(lf < rf ? -1 : lf > rf ? 1 : 0); return 1;
+        }
         if (both_int) {
             if (strcmp(name, "&")  == 0) { *out = val_int(n & r.ival); return 1; }
             if (strcmp(name, "|")  == 0) { *out = val_int(n | r.ival); return 1; }
@@ -719,6 +723,46 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = val_string(ev->arena, val_inspect(ev->arena, recv));
         return 1;
     }
+    if (strcmp(name, "undump") == 0) {
+        /* Inverse of dump/inspect: parse escaped string literal */
+        size_t slen = strlen(s), si = 0;
+        if (slen >= 2 && s[0] == '"') si = 1;  /* skip opening quote */
+        size_t end = slen;
+        if (slen >= 2 && s[slen-1] == '"') end = slen - 1;
+        char *buf = arena_alloc(ev->arena, slen + 1);
+        size_t bi = 0;
+        while (si < end) {
+            if (s[si] == '\\' && si + 1 < end) {
+                si++;
+                switch (s[si]) {
+                    case 'n': buf[bi++] = '\n'; break;
+                    case 't': buf[bi++] = '\t'; break;
+                    case 'r': buf[bi++] = '\r'; break;
+                    case '"': buf[bi++] = '"';  break;
+                    case '\'': buf[bi++] = '\''; break;
+                    case '\\': buf[bi++] = '\\'; break;
+                    case 'a': buf[bi++] = '\a'; break;
+                    case 'b': buf[bi++] = '\b'; break;
+                    case 'e': buf[bi++] = '\x1b'; break;
+                    case 'x': {
+                        /* hex escape \xNN */
+                        char h[3] = {0};
+                        if (si+1 < end && isxdigit((unsigned char)s[si+1])) { h[0] = s[++si]; }
+                        if (si+1 < end && isxdigit((unsigned char)s[si+1])) { h[1] = s[++si]; }
+                        buf[bi++] = (char)strtol(h, NULL, 16);
+                        break;
+                    }
+                    default: buf[bi++] = '\\'; buf[bi++] = s[si]; break;
+                }
+            } else {
+                buf[bi++] = s[si];
+            }
+            si++;
+        }
+        buf[bi] = '\0';
+        *out = val_string_n(ev->arena, buf, bi);
+        return 1;
+    }
     if (strcmp(name, "<=>") == 0) {
         if (argc < 1 || args[0].kind != VAL_STRING) { *out = val_nil(); return 1; }
         int c = strcmp(s, args[0].sval ? args[0].sval : "");
@@ -747,6 +791,32 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = val_true(); return 1;
     }
     if (strcmp(name, "bytesize") == 0) { *out = val_int((int64_t)strlen(s)); return 1; }
+    if (strcmp(name, "byteslice") == 0) {
+        size_t slen = strlen(s);
+        if (argc < 1) { *out = val_nil(); return 1; }
+        if (args[0].kind == VAL_RANGE) {
+            RubyRange *r = args[0].range;
+            int64_t beg = r->begin_val.kind == VAL_INT ? r->begin_val.ival : 0;
+            int64_t end = r->end_val.kind == VAL_INT ? r->end_val.ival : (int64_t)slen - 1;
+            if (beg < 0) beg += (int64_t)slen;
+            if (end < 0) end += (int64_t)slen;
+            if (r->exclusive) end--;
+            if (beg < 0 || beg > (int64_t)slen) { *out = val_nil(); return 1; }
+            if (end >= (int64_t)slen) end = (int64_t)slen - 1;
+            int64_t len = end - beg + 1;
+            if (len < 0) len = 0;
+            *out = val_string_n(ev->arena, s + beg, (size_t)len);
+            return 1;
+        }
+        int64_t start = args[0].kind == VAL_INT ? args[0].ival : 0;
+        if (start < 0) start += (int64_t)slen;
+        if (start < 0 || start > (int64_t)slen) { *out = val_nil(); return 1; }
+        int64_t len = argc >= 2 && args[1].kind == VAL_INT ? args[1].ival : 1;
+        if (len < 0) { *out = val_nil(); return 1; }
+        if (start + len > (int64_t)slen) len = (int64_t)slen - start;
+        *out = val_string_n(ev->arena, s + start, (size_t)len);
+        return 1;
+    }
     if (strcmp(name, "b") == 0 || strcmp(name, "force_encoding") == 0)
         { *out = recv; return 1; } /* no-op: we're already UTF-8-only */
     if (strcmp(name, "encode") == 0)
