@@ -205,6 +205,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = recv; return 1;
     }
     if (strcmp(name, "pop") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         if (argc > 0 && args[0].kind == VAL_INT) {
             int64_t n = args[0].ival;
             if (n < 0) { *out = eval_raise_class(ev, site, "ArgumentError", "negative array size"); return 1; }
@@ -220,6 +221,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "delete") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         if (argc < 1) { *out = val_nil(); return 1; }
         Value deleted = val_nil();
         size_t w = 0;
@@ -238,8 +240,12 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         return 1;
     }
-    if (strcmp(name, "clear") == 0) { recv.array->len = 0; *out = recv; return 1; }
+    if (strcmp(name, "clear") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
+        recv.array->len = 0; *out = recv; return 1;
+    }
     if (strcmp(name, "shift") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         if (argc > 0 && args[0].kind == VAL_INT) {
             /* shift(n) — remove first n elements and return them as array */
             int64_t n2 = args[0].ival;
@@ -261,6 +267,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "unshift") == 0 || strcmp(name, "prepend") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         for (int i = argc - 1; i >= 0; i--) {
             if (recv.array->len >= recv.array->cap) {
                 size_t nc = recv.array->cap == 0 ? 8 : recv.array->cap * 2;
@@ -296,6 +303,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(name, "[]=") == 0) {
         if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         if (args[0].kind == VAL_RANGE) {
             /* Array[range] = val — replace slice */
             RubyRange *r = args[0].range;
@@ -916,6 +924,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "compact!") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         size_t w = 0;
         for (size_t i = 0; i < recv.array->len; i++)
             if (recv.array->elems[i].kind != VAL_NIL) recv.array->elems[w++] = recv.array->elems[i];
@@ -925,6 +934,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "flatten!") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         int depth = (argc > 0 && args[0].kind == VAL_INT) ? (int)args[0].ival :
                    (argc > 0 && args[0].kind == VAL_FLOAT) ? (int)args[0].fval : -1;
         Value result = val_array_new();
@@ -940,6 +950,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "uniq!") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         size_t orig = recv.array->len;
         Value seen = val_array_new();
         size_t w = 0;
@@ -963,6 +974,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = recv; return 1;
     }
     if (strcmp(name, "sort!") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         Value sorted = val_array_new();
         for (size_t i = 0; i < recv.array->len; i++) val_array_push(&sorted, recv.array->elems[i]);
         Value sort_out;
@@ -974,6 +986,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(name, "map!" ) == 0 || strcmp(name, "collect!") == 0) {
         if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Array#map! requires a block"); return 1; }
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         for (size_t i = 0; i < recv.array->len; i++) {
             Value r = call_block(ev, env, *blk, &recv.array->elems[i], 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
@@ -984,6 +997,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(name, "select!") == 0 || strcmp(name, "filter!") == 0 || strcmp(name, "keep_if") == 0) {
         if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Array#select! requires a block"); return 1; }
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         size_t w = 0;
         size_t orig = recv.array->len;
         for (size_t i = 0; i < recv.array->len; i++) {
@@ -998,6 +1012,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(name, "reject!") == 0 || strcmp(name, "delete_if") == 0) {
         if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Array#reject! requires a block"); return 1; }
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         size_t w = 0;
         size_t orig = recv.array->len;
         for (size_t i = 0; i < recv.array->len; i++) {
@@ -1012,6 +1027,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(name, "slice!") == 0) {
         if (argc < 1) { *out = val_nil(); return 1; }
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         int64_t alen = (int64_t)recv.array->len;
         int64_t idx, len;
         if (args[0].kind == VAL_RANGE) {
@@ -1502,6 +1518,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     if (strcmp(name, "delete") == 0) {
         if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#delete requires a key");
         else {
+            if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
             Value found;
             int ok = val_hash_get(h, args[0], &found);
             val_hash_delete(h, args[0]);
@@ -1562,6 +1579,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = result; return 1;
     }
     if (strcmp(name, "merge!") == 0 || strcmp(name, "update") == 0) {
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         for (int i = 0; i < argc; i++) {
             if (args[i].kind != VAL_HASH) { *out = eval_raise_class(ev, site, "TypeError", "Hash#merge! requires Hash arguments"); return 1; }
             RubyHash *other = args[i].hash;
@@ -1760,6 +1778,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     /* Hash#select! / Hash#filter! / Hash#keep_if — mutate in place, keep matching */
     if (strcmp(name, "select!") == 0 || strcmp(name, "filter!") == 0 || strcmp(name, "keep_if") == 0) {
         if (!blk) { *out = recv; return 1; }
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         int changed = 0;
         for (size_t i = 0; i < h->len; ) {
             Value bargs[2] = { h->keys[i], h->vals[i] };
@@ -1779,6 +1798,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     /* Hash#reject! / Hash#delete_if — mutate in place, remove matching */
     if (strcmp(name, "reject!") == 0 || strcmp(name, "delete_if") == 0) {
         if (!blk) { *out = recv; return 1; }
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         int changed = 0;
         for (size_t i = 0; i < h->len; ) {
             Value bargs[2] = { h->keys[i], h->vals[i] };
@@ -1918,10 +1938,16 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "store") == 0) {
         if (argc < 2) *out = eval_raise_class(ev, site, "ArgumentError", "Hash#store requires key and value");
-        else { val_hash_set(h, args[0], args[1]); *out = args[1]; }
+        else {
+            if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
+            val_hash_set(h, args[0], args[1]); *out = args[1];
+        }
         return 1;
     }
-    if (strcmp(name, "clear") == 0) { h->len = 0; *out = recv; return 1; }
+    if (strcmp(name, "clear") == 0) {
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
+        h->len = 0; *out = recv; return 1;
+    }
     if (strcmp(name, "dup") == 0) {
         Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
         for (size_t i = 0; i < h->len; i++) val_hash_set(result.hash, h->keys[i], h->vals[i]);
@@ -1941,6 +1967,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "transform_values!") == 0) {
         if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#transform_values! requires a block"); return 1; }
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         for (size_t i = 0; i < h->len; i++) {
             Value r = call_block(ev, env, *blk, &h->vals[i], 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
@@ -1962,6 +1989,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "transform_keys!") == 0) {
         if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#transform_keys! requires a block"); return 1; }
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         /* collect new keys first to avoid aliasing the underlying array */
         Value new_keys[256];
         size_t n = h->len < 256 ? h->len : 256;
@@ -2057,6 +2085,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "default=") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         h->default_value = args[0];
         h->default_proc = val_nil();
         *out = args[0]; return 1;
@@ -2066,6 +2095,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "default_proc=") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         if (args[0].kind == VAL_BLOCK) { h->default_proc = args[0]; h->default_value = val_nil(); }
         else if (args[0].kind == VAL_NIL) { h->default_proc = val_nil(); }
         *out = args[0]; return 1;

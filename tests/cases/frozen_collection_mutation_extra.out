@@ -1,0 +1,12 @@
+array clear: FrozenError
+array shift: FrozenError
+array unshift: FrozenError
+array []=: FrozenError
+array compact!: FrozenError
+hash delete: FrozenError
+hash clear: FrozenError
+hash merge!: FrozenError
+hash transform_values!: FrozenError
+hash transform_keys!: FrozenError
+hash default=: FrozenError
+hash default_proc=: FrozenError
