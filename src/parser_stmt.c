@@ -2,6 +2,224 @@
 
 #include <string.h>
 
+/* ------------------------------------------------------------------ */
+/* Pattern matching parser                                              */
+/* ------------------------------------------------------------------ */
+
+static Node *parse_pattern(Parser *p);
+
+static Node *parse_array_pattern(Parser *p, Span s) {
+    /* '[' already consumed */
+    Node *n = node_new(p->arena, NODE_PATTERN_ARRAY, s);
+    n->pattern_collection.elements = NULL;
+    n->pattern_collection.has_rest = 0;
+    n->pattern_collection.has_pre_rest = 0;
+    n->pattern_collection.rest_name = NULL;
+    n->pattern_collection.pre_rest_name = NULL;
+    int first = 1;
+    while (!check(p, TOK_RBRACKET) && !check(p, TOK_EOF)) {
+        skip_terminators(p);
+        if (check(p, TOK_RBRACKET)) break;
+        if (check(p, TOK_STAR)) {
+            advance(p);
+            const char *rname = NULL;
+            if (check(p, TOK_IDENT)) {
+                Token rt = advance(p);
+                rname = rt.sval;
+                lexer_mark_local(&p->lexer, rt.sval);
+            }
+            if (first) {
+                /* Leading * — may be find pattern prefix */
+                n->pattern_collection.has_pre_rest = 1;
+                n->pattern_collection.pre_rest_name = rname;
+            } else {
+                n->pattern_collection.has_rest = 1;
+                n->pattern_collection.rest_name = rname;
+            }
+            first = 0;
+            if (check(p, TOK_COMMA)) { advance(p); continue; }
+            break;
+        }
+        first = 0;
+        Node *elem = parse_pattern(p);
+        if (elem) n->pattern_collection.elements = nodelist_append(p->arena, n->pattern_collection.elements, elem);
+        if (!match(p, TOK_COMMA)) break;
+    }
+    skip_terminators(p);
+    match(p, TOK_RBRACKET);
+    return n;
+}
+
+static Node *parse_hash_pattern(Parser *p, Span s) {
+    /* '{' already consumed */
+    Node *n = node_new(p->arena, NODE_PATTERN_HASH, s);
+    n->pattern_collection.elements = NULL;
+    n->pattern_collection.has_rest = 0;
+    n->pattern_collection.rest_name = NULL;
+    while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
+        skip_terminators(p);
+        if (check(p, TOK_RBRACE)) break;
+        /* **rest or **nil */
+        if (check(p, TOK_STAR2)) {
+            advance(p);
+            n->pattern_collection.has_rest = 1;
+            if (check(p, TOK_NIL)) { advance(p); n->pattern_collection.rest_name = NULL; }
+            else if (check(p, TOK_IDENT)) {
+                Token rt = advance(p);
+                n->pattern_collection.rest_name = rt.sval;
+                lexer_mark_local(&p->lexer, rt.sval);
+            }
+            if (check(p, TOK_COMMA)) { advance(p); continue; }
+            break;
+        }
+        /* key: pattern  or  key:  (shorthand binding) */
+        Token key_tok = peek(p);
+        const char *key_name = NULL;
+        if (key_tok.kind == TOK_IDENT || key_tok.kind == TOK_CONST) {
+            advance(p);
+            key_name = key_tok.sval;
+        } else if (key_tok.kind == TOK_SYMBOL) {
+            advance(p);
+            key_name = key_tok.sval;
+        } else { advance(p); key_name = "?"; }
+        /* Store the key as a symbol node */
+        Node *key_node = node_new(p->arena, NODE_SYMBOL, tok_span(key_tok));
+        key_node->sval = key_name;
+        n->pattern_collection.elements = nodelist_append(p->arena, n->pattern_collection.elements, key_node);
+        /* Colon consumed as part of symbol key, or match it */
+        if (check(p, TOK_COLON)) advance(p);
+        /* Pattern for this key: if next is comma/} it's a shorthand capture */
+        Node *val_pat = NULL;
+        if (!check(p, TOK_COMMA) && !check(p, TOK_RBRACE) && !check(p, TOK_NEWLINE)) {
+            val_pat = parse_pattern(p);
+        } else {
+            /* Shorthand: {name:} binds to variable `name` */
+            Node *cap = node_new(p->arena, NODE_PATTERN_CAPTURE, tok_span(key_tok));
+            cap->pattern_capture.pattern = NULL;
+            cap->pattern_capture.name = key_name;
+            lexer_mark_local(&p->lexer, key_name);
+            val_pat = cap;
+        }
+        n->pattern_collection.elements = nodelist_append(p->arena, n->pattern_collection.elements, val_pat);
+        if (!match(p, TOK_COMMA)) break;
+    }
+    skip_terminators(p);
+    match(p, TOK_RBRACE);
+    return n;
+}
+
+static Node *parse_pattern(Parser *p) {
+    skip_terminators(p);
+    Token t = peek(p);
+    Span s = tok_span(t);
+    Node *pat = NULL;
+
+    /* Pin operator ^var */
+    if (t.kind == TOK_CARET) {
+        advance(p);
+        Token vt = advance(p);
+        pat = node_new(p->arena, NODE_PATTERN_PIN, s);
+        pat->sval = vt.sval;
+    }
+    /* Array pattern */
+    else if (t.kind == TOK_LBRACKET) {
+        advance(p);
+        pat = parse_array_pattern(p, s);
+    }
+    /* Hash pattern */
+    else if (t.kind == TOK_LBRACE) {
+        advance(p);
+        pat = parse_hash_pattern(p, s);
+    }
+    /* Nil/True/False literals */
+    else if (t.kind == TOK_NIL)   { advance(p); pat = node_new(p->arena, NODE_NIL,   s); }
+    else if (t.kind == TOK_TRUE)  { advance(p); pat = node_new(p->arena, NODE_TRUE,  s); }
+    else if (t.kind == TOK_FALSE) { advance(p); pat = node_new(p->arena, NODE_FALSE, s); }
+    /* Integer literal (possibly negative) */
+    else if (t.kind == TOK_INT) {
+        advance(p);
+        pat = node_new(p->arena, NODE_INT, s);
+        pat->ival = t.ival;
+    }
+    else if (t.kind == TOK_MINUS) {
+        /* negative literal */
+        advance(p);
+        Token nt = peek(p);
+        if (nt.kind == TOK_INT) {
+            advance(p);
+            pat = node_new(p->arena, NODE_INT, s);
+            pat->ival = -nt.ival;
+        } else if (nt.kind == TOK_FLOAT) {
+            advance(p);
+            pat = node_new(p->arena, NODE_FLOAT, s);
+            pat->fval = -nt.fval;
+        }
+    }
+    else if (t.kind == TOK_FLOAT) {
+        advance(p);
+        pat = node_new(p->arena, NODE_FLOAT, s);
+        pat->fval = t.fval;
+    }
+    /* String literal */
+    else if (t.kind == TOK_INTERP_BEG || t.kind == TOK_STRING) {
+        pat = parse_expr(p, 0);
+    }
+    /* Symbol */
+    else if (t.kind == TOK_SYMBOL) {
+        advance(p);
+        pat = node_new(p->arena, NODE_SYMBOL, s);
+        pat->sval = t.sval;
+    }
+    /* Constant (type check) */
+    else if (t.kind == TOK_CONST) {
+        pat = parse_expr(p, 0);  /* handles Foo::Bar etc. */
+    }
+    /* Bare identifier — capture variable */
+    else if (t.kind == TOK_IDENT) {
+        advance(p);
+        /* `_` is wildcard, others are captures */
+        if (strcmp(t.sval, "_") == 0) {
+            pat = node_new(p->arena, NODE_NIL, s); /* wildcard — any value matches */
+            pat->kind = NODE_NIL;
+            /* reuse nil node as wildcard marker by giving it a special sval */
+            pat = node_new(p->arena, NODE_PATTERN_CAPTURE, s);
+            pat->pattern_capture.pattern = NULL;
+            pat->pattern_capture.name = NULL; /* wildcard: don't bind */
+        } else {
+            lexer_mark_local(&p->lexer, t.sval);
+            pat = node_new(p->arena, NODE_PATTERN_CAPTURE, s);
+            pat->pattern_capture.pattern = NULL;  /* match-all capture */
+            pat->pattern_capture.name = t.sval;
+        }
+    }
+    else {
+        pat = parse_expr(p, 0);
+    }
+
+    /* => capture binding: `pattern => var` */
+    if (pat && check(p, TOK_ARROW)) {
+        advance(p);
+        Token vt = advance(p);
+        lexer_mark_local(&p->lexer, vt.sval);
+        Node *cap = node_new(p->arena, NODE_PATTERN_CAPTURE, s);
+        cap->pattern_capture.pattern = pat;
+        cap->pattern_capture.name = vt.sval;
+        pat = cap;
+    }
+
+    /* | alternation */
+    if (pat && check(p, TOK_PIPE)) {
+        advance(p);
+        Node *right = parse_pattern(p);
+        Node *or_node = node_new(p->arena, NODE_PATTERN_OR, s);
+        or_node->pattern_or.left = pat;
+        or_node->pattern_or.right = right;
+        pat = or_node;
+    }
+
+    return pat;
+}
+
 static void mark_assign_targets_stmt(Parser *p, Node *target) {
     if (!target) return;
     if (target->kind == NODE_LVAR)
@@ -557,6 +775,34 @@ Node *parse_stmt(Parser *p) {
         }
         n->case_stmt.whens = whens;
 
+        /* Pattern matching: case/in (Ruby 3+) */
+        if (check(p, TOK_IN)) {
+            n->kind = NODE_PATCASE;
+            n->patcase.subject = n->case_stmt.subject;
+            NodeList *ins = NULL;
+            while (check(p, TOK_IN)) {
+                Span ws = tok_span(peek(p));
+                advance(p);
+                Node *pat = parse_pattern(p);
+                Node *guard = NULL;
+                if (check(p, TOK_IF)) { advance(p); guard = parse_expr(p, 0); }
+                if (!match(p, TOK_THEN)) skip_terminators(p);
+                Node *body = parse_body(p, 0);
+                Node *in_node = node_new(p->arena, NODE_IN, ws);
+                in_node->in_clause.pattern = pat;
+                in_node->in_clause.guard = guard;
+                in_node->in_clause.body = body;
+                ins = nodelist_append(p->arena, ins, in_node);
+            }
+            n->patcase.ins = ins;
+            if (match(p, TOK_ELSE)) {
+                skip_terminators(p);
+                n->patcase.else_body = parse_body(p, 0);
+            }
+            expect(p, TOK_END, "expected 'end'");
+            return n;
+        }
+
         if (match(p, TOK_ELSE)) {
             skip_terminators(p);
             n->case_stmt.else_body = parse_body(p, 0);
@@ -706,7 +952,7 @@ Node *parse_body(Parser *p, int stop_at_rbrace) {
         Token t = peek(p);
         if (t.kind == TOK_EOF || t.kind == TOK_END || t.kind == TOK_ELSE ||
             t.kind == TOK_ELSIF || t.kind == TOK_ENSURE || t.kind == TOK_RESCUE ||
-            t.kind == TOK_WHEN)
+            t.kind == TOK_WHEN || t.kind == TOK_IN)
             break;
         if (stop_at_rbrace && t.kind == TOK_RBRACE)
             break;

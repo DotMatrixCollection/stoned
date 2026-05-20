@@ -519,6 +519,208 @@ static const char *defined_expr(Eval *ev, Env *env, Node *node) {
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* Pattern matching evaluator                                           */
+/* ------------------------------------------------------------------ */
+
+/* Match a value against a pattern. On match, bind captured variables into
+   binding_env (which must be a fresh env the caller will use for the body).
+   Returns 1 on match, 0 on no-match. Does NOT raise on no-match. */
+static int match_pattern(Eval *ev, Env *env, Env *binding_env, Value val, Node *pat);
+
+static int match_array_pattern(Eval *ev, Env *env, Env *binding_env, Value val, Node *pat) {
+    /* Call deconstruct on val to get an array */
+    Value arr = val;
+    if (val.kind != VAL_ARRAY) {
+        arr = dispatch_method(ev, env, val, "deconstruct", NULL, 0, NULL, pat, 0, 1);
+        if (val_is_signal(arr)) { eval_clear_exception(ev); return 0; }
+        if (arr.kind != VAL_ARRAY) return 0;
+    }
+    NodeList *elems = pat->pattern_collection.elements;
+    int has_rest = pat->pattern_collection.has_rest;
+    int has_pre_rest = pat->pattern_collection.has_pre_rest;
+    int nreq = 0;
+    for (NodeList *l = elems; l; l = l->next) nreq++;
+    size_t arr_len = arr.array->len;
+
+    /* Find pattern: [*, p1, p2, ..., *] — scan for consecutive match */
+    if (has_pre_rest && has_rest && nreq > 0) {
+        if ((size_t)nreq > arr_len) return 0;
+        for (size_t start = 0; start + (size_t)nreq <= arr_len; start++) {
+            Env *trial = env_new(ev->arena, env, 0);
+            int ok = 1;
+            size_t ai = start;
+            for (NodeList *l = elems; l; l = l->next) {
+                if (!match_pattern(ev, env, trial, arr.array->elems[ai], l->node))
+                    { ok = 0; break; }
+                ai++;
+            }
+            if (ok) {
+                /* Copy bindings from trial into binding_env */
+                for (EnvEntry *e = trial->vars; e; e = e->next)
+                    env_define(ev->arena, binding_env, e->name, e->val);
+                if (pat->pattern_collection.pre_rest_name) {
+                    Value pre = val_array_new();
+                    for (size_t i = 0; i < start; i++) val_array_push(&pre, arr.array->elems[i]);
+                    env_define(ev->arena, binding_env, pat->pattern_collection.pre_rest_name, pre);
+                }
+                if (pat->pattern_collection.rest_name) {
+                    Value post = val_array_new();
+                    for (size_t i = ai; i < arr_len; i++) val_array_push(&post, arr.array->elems[i]);
+                    env_define(ev->arena, binding_env, pat->pattern_collection.rest_name, post);
+                }
+                return 1;
+            }
+        }
+        return 0;
+    }
+    /* Regular array pattern with optional trailing rest */
+    if (!has_pre_rest) {
+        if (!has_rest && (size_t)nreq != arr_len) return 0;
+        if (has_rest && (size_t)nreq > arr_len) return 0;
+        size_t ai = 0;
+        for (NodeList *l = elems; l; l = l->next) {
+            if (ai >= arr_len) return 0;
+            if (!match_pattern(ev, env, binding_env, arr.array->elems[ai], l->node)) return 0;
+            ai++;
+        }
+        if (has_rest && pat->pattern_collection.rest_name) {
+            Value rest = val_array_new();
+            for (size_t ri = ai; ri < arr_len; ri++) val_array_push(&rest, arr.array->elems[ri]);
+            env_define(ev->arena, binding_env, pat->pattern_collection.rest_name, rest);
+        }
+        return 1;
+    }
+    /* Leading rest only: [*, p1, p2] — match suffix */
+    if (has_pre_rest && !has_rest) {
+        if ((size_t)nreq > arr_len) return 0;
+        size_t offset = arr_len - (size_t)nreq;
+        size_t ai = offset;
+        for (NodeList *l = elems; l; l = l->next) {
+            if (!match_pattern(ev, env, binding_env, arr.array->elems[ai], l->node)) return 0;
+            ai++;
+        }
+        if (pat->pattern_collection.pre_rest_name) {
+            Value pre = val_array_new();
+            for (size_t i = 0; i < offset; i++) val_array_push(&pre, arr.array->elems[i]);
+            env_define(ev->arena, binding_env, pat->pattern_collection.pre_rest_name, pre);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static int match_hash_pattern(Eval *ev, Env *env, Env *binding_env, Value val, Node *pat) {
+    /* Call deconstruct_keys if not already a hash */
+    Value h = val;
+    if (val.kind != VAL_HASH) {
+        /* Build list of requested keys */
+        Value keys_arr = val_array_new();
+        for (NodeList *l = pat->pattern_collection.elements; l && l->next; l = l->next->next) {
+            val_array_push(&keys_arr, l->node ? (Value){.kind=l->node->kind==NODE_SYMBOL?VAL_SYMBOL:VAL_NIL,.sval=l->node->sval} : val_nil());
+        }
+        Value dk_args[1] = { pat->pattern_collection.has_rest ? val_nil() : keys_arr };
+        h = dispatch_method(ev, env, val, "deconstruct_keys", dk_args, 1, NULL, pat, 0, 1);
+        if (val_is_signal(h)) { eval_clear_exception(ev); return 0; }
+        if (h.kind != VAL_HASH) return 0;
+    }
+    /* Match key/value pairs: elements list is [key, value_pattern, key, value_pattern ...] */
+    for (NodeList *l = pat->pattern_collection.elements; l && l->next; l = l->next->next) {
+        Node *key_node = l->node;
+        Node *val_pat  = l->next->node;
+        if (!key_node) continue;
+        Value key = val_symbol(key_node->sval);
+        Value hval = val_nil();
+        if (!val_hash_get(h.hash, key, &hval)) {
+            /* Key not found in hash — no match unless it's an optional capture */
+            if (val_pat && val_pat->kind == NODE_PATTERN_CAPTURE && !val_pat->pattern_capture.pattern)
+                continue; /* shorthand key:, key missing → skip */
+            return 0;
+        }
+        if (!match_pattern(ev, env, binding_env, hval, val_pat)) return 0;
+    }
+    if (!pat->pattern_collection.has_rest) {
+        /* No **rest: hash must not have extra keys (or we don't enforce — Ruby allows extra by default) */
+    }
+    if (pat->pattern_collection.has_rest && pat->pattern_collection.rest_name) {
+        /* Bind remaining keys */
+        Value rest = val_hash_new(ev->arena);
+        /* TODO: collect unmatched keys */
+        env_define(ev->arena, binding_env, pat->pattern_collection.rest_name, rest);
+    }
+    return 1;
+}
+
+static int match_pattern(Eval *ev, Env *env, Env *binding_env, Value val, Node *pat) {
+    if (!pat) return 1; /* NULL pattern = wildcard */
+    switch (pat->kind) {
+        case NODE_NIL:   return val.kind == VAL_NIL;
+        case NODE_TRUE:  return val.kind == VAL_BOOL && val.bval;
+        case NODE_FALSE: return val.kind == VAL_BOOL && !val.bval;
+        case NODE_INT:   return val.kind == VAL_INT && val.ival == pat->ival;
+        case NODE_FLOAT: return val.kind == VAL_FLOAT && val.fval == pat->fval;
+        case NODE_STRING: {
+            if (val.kind != VAL_STRING || !pat->sval) return val.kind == VAL_STRING;
+            return strcmp(val.sval, pat->sval) == 0;
+        }
+        case NODE_SYMBOL: {
+            if (val.kind != VAL_SYMBOL || !pat->sval) return val.kind == VAL_SYMBOL;
+            return val.sval && strcmp(val.sval, pat->sval) == 0;
+        }
+        case NODE_ROPE: {
+            Value sv = eval_node(ev, env, pat);
+            if (val_is_signal(sv)) { eval_clear_exception(ev); return 0; }
+            if (sv.kind != VAL_STRING || val.kind != VAL_STRING) return 0;
+            return strcmp(val.sval, sv.sval) == 0;
+        }
+        case NODE_CONST: case NODE_CONST_ACCESS: {
+            /* Type pattern: val must be is_a?(PatternClass) */
+            Value klass = eval_node(ev, env, pat);
+            if (val_is_signal(klass)) { eval_clear_exception(ev); return 0; }
+            if (klass.kind != VAL_CLASS) return 0;
+            Value arg = klass;
+            Value result = dispatch_method(ev, env, val, "is_a?", &arg, 1, NULL, pat, 0, 1);
+            if (val_is_signal(result)) { eval_clear_exception(ev); return 0; }
+            return val_truthy(result);
+        }
+        case NODE_RANGE: {
+            /* Range pattern: val must be included in range */
+            Value range = eval_node(ev, env, pat);
+            if (val_is_signal(range) || range.kind != VAL_RANGE) { eval_clear_exception(ev); return 0; }
+            Value result = dispatch_method(ev, env, range, "===", &val, 1, NULL, pat, 0, 1);
+            if (val_is_signal(result)) { eval_clear_exception(ev); return 0; }
+            return val_truthy(result);
+        }
+        case NODE_PATTERN_ARRAY:
+            return match_array_pattern(ev, env, binding_env, val, pat);
+        case NODE_PATTERN_HASH:
+            return match_hash_pattern(ev, env, binding_env, val, pat);
+        case NODE_PATTERN_CAPTURE: {
+            int sub_match = match_pattern(ev, env, binding_env, val, pat->pattern_capture.pattern);
+            if (sub_match && pat->pattern_capture.name)
+                env_define(ev->arena, binding_env, pat->pattern_capture.name, val);
+            return sub_match;
+        }
+        case NODE_PATTERN_PIN: {
+            /* ^var: match if val equals the current value of var */
+            Value pinned = val_nil();
+            if (!env_get(env, pat->sval, &pinned)) return 0;
+            return val_equal(val, pinned);
+        }
+        case NODE_PATTERN_OR:
+            return match_pattern(ev, env, binding_env, val, pat->pattern_or.left) ||
+                   match_pattern(ev, env, binding_env, val, pat->pattern_or.right);
+        default: {
+            /* Fall back: evaluate the pattern and use === */
+            Value pv = eval_node(ev, env, pat);
+            if (val_is_signal(pv)) { eval_clear_exception(ev); return 0; }
+            Value result = dispatch_method(ev, env, pv, "===", &val, 1, NULL, pat, 0, 1);
+            if (val_is_signal(result)) { eval_clear_exception(ev); return 0; }
+            return val_truthy(result);
+        }
+    }
+}
+
 static void fire_method_added(Eval *ev, Env *env, Value klass, const char *mname, Node *site) {
     if (klass.kind != VAL_CLASS) return;
     Value hook;
@@ -924,6 +1126,29 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             if (node->case_stmt.else_body)
                 return eval_node(ev, env, node->case_stmt.else_body);
             return val_nil();
+        }
+
+        case NODE_PATCASE: {
+            Value subject = eval_node(ev, env, node->patcase.subject);
+            CHECK(subject);
+            for (NodeList *l = node->patcase.ins; l; l = l->next) {
+                Node *in = l->node;
+                if (!in || in->kind != NODE_IN) continue;
+                Env *binding_env = env_new(ev->arena, env, 0);
+                if (match_pattern(ev, env, binding_env, subject, in->in_clause.pattern)) {
+                    if (in->in_clause.guard) {
+                        Value g = eval_node(ev, binding_env, in->in_clause.guard);
+                        if (val_is_signal(g) || !val_truthy(g)) continue;
+                    }
+                    return eval_node(ev, binding_env, in->in_clause.body);
+                }
+            }
+            if (node->patcase.else_body)
+                return eval_node(ev, env, node->patcase.else_body);
+            /* No match: raise NoMatchingPatternError */
+            return eval_raise_class(ev, node, "NoMatchingPatternError",
+                                    "NoMatchingPatternError (%s)",
+                                    val_inspect(ev->arena, subject));
         }
 
         case NODE_RETRY:
@@ -1572,7 +1797,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "ZeroDivisionError", "LocalJumpError", "KeyError", "LoadError", "StopIteration", "EOFError",
         "IndexError", "SystemExit", "SystemStackError", "IOError", "EncodingError", "FrozenError",
         "SystemCallError", "SignalException", "Interrupt", "SyntaxError", "ScriptError",
-        "NotImplementedError", "FiberError", "Fiber",
+        "NotImplementedError", "FiberError", "Fiber", "NoMatchingPatternError",
         NULL
     };
     for (int i = 0; builtins[i]; i++) {
@@ -1625,6 +1850,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
             {"SignalException","Exception"},  {"Interrupt","SignalException"},
             {"BasicObject","Object"},
             {"FiberError","StandardError"},   {"Fiber","Object"},
+            {"NoMatchingPatternError","StandardError"},
             {NULL, NULL}
         };
         for (int hi = 0; hierarchy[hi][0]; hi++) {
@@ -2379,12 +2605,17 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "end\n"
         "class Array\n"
         "  include Enumerable\n"
+        "  def deconstruct; self; end\n"
+        "  def deconstruct_keys(keys); keys ? select { |k| keys.include?(k) } : self; end\n"
         "end\n"
         "class Hash\n"
         "  include Enumerable\n"
+        "  def deconstruct; to_a; end\n"
+        "  def deconstruct_keys(keys); keys.nil? ? self : select { |k, _| keys.include?(k) }; end\n"
         "end\n"
         "class Range\n"
         "  include Enumerable\n"
+        "  def deconstruct; to_a; end\n"
         "end\n"
         /* Enumerator class — position-based iteration with Lazy nested class */
         "class Enumerator\n"

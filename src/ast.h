@@ -77,6 +77,15 @@ typedef enum {
     NODE_CASE,           /* case subject; when ...; end */
     NODE_WHEN,           /* when pattern, ...; body */
 
+    /* pattern matching (Ruby 3+) */
+    NODE_PATCASE,        /* case subject; in pattern ...; end */
+    NODE_IN,             /* in pattern [if guard]; body */
+    NODE_PATTERN_ARRAY,  /* [p1, p2, *rest] */
+    NODE_PATTERN_HASH,   /* {key: pat, **rest} */
+    NODE_PATTERN_CAPTURE,/* pattern => ident */
+    NODE_PATTERN_PIN,    /* ^var */
+    NODE_PATTERN_OR,     /* pat1 | pat2 */
+
     /* Super call */
     NODE_SUPER,
 
@@ -278,6 +287,42 @@ struct Node {
             NodeList *patterns;  /* one or more match expressions */
             Node     *body;
         } when_clause;
+
+        /* NODE_PATCASE */
+        struct {
+            Node     *subject;   /* value being matched */
+            NodeList *ins;       /* list of NODE_IN */
+            Node     *else_body; /* NULL if absent */
+        } patcase;
+
+        /* NODE_IN */
+        struct {
+            Node *pattern;   /* pattern to match */
+            Node *guard;     /* optional `if cond` guard, NULL if absent */
+            Node *body;      /* body if matched */
+        } in_clause;
+
+        /* NODE_PATTERN_ARRAY, NODE_PATTERN_HASH */
+        struct {
+            NodeList *elements;    /* pattern elements; for hash: alternating key/value */
+            int       has_rest;    /* 1 if has trailing *rest or **rest */
+            int       has_pre_rest; /* 1 if leading * (find pattern) */
+            const char *rest_name; /* name of trailing rest var, NULL if anonymous */
+            const char *pre_rest_name; /* name of leading rest var, NULL if anonymous */
+        } pattern_collection;
+
+        /* NODE_PATTERN_CAPTURE */
+        struct {
+            Node       *pattern; /* sub-pattern (NULL means match-all) */
+            const char *name;    /* variable to bind to */
+        } pattern_capture;
+
+        /* NODE_PATTERN_PIN: sval = variable name */
+        /* NODE_PATTERN_OR */
+        struct {
+            Node *left;
+            Node *right;
+        } pattern_or;
 
         /* NODE_SUPER */
         struct {
