@@ -2491,6 +2491,18 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                 }
             }
         }
+        /* For primitive types (Hash, Array, Symbol, etc.), look up inherited Ruby methods */
+        if (method_val.kind == VAL_NIL && recv.kind != VAL_OBJECT && recv.kind != VAL_CLASS) {
+            Value prim_klass = val_class_of(ev, recv);
+            if (prim_klass.kind == VAL_CLASS) {
+                Value pm; RubyClass *powner = NULL;
+                if (ruby_class_find_instance_method(prim_klass.klass, mname, &pm, &powner) && pm.kind == VAL_METHOD) {
+                    method_val = pm;
+                    if (powner && powner->name)
+                        env_get(ev->top_env, powner->name, &owner_val);
+                }
+            }
+        }
         if (owner_val.kind != VAL_CLASS)
             owner_val = infer_builtin_method_owner(ev, recv);
         Value m_klass;

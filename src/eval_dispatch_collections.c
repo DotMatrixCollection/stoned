@@ -1638,8 +1638,26 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
             *out = recv; return 1;
         }
         for (size_t i = 0; i < h->len; i++) {
+            /* Determine block arity to decide yield mode.
+               MRI Hash#each: |k,v| gets key+value; |x| gets [key,value] pair.
+               We always pass 2 args; block param binding handles destructuring. */
             Value bargs[2] = { h->keys[i], h->vals[i] };
-            Value r = call_block(ev, env, *blk, bargs, 2, site);
+            int block_arity = -1;
+            if (blk->block.block_node && blk->block.block_node->kind == NODE_BLOCK) {
+                int cnt = 0; NodeList *pl = blk->block.block_node->block.params;
+                for (; pl; pl = pl->next) cnt++;
+                block_arity = cnt;
+            }
+            Value r;
+            if (block_arity == 1) {
+                /* Single-param block: yield [key, value] pair as one arg */
+                Value pair = val_array_new();
+                val_array_push(&pair, h->keys[i]);
+                val_array_push(&pair, h->vals[i]);
+                r = call_block(ev, env, *blk, &pair, 1, site);
+            } else {
+                r = call_block(ev, env, *blk, bargs, 2, site);
+            }
             if (ev->errored) { *out = val_nil(); return 1; }
             if (flow_signal_out(r, out)) return 1;
         }
@@ -2143,8 +2161,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = result; return 1;
     }
     if (strcmp(name, "nil?") == 0) { *out = val_false(); return 1; }
-    *out = eval_raise_class(ev, site, "NoMethodError", "undefined method '%s' for Hash", name);
-    return 1;
+    return 0;  /* fall through to Enumerable / user-defined method dispatch */
 }
 
 static int range_include_value(Eval *ev, Env *env, RubyRange *r, Value v, Node *site) {
