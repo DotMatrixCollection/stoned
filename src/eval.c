@@ -1149,7 +1149,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             }
             if (node->patcase.else_body)
                 return eval_node(ev, env, node->patcase.else_body);
-            /* No match: raise NoMatchingPatternError */
+            /* No match and no else: raise NoMatchingPatternError */
             return eval_raise_class(ev, node, "NoMatchingPatternError",
                                     "NoMatchingPatternError (%s)",
                                     val_inspect(ev->arena, subject));
