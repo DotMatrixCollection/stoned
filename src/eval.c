@@ -2574,7 +2574,10 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  def self.stat; {}; end\n"
         "end\n"
         "module ObjectSpace\n"
-        "  def self.each_object(klass = nil); end\n"
+        "  def self.each_object(klass = nil, &blk)\n"
+        "    return Enumerator.new([]) unless blk\n"
+        "    0\n"
+        "  end\n"
         "  def self.count_objects; {}; end\n"
         "end\n";
 
