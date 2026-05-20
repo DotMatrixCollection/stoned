@@ -113,6 +113,15 @@ static NativeBinding *native_binding(Value v) {
     return (NativeBinding *)v.obj->native;
 }
 
+static Env *clone_singleton_env(Arena *arena, Env *src) {
+    if (!src)
+        return NULL;
+    Env *copy = env_new(arena, NULL, 1);
+    for (EnvEntry *e = src->vars; e; e = e->next)
+        env_define(arena, copy, e->name, e->val);
+    return copy;
+}
+
 /* Return known arity for a builtin method name, or -2 if unknown. */
 int builtin_method_arity(const char *mname) {
     /* Zero-param methods */
@@ -2022,23 +2031,28 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             copy.obj->native = recv.obj->native;
             if (is_clone && recv.obj->frozen) copy.obj->frozen = 1;
             /* clone copies the singleton class (singleton methods) */
-            if (is_clone && recv.obj->singleton_env) {
-                copy.obj->singleton_env = env_new(ev->arena, NULL, 1);
-                for (EnvEntry *e = recv.obj->singleton_env->vars; e; e = e->next)
-                    env_define(ev->arena, copy.obj->singleton_env, e->name, e->val);
-            }
+            if (is_clone)
+                copy.obj->singleton_env = clone_singleton_env(ev->arena, recv.obj->singleton_env);
             return copy;
         }
         if (recv.kind == VAL_HASH) {
             Value copy = val_hash_new_with_defaults(ev->arena, recv.hash->default_value, recv.hash->default_proc);
             for (size_t i = 0; i < recv.hash->len; i++)
                 val_hash_set(copy.hash, recv.hash->keys[i], recv.hash->vals[i]);
+            if (is_clone) {
+                copy.hash->frozen = recv.hash->frozen;
+                copy.hash->singleton_env = clone_singleton_env(ev->arena, recv.hash->singleton_env);
+            }
             return copy;
         }
         if (recv.kind == VAL_ARRAY) {
             Value copy = val_array_new();
             for (size_t i = 0; i < recv.array->len; i++)
                 val_array_push(&copy, recv.array->elems[i]);
+            if (is_clone) {
+                copy.array->frozen = recv.array->frozen;
+                copy.array->singleton_env = clone_singleton_env(ev->arena, recv.array->singleton_env);
+            }
             return copy;
         }
         /* String: dup returns unfrozen copy; clone preserves frozen */
