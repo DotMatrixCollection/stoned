@@ -4067,7 +4067,16 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     }
                     Value v = val_nil();
                     val_object_get_ivar(recv, mname, &v);
-                    val_hash_set(h.hash, val_symbol(mname), v);
+                    if (blk && strcmp(name, "to_h") == 0) {
+                        /* to_h with block: transform [key, value] pair */
+                        Value bargs[2] = { val_symbol(mname), v };
+                        Value pair = call_block(ev, env, *blk, bargs, 2, site);
+                        if (ev->errored || val_is_signal(pair)) { *out = pair; return 1; }
+                        if (pair.kind == VAL_ARRAY && pair.array->len >= 2)
+                            val_hash_set(h.hash, pair.array->elems[0], pair.array->elems[1]);
+                    } else {
+                        val_hash_set(h.hash, val_symbol(mname), v);
+                    }
                 }
                 *out = h; return 1;
             }
