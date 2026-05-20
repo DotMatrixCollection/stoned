@@ -5848,6 +5848,33 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             *out = exception_value_backtrace(recv);
             return 1;
         }
+        if (strcmp(name, "backtrace_locations") == 0) {
+            Value bt = exception_value_backtrace(recv);
+            if (bt.kind != VAL_ARRAY) { *out = val_nil(); return 1; }
+            /* Wrap each string in Thread::Backtrace::Location */
+            Value loc_class = val_nil();
+            Value thread_c;
+            if (env_get(ev->top_env, "Thread", &thread_c) && thread_c.kind == VAL_CLASS) {
+                Value bt_mod;
+                if (env_get(thread_c.klass->class_env, "Backtrace", &bt_mod) && bt_mod.kind == VAL_CLASS)
+                    env_get(bt_mod.klass->class_env, "Location", &loc_class);
+            }
+            Value arr = val_array_new();
+            for (size_t i = 0; i < bt.array->len; i++) {
+                Value entry = bt.array->elems[i];
+                if (loc_class.kind == VAL_CLASS && entry.kind == VAL_STRING) {
+                    Value loc_args[3];
+                    loc_args[0] = val_string(ev->arena, "(unknown)");
+                    loc_args[1] = val_int(0);
+                    loc_args[2] = entry;
+                    Value loc = dispatch_method(ev, env, loc_class, "new", loc_args, 3, NULL, site, 0, 1);
+                    val_array_push(&arr, val_is_signal(loc) ? entry : loc);
+                } else {
+                    val_array_push(&arr, entry);
+                }
+            }
+            *out = arr; return 1;
+        }
         if (strcmp(name, "inspect") == 0) {
             const char *klass = exception_value_class_name(recv);
             const char *msg = exception_value_message(ev, recv);
