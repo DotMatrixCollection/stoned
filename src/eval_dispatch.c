@@ -1625,6 +1625,15 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
             inc->mod = args[i].klass;
             inc->next = self.klass->prepended_modules;
             self.klass->prepended_modules = inc;
+            /* Call Module.prepended(base) hook if defined */
+            {
+                size_t plen = strlen("prepended");
+                char *pkey = arena_alloc(ev->arena, plen + 6);
+                memcpy(pkey, "self.", 5); memcpy(pkey + 5, "prepended", plen + 1);
+                Value cm;
+                if (env_get(args[i].klass->class_env, pkey, &cm) && cm.kind == VAL_METHOD)
+                    call_method_value(ev, env, args[i], cm, args[i].klass, "prepended", &self, 1, NULL, site);
+            }
         }
         return val_nil();
     }
