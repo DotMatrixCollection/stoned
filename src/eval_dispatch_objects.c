@@ -113,6 +113,7 @@ static Value method_params_description(Value method_val) {
         const char *ptype = pl->node->param.splat ? "rest" :
                             pl->node->param.block_param ? "block" :
                             pl->node->param.keyword_splat ? "keyrest" :
+                            pl->node->param.keyword_param && !pl->node->param.default_val ? "keyreq" :
                             pl->node->param.keyword_param ? "key" :
                             pl->node->param.default_val ? "opt" : "req";
         val_array_push(&pair, val_symbol(ptype));

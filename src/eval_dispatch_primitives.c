@@ -1507,11 +1507,27 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         const char *tmpl = args[0].sval;
         Value arr = val_array_new();
         size_t si = 0, slen = strlen(s);
+        static const char hexchars[] = "0123456789abcdef";
         for (size_t ti = 0; tmpl[ti] && si < slen; ti++) {
             char dir = tmpl[ti];
             int count = 1, star = 0;
             if (tmpl[ti+1] == '*') { star = 1; ti++; count = (int)(slen - si); }
             else if (isdigit((unsigned char)tmpl[ti+1])) { count = 0; while (isdigit((unsigned char)tmpl[ti+1])) count = count*10 + (tmpl[++ti] - '0'); }
+            /* H/h: hex string — handle before byte-level loop */
+            if (dir == 'H' || dir == 'h') {
+                size_t nbytes = star ? slen - si : (size_t)(count > 0 ? count : 0);
+                nbytes = nbytes > slen - si ? slen - si : nbytes;
+                char *hbuf = arena_alloc(ev->arena, nbytes * 2 + 1);
+                for (size_t bi = 0; bi < nbytes; bi++) {
+                    uint8_t b = (uint8_t)s[si + bi];
+                    hbuf[bi*2]     = hexchars[(b >> 4) & 0xF];
+                    hbuf[bi*2 + 1] = hexchars[b & 0xF];
+                }
+                hbuf[nbytes*2] = '\0';
+                si += nbytes;
+                val_array_push(&arr, val_string(ev->arena, hbuf));
+                continue;
+            }
             for (int ci = 0; ci < count && si < slen; ci++) {
                 switch (dir) {
                     case 'C': case 'c': val_array_push(&arr, val_int((dir=='c')?(int8_t)(unsigned char)s[si]:(unsigned char)s[si])); si++; break;

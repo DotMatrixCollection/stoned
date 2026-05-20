@@ -1152,8 +1152,11 @@ int count_required_params(NodeList *params) {
         Node *p = l->node;
         if (!p) continue;
         if (p->kind == NODE_PARAM) {
+            /* Required if: not splat, not block, no default, not keyword-splat,
+               and for keyword params only if no default (keyreq) */
             if (!p->param.splat && !p->param.block_param && !p->param.default_val
-                && !p->param.keyword_param && !p->param.keyword_splat)
+                && !p->param.keyword_splat
+                && (!p->param.keyword_param || !p->param.default_val))
                 count++;
         } else if (p->kind == NODE_ARRAY) {
             count++;
