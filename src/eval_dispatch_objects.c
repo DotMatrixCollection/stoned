@@ -1397,7 +1397,7 @@ static const char *primitive_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Range") == 0)
         return "begin,first,end,last,exclude_end?,include?,member?,cover?,===,each,each_with_index,to_a,entries,size,count,length,min,max,step,map,collect,select,filter,reject,to_s,inspect";
     if (strcmp(klass_name, "Struct") == 0)
-        return "to_a,deconstruct,to_h,members,each,inspect,to_s,==";
+        return "to_a,deconstruct,to_h,deconstruct_keys,members,each,inspect,to_s,==";
     if (strcmp(klass_name, "Binding") == 0)
         return "eval,local_variable_get,local_variable_set,local_variables,source_location,dup,clone";
     if (strcmp(klass_name, "IO") == 0)
@@ -4050,13 +4050,24 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 }
                 *out = arr; return 1;
             }
-            if (strcmp(name, "to_h") == 0) {
+            if (strcmp(name, "to_h") == 0 || strcmp(name, "deconstruct_keys") == 0) {
                 Value h = val_hash_new(ev->arena);
                 for (size_t i = 0; i < sm.array->len; i++) {
                     if (sm.array->elems[i].kind != VAL_STRING) continue;
+                    const char *mname = sm.array->elems[i].sval;
+                    /* For deconstruct_keys, filter by requested key list if not nil */
+                    if (strcmp(name, "deconstruct_keys") == 0 && argc >= 1 &&
+                        args[0].kind != VAL_NIL && args[0].kind == VAL_ARRAY) {
+                        Value sym_key = val_symbol(mname);
+                        int found = 0;
+                        for (size_t ki = 0; ki < args[0].array->len; ki++) {
+                            if (val_equal(args[0].array->elems[ki], sym_key)) { found = 1; break; }
+                        }
+                        if (!found) continue;
+                    }
                     Value v = val_nil();
-                    val_object_get_ivar(recv, sm.array->elems[i].sval, &v);
-                    val_hash_set(h.hash, val_symbol(sm.array->elems[i].sval), v);
+                    val_object_get_ivar(recv, mname, &v);
+                    val_hash_set(h.hash, val_symbol(mname), v);
                 }
                 *out = h; return 1;
             }
