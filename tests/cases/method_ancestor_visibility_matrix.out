@@ -1,0 +1,11 @@
+["MatrixPrepended", "MatrixChild", "MatrixB", "MatrixA", "MatrixBase"]
+P>child>B>A>base
+family:hidden
+false
+true
+false
+true
+NoMethodError
+dynamic
+true
+false
