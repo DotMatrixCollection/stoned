@@ -21,6 +21,16 @@ These are small, concrete probes that should keep the next slices tied to observ
 | Stdlib shim honesty | Many `require` paths intentionally load minimal shims for ecosystem bringup | Label each shim as load-only, minimal behavior, or compatibility-backed, and add one regression per promoted behavior |
 | Parser ambiguity tail | Command calls, heredocs, regexp/division, block binding, and pattern matching have strong targeted coverage | Keep adding CRuby comparison cases whenever a new ambiguous syntax form is found in real code |
 
+## Stdlib shim ledger
+
+The project intentionally uses small Ruby shims to unblock compatibility probes. This table names how much confidence each family should carry.
+
+| Category | Requires | Current promise |
+|---|---|---|
+| Compatibility-backed | `rubygems`, `bundler`, `json`, `date`, `set`, `tempfile`, `stringio` | Has targeted behavior regressions and can be expanded when real callers expose gaps |
+| Minimal behavior | `io/console`, `reline`, `prism`, `pp`, `thread`, `forwardable`, `ostruct`, `etc`, `monitor`, `zlib`, `strscan` | Enough API surface for known bringup callers; behavior should not be assumed MRI-complete |
+| Load-only / pass-through | `singleton`, `pathname`, `open3`, `tmpdir`, `timeout`, `color_printer`, `pp/*` helpers | Primarily prevents `LoadError`; promote only when a regression exercises real behavior |
+
 ## Compatibility route
 
 ### Stage 0: Conformance infrastructure
