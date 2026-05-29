@@ -227,6 +227,14 @@ static int validate_special_global_assignment(Eval *ev, Node *target, Value val)
     return 1;
 }
 
+static const char *cvar_key(Arena *arena, const char *name) {
+    size_t nlen = strlen(name);
+    char *key = arena_alloc(arena, nlen + 3);
+    key[0] = '@'; key[1] = '@';
+    memcpy(key + 2, name, nlen + 1);
+    return key;
+}
+
 static void assign_target(Eval *ev, Env *env, Node *target, Value val) {
     if (!target) return;
 
@@ -310,22 +318,38 @@ static void assign_target(Eval *ev, Env *env, Node *target, Value val) {
         if (!validate_special_global_assignment(ev, target, val)) return;
         global_set(ev->arena, &ev->globals, target->sval, val);
     } else if (target->kind == NODE_CVAR) {
+        const char *key = cvar_key(ev->arena, target->sval);
         Value self = val_nil();
         env_get(env, "self", &self);
-        RubyClass *klass = NULL;
-        if (self.kind == VAL_CLASS) klass = self.klass;
+        RubyClass *self_klass = NULL;
+        if (self.kind == VAL_CLASS) self_klass = self.klass;
         else if (self.kind == VAL_OBJECT && self.obj->klass.kind == VAL_CLASS)
-            klass = self.obj->klass.klass;
-        /* Write to the class that already owns this cvar, else current class */
-        RubyClass *owner = klass;
-        for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
-            Value existing;
-            if (k->class_env && env_get(k->class_env, target->sval, &existing)) { owner = k; break; }
+            self_klass = self.obj->klass.klass;
+        /* Write to the class that already owns this cvar.
+           Check __class__ (defining module in methods) first, then self's hierarchy.
+           If not found anywhere, write to __class__ or self's class. */
+        Value class_ctx = val_nil();
+        env_get(env, "__class__", &class_ctx);
+        RubyClass *owner = NULL;
+        if (class_ctx.kind == VAL_CLASS) {
+            for (RubyClass *k = class_ctx.klass; k;
+                 k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+                Value existing;
+                if (k->class_env && env_get(k->class_env, key, &existing)) { owner = k; break; }
+            }
         }
+        if (!owner) {
+            for (RubyClass *k = self_klass; k;
+                 k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+                Value existing;
+                if (k->class_env && env_get(k->class_env, key, &existing)) { owner = k; break; }
+            }
+        }
+        if (!owner) owner = (class_ctx.kind == VAL_CLASS) ? class_ctx.klass : self_klass;
         if (owner && owner->class_env)
-            env_define(ev->arena, owner->class_env, target->sval, val);
+            env_define(ev->arena, owner->class_env, key, val);
         else
-            global_set(ev->arena, &ev->globals, target->sval, val);
+            global_set(ev->arena, &ev->globals, key, val);
     } else if (target->kind == NODE_CONST) {
         const char *parent_name = NULL;
         const char *leaf_name = NULL;
@@ -419,7 +443,7 @@ static int defined_simple_value(Eval *ev, Env *env, Node *node, Value *out) {
             *out = val_float(node->fval);
             return 1;
         case NODE_STRING:
-            *out = val_string(ev->arena, node->sval);
+            *out = val_string_n(ev->arena, node->sval, node->slen);
             return 1;
         case NODE_SYMBOL:
             *out = val_symbol(node->sval);
@@ -434,6 +458,29 @@ static int defined_simple_value(Eval *ev, Env *env, Node *node, Value *out) {
         }
         case NODE_GVAR:
             return global_get(&ev->globals, node->sval, out);
+        case NODE_CVAR: {
+            const char *key = cvar_key(ev->arena, node->sval);
+            /* Check __class__ (defining module in methods) first, then self's hierarchy */
+            Value class_ctx = val_nil();
+            env_get(env, "__class__", &class_ctx);
+            if (class_ctx.kind == VAL_CLASS) {
+                for (RubyClass *k = class_ctx.klass; k;
+                     k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+                    if (k->class_env && env_get(k->class_env, key, out)) return 1;
+                }
+            }
+            Value self = val_nil();
+            env_get(env, "self", &self);
+            RubyClass *klass = NULL;
+            if (self.kind == VAL_CLASS) klass = self.klass;
+            else if (self.kind == VAL_OBJECT && self.obj->klass.kind == VAL_CLASS)
+                klass = self.obj->klass.klass;
+            while (klass) {
+                if (klass->class_env && env_get(klass->class_env, key, out)) return 1;
+                klass = klass->superclass.kind == VAL_CLASS ? klass->superclass.klass : NULL;
+            }
+            return 0;
+        }
         case NODE_CONST:
             *out = lookup_const_path(ev, env, node->sval);
             return out->kind != VAL_NIL;
@@ -470,7 +517,10 @@ static const char *defined_expr(Eval *ev, Env *env, Node *node) {
             Value v;
             return defined_simple_value(ev, env, node, &v) ? "instance-variable" : NULL;
         }
-        case NODE_CVAR:
+        case NODE_CVAR: {
+            Value v;
+            return defined_simple_value(ev, env, node, &v) ? "class variable" : NULL;
+        }
         case NODE_GVAR: {
             Value v;
             return defined_simple_value(ev, env, node, &v) ? "global-variable" : NULL;
@@ -661,7 +711,8 @@ static int match_pattern(Eval *ev, Env *env, Env *binding_env, Value val, Node *
         case NODE_FLOAT: return val.kind == VAL_FLOAT && val.fval == pat->fval;
         case NODE_STRING: {
             if (val.kind != VAL_STRING || !pat->sval) return val.kind == VAL_STRING;
-            return strcmp(val.sval, pat->sval) == 0;
+            if (val.byte_len != pat->slen) return 0;
+            return memcmp(val.sval, pat->sval, val.byte_len) == 0;
         }
         case NODE_SYMBOL: {
             if (val.kind != VAL_SYMBOL || !pat->sval) return val.kind == VAL_SYMBOL;
@@ -748,7 +799,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         }
         case NODE_INT:    return val_int(node->ival);
         case NODE_FLOAT:  return val_float(node->fval);
-        case NODE_STRING: return val_string(ev->arena, node->sval);
+        case NODE_STRING: return val_string_n(ev->arena, node->sval, node->slen);
         case NODE_SYMBOL: return val_symbol(node->sval);
 
         case NODE_REGEXP: {
@@ -846,7 +897,20 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             return v;
         }
         case NODE_CVAR: {
-            /* Find class scope: self may be a class or an instance */
+            const char *key = cvar_key(ev->arena, node->sval);
+            /* Check __class__ (the method's defining class/module) first — this handles
+               @@ access in extended/included methods where self != defining class. */
+            Value class_ctx = val_nil();
+            env_get(env, "__class__", &class_ctx);
+            if (class_ctx.kind == VAL_CLASS) {
+                for (RubyClass *k = class_ctx.klass; k;
+                     k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+                    Value v;
+                    if (k->class_env && env_get(k->class_env, key, &v))
+                        return v;
+                }
+            }
+            /* Fallback: walk self's class hierarchy */
             Value self = val_nil();
             env_get(env, "self", &self);
             RubyClass *klass = NULL;
@@ -855,7 +919,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 klass = self.obj->klass.klass;
             while (klass) {
                 Value v;
-                if (klass->class_env && env_get(klass->class_env, node->sval, &v))
+                if (klass->class_env && env_get(klass->class_env, key, &v))
                     return v;
                 klass = klass->superclass.kind == VAL_CLASS ? klass->superclass.klass : NULL;
             }

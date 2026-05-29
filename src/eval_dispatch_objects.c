@@ -3588,6 +3588,24 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             *out = val_hash_new_with_defaults(ev->arena, default_value, default_proc);
             return 1;
         }
+        if (strcmp(recv.klass->name, "String") == 0) {
+            if (argc >= 1 && args[0].kind == VAL_STRING)
+                *out = val_string_n(ev->arena, args[0].sval, args[0].byte_len);
+            else
+                *out = val_string_n(ev->arena, "", 0);
+            if (argc >= 1 && args[0].kind == VAL_STRING)
+                out->string_encoding = args[0].string_encoding;
+            return 1;
+        }
+        if (strcmp(recv.klass->name, "Integer") == 0) {
+            *out = argc >= 1 && args[0].kind == VAL_INT ? args[0] : val_int(0);
+            return 1;
+        }
+        if (strcmp(recv.klass->name, "Float") == 0) {
+            *out = argc >= 1 && args[0].kind == VAL_FLOAT ? args[0] :
+                   argc >= 1 && args[0].kind == VAL_INT   ? val_float((double)args[0].ival) : val_float(0.0);
+            return 1;
+        }
         if (class_is_a_named_class(ev, recv.klass, "Exception")) {
             static const char *builtin_exc_names[] = {
                 "Exception","StandardError","RuntimeError","TypeError","ArgumentError",

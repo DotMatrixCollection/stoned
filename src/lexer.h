@@ -140,6 +140,7 @@ typedef struct {
     uint32_t    len;
     /* For string/ident/symbol tokens: interned pointer into arena */
     const char *sval;
+    size_t      slen; /* byte length of sval content (excl. NUL terminator); set for string tokens */
     int64_t     ival;
     double      fval;
 } Token;

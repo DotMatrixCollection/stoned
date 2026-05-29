@@ -35,7 +35,7 @@ int rope_is_static(RopeNode *r) {
     return 0;
 }
 
-/* Measure total byte length of a static rope */
+/* Total byte length of all ROPE_LIT segments */
 static size_t rope_measure(RopeNode *r) {
     if (!r) return 0;
     switch (r->kind) {
@@ -62,6 +62,8 @@ static void rope_write(RopeNode *r, char *buf, size_t *pos) {
             break;
     }
 }
+
+size_t rope_byte_len(RopeNode *r) { return rope_measure(r); }
 
 const char *rope_flatten(Arena *a, RopeNode *r) {
     if (!rope_is_static(r)) return NULL;

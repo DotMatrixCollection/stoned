@@ -2744,11 +2744,14 @@ Value eval_binop(Eval *ev, Env *env, Node *node) {
                                         value_class_name(ev, right));
             }
         }
-        size_t la = strlen(left.sval), lb = strlen(rhs.sval);
+        size_t la = left.byte_len, lb = rhs.byte_len;
         char *buf = arena_alloc(ev->arena, la + lb + 1);
         memcpy(buf, left.sval, la);
-        memcpy(buf + la, rhs.sval, lb + 1);
-        return val_string(ev->arena, buf);
+        memcpy(buf + la, rhs.sval, lb);
+        buf[la + lb] = '\0';
+        Value r; r.kind = VAL_STRING; r.frozen = 0;
+        r.string_encoding = left.string_encoding; r.byte_len = la + lb; r.sval = buf;
+        return r;
     }
 
     if (strcmp(op, "+") == 0 && left.kind == VAL_ARRAY && right.kind == VAL_ARRAY) {

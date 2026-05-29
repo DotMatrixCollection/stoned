@@ -33,4 +33,7 @@ const char *rope_flatten(Arena *a, RopeNode *r);
 /* Returns 1 if the rope contains no ROPE_EXPR nodes */
 int         rope_is_static(RopeNode *r);
 
+/* Total byte length of all ROPE_LIT segments (undefined for ropes with ROPE_EXPR) */
+size_t      rope_byte_len(RopeNode *r);
+
 #endif

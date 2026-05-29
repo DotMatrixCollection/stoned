@@ -4,6 +4,7 @@
 #include "arena.h"
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 
 /* Forward declarations */
 struct Node;
@@ -55,6 +56,7 @@ typedef struct Value {
     ValueKind kind;
     int       frozen; /* used for VAL_STRING/VAL_SYMBOL; arrays/hashes/objects have their own flag */
     StringEncodingTag string_encoding; /* used for VAL_STRING */
+    size_t    byte_len; /* byte count of sval content for VAL_STRING (excl. NUL terminator) */
     union {
         int         bval;    /* VAL_BOOL */
         int64_t     ival;    /* VAL_INT */
@@ -154,13 +156,13 @@ struct RubyRange {
 /* ------------------------------------------------------------------ */
 /* Constructors                                                         */
 /* ------------------------------------------------------------------ */
-static inline Value val_nil(void)           { Value v; v.kind = VAL_NIL;    v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.ival = 0; return v; }
-static inline Value val_true(void)          { Value v; v.kind = VAL_BOOL;   v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.bval = 1; return v; }
-static inline Value val_false(void)         { Value v; v.kind = VAL_BOOL;   v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.bval = 0; return v; }
+static inline Value val_nil(void)           { Value v; v.kind = VAL_NIL;    v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.byte_len = 0; v.ival = 0; return v; }
+static inline Value val_true(void)          { Value v; v.kind = VAL_BOOL;   v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.byte_len = 0; v.bval = 1; return v; }
+static inline Value val_false(void)         { Value v; v.kind = VAL_BOOL;   v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.byte_len = 0; v.bval = 0; return v; }
 static inline Value val_bool(int b)         { return b ? val_true() : val_false(); }
-static inline Value val_int(int64_t i)      { Value v; v.kind = VAL_INT;    v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.ival = i; return v; }
-static inline Value val_float(double f)     { Value v; v.kind = VAL_FLOAT;  v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.fval = f; return v; }
-static inline Value val_symbol(const char *s) { Value v; v.kind = VAL_SYMBOL; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.sval = s; return v; }
+static inline Value val_int(int64_t i)      { Value v; v.kind = VAL_INT;    v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.byte_len = 0; v.ival = i; return v; }
+static inline Value val_float(double f)     { Value v; v.kind = VAL_FLOAT;  v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.byte_len = 0; v.fval = f; return v; }
+static inline Value val_symbol(const char *s) { Value v; v.kind = VAL_SYMBOL; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.byte_len = 0; v.sval = s; return v; }
 
 Value val_string(Arena *a, const char *s);
 Value val_string_n(Arena *a, const char *s, size_t len);
@@ -206,7 +208,7 @@ static inline int val_is_signal(Value v) {
            v.kind == VAL_THROW;
 }
 static inline Value val_hash_val(RubyHash *h) {
-    Value v; v.kind = VAL_HASH; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.hash = h; return v;
+    Value v; v.kind = VAL_HASH; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.byte_len = 0; v.hash = h; return v;
 }
 static inline int val_equal(Value a, Value b) {
     if (a.kind != b.kind) {
@@ -220,12 +222,14 @@ static inline int val_equal(Value a, Value b) {
         case VAL_BOOL:   return a.bval == b.bval;
         case VAL_INT:    return a.ival == b.ival;
         case VAL_FLOAT:  return a.fval == b.fval;
-        case VAL_STRING:
+        case VAL_STRING: {
+            if (!a.sval || !b.sval) return a.sval == b.sval;
+            if (a.byte_len != b.byte_len) return 0;
+            return memcmp(a.sval, b.sval, a.byte_len) == 0;
+        }
         case VAL_SYMBOL: {
             if (!a.sval || !b.sval) return a.sval == b.sval;
-            int i = 0;
-            while (a.sval[i] && b.sval[i] && a.sval[i] == b.sval[i]) i++;
-            return a.sval[i] == b.sval[i];
+            return strcmp(a.sval, b.sval) == 0;
         }
         case VAL_CLASS:  return a.klass == b.klass;
         case VAL_OBJECT: return a.obj   == b.obj;

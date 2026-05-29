@@ -252,6 +252,7 @@ static Token scan_string_sq(Lexer *l, size_t start, uint32_t sline, uint32_t sco
     buf[blen] = '\0';
     Token t = make_tok(l, TOK_STRING, start, sline, scol);
     t.sval = intern(l, buf, blen);
+    t.slen = blen;
     if (!at_end(l)) advance(l); /* consume closing ' */
     return t;
 }
@@ -282,9 +283,34 @@ static Token scan_string_dq(Lexer *l, size_t start, uint32_t sline, uint32_t sco
                 case 't':  BUF_PUSH('\t'); break;
                 case 'r':  BUF_PUSH('\r'); break;
                 case 'e':  BUF_PUSH('\x1b'); break;
+                case 'a':  BUF_PUSH('\a'); break;
+                case 'b':  BUF_PUSH('\b'); break;
+                case 'f':  BUF_PUSH('\f'); break;
+                case 'v':  BUF_PUSH('\v'); break;
+                case 's':  BUF_PUSH(' ');  break;
                 case '\\': BUF_PUSH('\\'); break;
                 case '"':  BUF_PUSH('"');  break;
-                case '0':  err = "invalid \\0 escape in UTF-8 string"; break;
+                case '0': case '1': case '2': case '3':
+                case '4': case '5': case '6': case '7': {
+                    int val = esc - '0';
+                    for (int oi = 0; oi < 2 && !at_end(l) && peek_ch(l) >= '0' && peek_ch(l) <= '7'; oi++)
+                        val = val * 8 + (advance(l) - '0');
+                    BUF_PUSH((char)val);
+                    break;
+                }
+                case 'x': { /* hex escape \xHH */
+                    int val = 0, digits = 0;
+                    while (digits < 2 && !at_end(l)) {
+                        char h = peek_ch(l);
+                        if (h >= '0' && h <= '9')      { val = val*16 + (h-'0'); advance(l); digits++; }
+                        else if (h >= 'a' && h <= 'f') { val = val*16 + (h-'a'+10); advance(l); digits++; }
+                        else if (h >= 'A' && h <= 'F') { val = val*16 + (h-'A'+10); advance(l); digits++; }
+                        else break;
+                    }
+                    if (digits == 0) { BUF_PUSH('x'); }
+                    else BUF_PUSH((char)val);
+                    break;
+                }
                 default:   BUF_PUSH('\\'); BUF_PUSH(esc); break;
             }
             if (err) break;
@@ -292,11 +318,13 @@ static Token scan_string_dq(Lexer *l, size_t start, uint32_t sline, uint32_t sco
             BUF_PUSH(c);
         }
     }
+    size_t str_len = blen;
     BUF_PUSH('\0');
     if (!at_end(l)) advance(l); /* consume closing " */
 
     Token t = make_tok(l, err ? TOK_ERROR : TOK_STRING, start, sline, scol);
     t.sval = buf;
+    t.slen = str_len;
     if (err) t.sval = err;
     return t;
 #undef BUF_PUSH
@@ -434,6 +462,7 @@ static Token scan_char_literal(Lexer *l, size_t start, uint32_t sline, uint32_t 
         buf[len++] = c;
     }
     t.sval = intern(l, buf, len);
+    t.slen = len;
     return t;
 }
 
@@ -627,8 +656,7 @@ static Token scan_interp_str_content(Lexer *l) {
                         else if (h >= 'A' && h <= 'F') { val = val*16 + (h-'A'+10); advance(l); digits++; }
                         else break;
                     }
-                    if (val == 0 && digits == 0) { IBUF_PUSH('x'); }
-                    else if (val == 0) { err = "invalid \\x00 escape in UTF-8 string"; }
+                    if (digits == 0) { IBUF_PUSH('x'); }
                     else IBUF_PUSH((char)val);
                     break;
                 }
@@ -668,8 +696,7 @@ static Token scan_interp_str_content(Lexer *l) {
                         int val = esc - '0';
                         for (int oi = 0; oi < 2 && !at_end(l) && peek_ch(l) >= '0' && peek_ch(l) <= '7'; oi++)
                             val = val * 8 + (advance(l) - '0');
-                        if (val == 0) { err = "invalid \\0 escape in UTF-8 string"; }
-                        else IBUF_PUSH((char)val);
+                        IBUF_PUSH((char)val);
                     } else {
                         IBUF_PUSH('\\'); IBUF_PUSH(esc);
                     }
@@ -680,6 +707,7 @@ static Token scan_interp_str_content(Lexer *l) {
             IBUF_PUSH(c);
         }
     }
+    size_t str_len = blen;
     IBUF_PUSH('\0');
 
 #undef IBUF_PUSH
@@ -689,6 +717,7 @@ static Token scan_interp_str_content(Lexer *l) {
     t.line = sline; t.col = scol;
     t.len  = (uint32_t)(l->pos - start);
     t.sval = err ? err : buf;
+    t.slen = err ? 0 : str_len;
     return t;
 }
 
@@ -816,6 +845,7 @@ static Token scan_heredoc_content(Lexer *l) {
     t.kind = TOK_INTERP_LIT; t.line = sline; t.col = scol;
     t.len  = (uint32_t)(blen - 1);
     t.sval = buf;
+    t.slen = blen - 1; /* blen includes the NUL terminator */
     return t;
 }
 
@@ -902,6 +932,7 @@ static Token scan_heredoc(Lexer *l, size_t start, uint32_t sline, uint32_t scol)
         const char *raw     = l->src + body_start;
         size_t      raw_len = body_end - body_start;
         char *body;
+        size_t body_len;
         if (squiggly && raw_len > 0) {
             int min_ind = heredoc_min_indent(l->src, body_start, body_end);
             body = arena_alloc(l->arena, raw_len + 1);
@@ -914,10 +945,12 @@ static Token scan_heredoc(Lexer *l, size_t start, uint32_t sline, uint32_t scol)
                 if (i < body_end) { body[blen++] = '\n'; i++; }
             }
             body[blen] = '\0';
+            body_len = blen;
         } else {
             body = arena_alloc(l->arena, raw_len + 1);
             memcpy(body, raw, raw_len);
             body[raw_len] = '\0';
+            body_len = raw_len;
         }
         /* l->line and l->line_start now reflect resume_pos from the forward scan */
         if (l->hd_rol_start < l->hd_rol_end) {
@@ -934,6 +967,7 @@ static Token scan_heredoc(Lexer *l, size_t start, uint32_t sline, uint32_t scol)
         }
         Token t = make_tok(l, TOK_STRING, start, sline, scol);
         t.sval = body;
+        t.slen = body_len;
         return t;
     }
 

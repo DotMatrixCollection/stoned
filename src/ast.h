@@ -121,6 +121,7 @@ typedef struct NodeList {
 struct Node {
     NodeKind kind;
     Span     span;
+    size_t   slen; /* byte length of sval for NODE_STRING (excl. NUL); 0 for all other node kinds */
 
     union {
         /* NODE_INT */

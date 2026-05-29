@@ -20,13 +20,13 @@ static Value wrap_as_enumerator(Eval *ev, Env *env, Value arr, Node *site) {
     return arr;
 }
 
-static void append_utf8_pad(char *buf, size_t *pos, const char *pad, size_t count) {
-    size_t pad_chars = utf8_char_count(pad);
+static void append_utf8_pad(char *buf, size_t *pos, const char *pad, size_t pad_byte_len, size_t count) {
+    size_t pad_chars = utf8_char_count(pad, pad_byte_len);
     if (pad_chars == 0) return;
     for (size_t i = 0; i < count; i++) {
         const char *ptr = NULL;
         size_t width = 0;
-        utf8_char_at(pad, i % pad_chars, &ptr, &width, NULL);
+        utf8_char_at(pad, pad_byte_len, i % pad_chars, &ptr, &width, NULL);
         memcpy(buf + *pos, ptr, width);
         *pos += width;
     }
@@ -978,13 +978,15 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = val_bool(strcasecmp(s, args[0].sval) == 0); return 1;
     }
     if (strcmp(name, "ascii_only?") == 0) {
-        const char *p = s;
-        while (*p) { if ((unsigned char)*p > 127) { *out = val_false(); return 1; } p++; }
+        size_t slen = recv.byte_len;
+        for (size_t i = 0; i < slen; i++) {
+            if ((unsigned char)s[i] > 127) { *out = val_false(); return 1; }
+        }
         *out = val_true(); return 1;
     }
-    if (strcmp(name, "bytesize") == 0) { *out = val_int((int64_t)strlen(s)); return 1; }
+    if (strcmp(name, "bytesize") == 0) { *out = val_int((int64_t)recv.byte_len); return 1; }
     if (strcmp(name, "byteslice") == 0) {
-        size_t slen = strlen(s);
+        size_t slen = recv.byte_len;
         if (argc < 1) { *out = val_nil(); return 1; }
         if (args[0].kind == VAL_RANGE) {
             RubyRange *r = args[0].range;
@@ -1104,8 +1106,13 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "to_sym") == 0) { *out = val_symbol(s); return 1; }
-    if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0) { *out = val_int((int64_t)utf8_char_count(s)); return 1; }
-    if (strcmp(name, "empty?") == 0) { *out = val_bool(s[0] == '\0'); return 1; }
+    if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0) {
+        *out = recv.string_encoding == STRING_ENCODING_ASCII_8BIT
+             ? val_int((int64_t)recv.byte_len)
+             : val_int((int64_t)utf8_char_count(s, recv.byte_len));
+        return 1;
+    }
+    if (strcmp(name, "empty?") == 0) { *out = val_bool(recv.byte_len == 0); return 1; }
     if (strcmp(name, "upcase") == 0) {
         size_t len = strlen(s);
         char *buf = arena_alloc(ev->arena, len * 2 + 1);
@@ -1229,11 +1236,11 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "chars") == 0) {
         Value arr = val_array_new();
-        size_t chars = utf8_char_count(s);
+        size_t chars = utf8_char_count(s, recv.byte_len);
         for (size_t i = 0; i < chars; i++) {
             const char *ptr = NULL;
             size_t width = 0;
-            utf8_char_at(s, i, &ptr, &width, NULL);
+            utf8_char_at(s, recv.byte_len, i, &ptr, &width, NULL);
             val_array_push(&arr, val_string_n(ev->arena, ptr, width));
         }
         if (blk) {
@@ -1416,11 +1423,11 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         const char *sep = val_to_s(ev->arena, args[0]);
         size_t seplen = strlen(sep);
         if (seplen == 0) {
-            size_t chars = utf8_char_count(s);
+            size_t chars = utf8_char_count(s, recv.byte_len);
             for (size_t i = 0; i < chars; i++) {
                 const char *ptr = NULL;
                 size_t width = 0;
-                utf8_char_at(s, i, &ptr, &width, NULL);
+                utf8_char_at(s, recv.byte_len, i, &ptr, &width, NULL);
                 val_array_push(&arr, val_string_n(ev->arena, ptr, width));
             }
         } else {
@@ -1447,13 +1454,13 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "each_char") == 0) {
-        size_t chars = utf8_char_count(s);
+        size_t chars = utf8_char_count(s, recv.byte_len);
         if (!blk) {
             /* blockless: return Enumerator wrapping char array */
             Value arr = val_array_new();
             for (size_t i = 0; i < chars; i++) {
                 const char *ptr = NULL; size_t width = 0;
-                utf8_char_at(s, i, &ptr, &width, NULL);
+                utf8_char_at(s, recv.byte_len, i, &ptr, &width, NULL);
                 val_array_push(&arr, val_string_n(ev->arena, ptr, width));
             }
             *out = wrap_as_enumerator(ev, env, arr, site);
@@ -1461,7 +1468,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             for (size_t i = 0; i < chars; i++) {
                 const char *ptr = NULL;
                 size_t width = 0;
-                utf8_char_at(s, i, &ptr, &width, NULL);
+                utf8_char_at(s, recv.byte_len, i, &ptr, &width, NULL);
                 Value ch = val_string_n(ev->arena, ptr, width);
                 Value r = call_block(ev, env, *blk, &ch, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
@@ -1704,24 +1711,25 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         if (argc < 1) { *out = recv; return 1; }
         int64_t width = args[0].kind == VAL_INT ? args[0].ival : 0;
         const char *pad = argc >= 2 && args[1].kind == VAL_STRING ? args[1].sval : " ";
-        size_t pad_chars = utf8_char_count(pad);
-        size_t slen = utf8_char_count(s);
+        size_t pad_byte_len = argc >= 2 && args[1].kind == VAL_STRING ? args[1].byte_len : 1;
+        size_t pad_chars = utf8_char_count(pad, pad_byte_len);
+        size_t slen = utf8_char_count(s, recv.byte_len);
         if (pad_chars == 0) pad_chars = 1;
         if ((int64_t)slen >= width) { *out = recv; return 1; }
         size_t total_chars = (size_t)width;
-        size_t total = strlen(s) + (total_chars - slen) * strlen(pad) + 1;
+        size_t total = recv.byte_len + (total_chars - slen) * pad_byte_len + 1;
         char *buf = arena_alloc(ev->arena, total);
         size_t lpad = 0, rpad = 0;
         size_t pos = 0;
         if (strcmp(name, "ljust") == 0) { lpad = 0; rpad = total_chars - slen; }
         else if (strcmp(name, "rjust") == 0) { lpad = total_chars - slen; rpad = 0; }
         else { lpad = (total_chars - slen) / 2; rpad = total_chars - slen - lpad; }
-        append_utf8_pad(buf, &pos, pad, lpad);
-        memcpy(buf + pos, s, strlen(s));
-        pos += strlen(s);
-        append_utf8_pad(buf, &pos, pad, rpad);
+        append_utf8_pad(buf, &pos, pad, pad_byte_len, lpad);
+        memcpy(buf + pos, s, recv.byte_len);
+        pos += recv.byte_len;
+        append_utf8_pad(buf, &pos, pad, pad_byte_len, rpad);
         buf[pos] = '\0';
-        *out = val_string(ev->arena, buf);
+        *out = val_string_n(ev->arena, buf, pos);
         return 1;
     }
     if (strcmp(name, "ord") == 0) {
@@ -1777,7 +1785,8 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "bytes") == 0) {
         Value arr = val_array_new();
-        for (size_t i = 0; s[i]; i++)
+        size_t slen = recv.byte_len;
+        for (size_t i = 0; i < slen; i++)
             val_array_push(&arr, val_int((int64_t)(unsigned char)s[i]));
         *out = arr;
         return 1;
@@ -1857,19 +1866,23 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 return 1;
             }
         }
-        const char *rhs = val_to_s(ev->arena, args[0]);
-        size_t slen = strlen(s), rlen = strlen(rhs);
+        const char *rhs = args[0].kind == VAL_STRING ? (args[0].sval ? args[0].sval : "")
+                                                      : val_to_s(ev->arena, args[0]);
+        size_t slen = recv.byte_len;
+        size_t rlen = args[0].kind == VAL_STRING ? args[0].byte_len : strlen(rhs);
         char *buf = arena_alloc(ev->arena, slen + rlen + 1);
         memcpy(buf, s, slen);
         memcpy(buf + slen, rhs, rlen);
         buf[slen + rlen] = '\0';
-        *out = val_string(ev->arena, buf);
+        Value r; r.kind = VAL_STRING; r.frozen = 0;
+        r.string_encoding = recv.string_encoding; r.byte_len = slen + rlen; r.sval = buf;
+        *out = r;
         return 1;
     }
     if (strcmp(name, "index") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#index requires an argument"); return 1; }
-        size_t slen = strlen(s);
-        size_t offset = (argc >= 2 && args[1].kind == VAL_INT) ? utf8_byte_offset_for_char(s, (size_t)args[1].ival) : 0;
+        size_t slen = recv.byte_len;
+        size_t offset = (argc >= 2 && args[1].kind == VAL_INT) ? utf8_byte_offset_for_char(s, slen, (size_t)args[1].ival) : 0;
         if (offset > slen) { *out = val_nil(); return 1; }
         if (value_is_regexp(args[0])) {
             Regex *re = (Regex *)args[0].obj->native;
@@ -1882,18 +1895,18 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             if (!re) { *out = val_nil(); return 1; }
             RegexMatch rm = {0,0,0,NULL,NULL};
             RegexStatus st = regex_search(re, s, slen, (int)offset, &rm);
-            *out = st == REGEX_OK ? val_int((int64_t)utf8_char_index_for_byte(s, (size_t)rm.beg)) : val_nil();
+            *out = st == REGEX_OK ? val_int((int64_t)utf8_char_index_for_byte(s, slen, (size_t)rm.beg)) : val_nil();
             return 1;
         }
         const char *needle = val_to_s(ev->arena, args[0]);
         const char *found = strstr(s + offset, needle);
-        *out = found ? val_int((int64_t)utf8_char_index_for_byte(s, (size_t)(found - s))) : val_nil();
+        *out = found ? val_int((int64_t)utf8_char_index_for_byte(s, slen, (size_t)(found - s))) : val_nil();
         return 1;
     }
     if (strcmp(name, "rindex") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#rindex requires an argument"); return 1; }
-        size_t slen = strlen(s);
-        size_t limit_byte = (argc >= 2 && args[1].kind == VAL_INT) ? utf8_byte_offset_for_char(s, (size_t)args[1].ival) : slen;
+        size_t slen = recv.byte_len;
+        size_t limit_byte = (argc >= 2 && args[1].kind == VAL_INT) ? utf8_byte_offset_for_char(s, slen, (size_t)args[1].ival) : slen;
         if (limit_byte > slen) limit_byte = slen;
         if (value_is_regexp(args[0])) {
             Regex *re = (Regex *)args[0].obj->native;
@@ -1913,7 +1926,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 last_match = rm.beg;
                 pos = rm.beg == rm.end ? rm.beg + 1 : (size_t)rm.end;
             }
-            *out = last_match >= 0 ? val_int((int64_t)utf8_char_index_for_byte(s, (size_t)last_match)) : val_nil();
+            *out = last_match >= 0 ? val_int((int64_t)utf8_char_index_for_byte(s, slen, (size_t)last_match)) : val_nil();
             return 1;
         }
         const char *needle = val_to_s(ev->arena, args[0]);
@@ -1922,12 +1935,12 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         for (size_t i = 0; i + nlen <= limit_byte + 1 && i <= limit_byte; i++) {
             if (strncmp(s + i, needle, nlen) == 0) last = s + i;
         }
-        *out = last ? val_int((int64_t)utf8_char_index_for_byte(s, (size_t)(last - s))) : val_nil();
+        *out = last ? val_int((int64_t)utf8_char_index_for_byte(s, slen, (size_t)(last - s))) : val_nil();
         return 1;
     }
     if (strcmp(name, "[]") == 0 || strcmp(name, "slice") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "String#[] requires an argument"); return 1; }
-        size_t slen = utf8_char_count(s);
+        size_t slen = utf8_char_count(s, recv.byte_len);
         if (args[0].kind == VAL_RANGE) {
             RubyRange *r = args[0].range;
             if (r->begin_val.kind != VAL_INT && r->begin_val.kind != VAL_NIL) { *out = val_nil(); return 1; }
@@ -1940,8 +1953,8 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             if (r->end_val.kind == VAL_INT && !r->exclusive) rend++;
             if (rend < rbeg) { *out = val_string(ev->arena, ""); return 1; }
             if ((size_t)rend > slen) rend = (int64_t)slen;
-            size_t bstart = utf8_byte_offset_for_char(s, (size_t)rbeg);
-            size_t bend   = utf8_byte_offset_for_char(s, (size_t)rend);
+            size_t bstart = utf8_byte_offset_for_char(s, recv.byte_len, (size_t)rbeg);
+            size_t bend   = utf8_byte_offset_for_char(s, recv.byte_len, (size_t)rend);
             *out = val_string_n(ev->arena, s + bstart, bend - bstart);
             return 1;
         }
@@ -1958,8 +1971,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 args[0].obj->native = compiled;
             }
             RegexMatch m = {0, 0, 0, NULL, NULL};
-            size_t blen = strlen(s);
-            if (regex_search(compiled, s, blen, 0, &m) != REGEX_OK) { *out = val_nil(); return 1; }
+            if (regex_search(compiled, s, recv.byte_len, 0, &m) != REGEX_OK) { *out = val_nil(); return 1; }
             if (argc >= 2 && args[1].kind == VAL_INT) {
                 int64_t ci = args[1].ival;
                 if (ci == 0) {
@@ -1991,13 +2003,13 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             int64_t len = args[1].ival;
             if (len < 0) { *out = val_nil(); return 1; }
             size_t take = (size_t)idx + (size_t)len > slen ? slen - (size_t)idx : (size_t)len;
-            size_t start = utf8_byte_offset_for_char(s, (size_t)idx);
-            size_t end = utf8_byte_offset_for_char(s, (size_t)idx + take);
+            size_t start = utf8_byte_offset_for_char(s, recv.byte_len, (size_t)idx);
+            size_t end = utf8_byte_offset_for_char(s, recv.byte_len, (size_t)idx + take);
             *out = val_string_n(ev->arena, s + start, end - start);
         } else {
             const char *ptr = NULL;
             size_t width = 0;
-            utf8_char_at(s, (size_t)idx, &ptr, &width, NULL);
+            utf8_char_at(s, recv.byte_len, (size_t)idx, &ptr, &width, NULL);
             *out = val_string_n(ev->arena, ptr, width);
         }
         return 1;
@@ -2006,11 +2018,11 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         if (recv.frozen)
             { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String"); return 1; }
         if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
-        size_t slen = utf8_char_count(s);
-        size_t sbytes = strlen(s);
+        size_t slen = utf8_char_count(s, recv.byte_len);
+        size_t sbytes = recv.byte_len;
         /* Determine replacement string (last arg) */
         const char *repl = val_to_s(ev->arena, args[argc - 1]);
-        size_t repl_bytes = strlen(repl);
+        size_t repl_bytes = args[argc - 1].kind == VAL_STRING ? args[argc - 1].byte_len : strlen(repl);
         /* Determine byte range to replace */
         size_t bstart = 0, bend = 0;
         if (argc == 3 && args[0].kind == VAL_INT && args[1].kind == VAL_INT) {
@@ -2021,8 +2033,8 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 { *out = eval_raise_class(ev, site, "IndexError", "index out of string"); return 1; }
             if (len < 0) len = 0;
             size_t take = (size_t)idx + (size_t)len > slen ? slen - (size_t)idx : (size_t)len;
-            bstart = utf8_byte_offset_for_char(s, (size_t)idx);
-            bend   = utf8_byte_offset_for_char(s, (size_t)idx + take);
+            bstart = utf8_byte_offset_for_char(s, sbytes, (size_t)idx);
+            bend   = utf8_byte_offset_for_char(s, sbytes, (size_t)idx + take);
         } else if (argc == 2 && args[0].kind == VAL_RANGE) {
             RubyRange *r = args[0].range;
             int64_t rbeg = r->begin_val.kind == VAL_INT ? r->begin_val.ival : 0;
@@ -2032,22 +2044,22 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             if (!r->exclusive) rend++;
             if (rbeg < 0) rbeg = 0;
             if ((size_t)rend > slen) rend = (int64_t)slen;
-            bstart = utf8_byte_offset_for_char(s, (size_t)rbeg);
-            bend   = utf8_byte_offset_for_char(s, (size_t)rend);
+            bstart = utf8_byte_offset_for_char(s, sbytes, (size_t)rbeg);
+            bend   = utf8_byte_offset_for_char(s, sbytes, (size_t)rend);
         } else if (argc == 2 && args[0].kind == VAL_INT) {
             /* s[idx] = repl */
             int64_t idx = args[0].ival;
             if (idx < 0) idx += (int64_t)slen;
             if (idx < 0 || (size_t)idx >= slen)
                 { *out = eval_raise_class(ev, site, "IndexError", "index out of string"); return 1; }
-            bstart = utf8_byte_offset_for_char(s, (size_t)idx);
-            bend   = utf8_byte_offset_for_char(s, (size_t)idx + 1);
+            bstart = utf8_byte_offset_for_char(s, sbytes, (size_t)idx);
+            bend   = utf8_byte_offset_for_char(s, sbytes, (size_t)idx + 1);
         } else if (argc == 2 && args[0].kind == VAL_STRING) {
             const char *needle = args[0].sval;
             const char *found = strstr(s, needle);
             if (!found) { *out = eval_raise_class(ev, site, "IndexError", "string not matched"); return 1; }
             bstart = (size_t)(found - s);
-            bend   = bstart + strlen(needle);
+            bend   = bstart + args[0].byte_len;
         } else {
             *out = eval_raise_class(ev, site, "ArgumentError", "wrong arguments for String#[]="); return 1;
         }
@@ -2058,7 +2070,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         memcpy(buf + bstart, repl, repl_bytes);
         memcpy(buf + bstart + repl_bytes, s + bend, sbytes - bend);
         buf[new_len] = '\0';
-        *out = val_string(ev->arena, buf);
+        *out = val_string_n(ev->arena, buf, new_len);
         return 1;
     }
     if (strcmp(name, "each_line") == 0 || strcmp(name, "lines") == 0) {

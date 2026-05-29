@@ -72,12 +72,14 @@ static Node *parse_percent_list(Parser *p, Span s, Token t, NodeKind elem_kind) 
             PBUF_PUSH(c);
             i++;
         }
+        size_t elem_len = blen;
         PBUF_PUSH('\0');
 
 #undef PBUF_PUSH
 
         Node *elem = node_new(p->arena, elem_kind, s);
         elem->sval = buf;
+        elem->slen = elem_len;
         elems = nodelist_append(p->arena, elems, elem);
     }
 
@@ -983,6 +985,7 @@ Node *parse_primary(Parser *p) {
             advance(p);
             Node *str = node_new(p->arena, NODE_STRING, s);
             str->sval = t.sval;
+            str->slen = t.slen;
             if (t.ival == 1) {
                 /* backtick command: wrap in Kernel.` call */
                 Node *call = node_new(p->arena, NODE_CALL, s);
@@ -995,13 +998,14 @@ Node *parse_primary(Parser *p) {
             /* Adjacent string literal concatenation: "hello" "world" → "hello world" */
             while (peek(p).kind == TOK_STRING && peek(p).ival != 1) {
                 Token nt = advance(p);
-                size_t la = str->sval ? strlen(str->sval) : 0;
-                size_t lb = nt.sval ? strlen(nt.sval) : 0;
+                size_t la = str->slen;
+                size_t lb = nt.slen;
                 char *cat = arena_alloc(p->arena, la + lb + 1);
                 if (str->sval) memcpy(cat, str->sval, la);
                 if (nt.sval) memcpy(cat + la, nt.sval, lb);
                 cat[la + lb] = '\0';
                 str->sval = cat;
+                str->slen = la + lb;
             }
             return str;
         }
@@ -1029,7 +1033,7 @@ Node *parse_primary(Parser *p) {
                 if (seg.kind == TOK_INTERP_END || seg.kind == TOK_EOF) { advance(p); break; }
                 if (seg.kind == TOK_INTERP_LIT) {
                     advance(p);
-                    RopeNode *lit = rope_lit(p->arena, seg.sval, seg.sval ? strlen(seg.sval) : 0);
+                    RopeNode *lit = rope_lit(p->arena, seg.sval ? seg.sval : "", seg.slen);
                     rope = rope ? rope_cat(p->arena, rope, lit) : lit;
                     continue;
                 }
@@ -1054,8 +1058,7 @@ Node *parse_primary(Parser *p) {
                 }
                 if (peek(p).kind == TOK_STRING && peek(p).ival != 1) {
                     Token sq = advance(p);
-                    const char *sv = sq.sval ? sq.sval : "";
-                    RopeNode *lit = rope_lit(p->arena, sv, strlen(sv));
+                    RopeNode *lit = rope_lit(p->arena, sq.sval ? sq.sval : "", sq.slen);
                     rope = rope ? rope_cat(p->arena, rope, lit) : lit;
                 }
             }
@@ -1064,6 +1067,7 @@ Node *parse_primary(Parser *p) {
             if (rope_is_static(rope)) {
                 n->kind = NODE_STRING;
                 n->sval = rope_flatten(p->arena, rope);
+                n->slen = rope_byte_len(rope);
             }
             if (is_backtick) {
                 /* Wrap interpolated string in a backtick method call `(string) */

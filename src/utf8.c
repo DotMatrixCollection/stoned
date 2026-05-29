@@ -83,11 +83,8 @@ int utf8_validate(const char *s, size_t len, size_t *error_offset) {
     return 1;
 }
 
-size_t utf8_char_count(const char *s) {
-    size_t count = 0;
-    size_t i = 0;
-    size_t len = 0;
-    while (s[len]) len++;
+size_t utf8_char_count(const char *s, size_t len) {
+    size_t count = 0, i = 0;
     while (i < len) {
         size_t width = 0;
         if (!utf8_decode_one(s + i, len - i, NULL, &width)) return count;
@@ -97,11 +94,9 @@ size_t utf8_char_count(const char *s) {
     return count;
 }
 
-int utf8_char_at(const char *s, size_t index, const char **ptr, size_t *width, uint32_t *codepoint) {
+int utf8_char_at(const char *s, size_t len, size_t index, const char **ptr, size_t *width, uint32_t *codepoint) {
     size_t cur = 0;
     size_t i = 0;
-    size_t len = 0;
-    while (s[len]) len++;
     while (i < len) {
         size_t w = 0;
         uint32_t cp = 0;
@@ -125,11 +120,9 @@ size_t utf8_prev_char_start(const char *s, size_t end) {
     return i;
 }
 
-size_t utf8_byte_offset_for_char(const char *s, size_t char_index) {
+size_t utf8_byte_offset_for_char(const char *s, size_t len, size_t char_index) {
     size_t cur = 0;
     size_t i = 0;
-    size_t len = 0;
-    while (s[len]) len++;
     while (i < len && cur < char_index) {
         size_t w = 0;
         if (!utf8_decode_one(s + i, len - i, NULL, &w)) return i;
@@ -139,11 +132,9 @@ size_t utf8_byte_offset_for_char(const char *s, size_t char_index) {
     return i;
 }
 
-size_t utf8_char_index_for_byte(const char *s, size_t byte_offset) {
+size_t utf8_char_index_for_byte(const char *s, size_t len, size_t byte_offset) {
     size_t cur = 0;
     size_t i = 0;
-    size_t len = 0;
-    while (s[len]) len++;
     if (byte_offset > len) byte_offset = len;
     while (i < byte_offset) {
         size_t w = 0;
@@ -154,8 +145,8 @@ size_t utf8_char_index_for_byte(const char *s, size_t byte_offset) {
     return cur;
 }
 
-int utf8_ascii_only(const char *s) {
-    for (size_t i = 0; s[i]; i++) {
+int utf8_ascii_only(const char *s, size_t len) {
+    for (size_t i = 0; i < len; i++) {
         if ((unsigned char)s[i] >= 0x80) return 0;
     }
     return 1;
