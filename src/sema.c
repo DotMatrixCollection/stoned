@@ -271,6 +271,19 @@ static void collect(Sema *s, Node *node, NodeList *excl) {
         case NODE_MODULE:
             break;
 
+        case NODE_CASE: {
+            collect(s, node->case_stmt.subject, excl);
+            for (NodeList *l = node->case_stmt.whens; l; l = l->next) {
+                Node *w = l->node;
+                if (!w || w->kind != NODE_WHEN) continue;
+                for (NodeList *p = w->when_clause.patterns; p; p = p->next)
+                    collect(s, p->node, excl);
+                collect(s, w->when_clause.body, excl);
+            }
+            collect(s, node->case_stmt.else_body, excl);
+            break;
+        }
+
         case NODE_PATCASE: {
             collect(s, node->patcase.subject, excl);
             for (NodeList *l = node->patcase.ins; l; l = l->next) {

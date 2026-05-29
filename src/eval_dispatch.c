@@ -550,7 +550,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     };
     static const char *arr_methods[] = {
         "length", "size", "count", "empty?", "first", "last", "push", "append", "pop",
-        "shift", "unshift", "prepend", "reverse", "to_s", "inspect", "join", "include?",
+        "shift", "unshift", "prepend", "reverse", "to_s", "to_a", "to_ary", "inspect", "join", "include?",
         "each", "each_with_index", "map", "collect", "select", "filter", "reject",
         "reduce", "inject", "any?", "all?", "none?", "min", "max", "sum", "flatten",
         "uniq", "sort", "compact", "zip", "replace", NULL

@@ -380,6 +380,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = recv; return 1;
     }
     if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0) { *out = val_string(ev->arena, val_to_s(ev->arena, recv)); return 1; }
+    if (strcmp(name, "to_a") == 0 || strcmp(name, "to_ary") == 0) { *out = recv; return 1; }
     if (strcmp(name, "join") == 0) {
         const char *sep = argc > 0 ? val_to_s(ev->arena, args[0]) : "";
         size_t seplen = strlen(sep);
