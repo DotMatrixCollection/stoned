@@ -9,6 +9,18 @@ The goal is no longer just “more features”; it is a staged route toward high
 - use CRuby behavior as the oracle whenever semantics are ambiguous
 - avoid calling the project “Ruby 4 compatible” until parser, control flow, object model, and core library behavior are all good enough to run a meaningful compatibility slice end to end
 
+## Active compatibility probes
+
+These are small, concrete probes that should keep the next slices tied to observable compatibility instead of isolated feature counting.
+
+| Probe | Current state | Next useful slice |
+|---|---|---|
+| Tiny pure-Ruby gem lifecycle | RubyGems/Bundler shims cover many local install, lock, config, activation, and exec paths, but no named external gem is tracked as a compatibility target | Pick one tiny no-native-deps gem fixture, drive `gem install`, `require`, and a few real API calls end to end |
+| Method / ancestor / visibility matrix | Reflection and visibility are broad enough for ordinary probes, but object/model edge cases remain high risk | Add a CRuby-shaped matrix for include/prepend/extend, singleton methods, protected/private dispatch, `super_method`, and `respond_to_missing?` |
+| Encoding and binary string boundary | UTF-8 and binary-mode IO have useful coverage, while `Encoding` and transcoding are mostly compatibility stubs | Add explicit probes around invalid bytes, `String#b`, `byteslice`, file binary reads, and `Encoding.find` expectations |
+| Stdlib shim honesty | Many `require` paths intentionally load minimal shims for ecosystem bringup | Label each shim as load-only, minimal behavior, or compatibility-backed, and add one regression per promoted behavior |
+| Parser ambiguity tail | Command calls, heredocs, regexp/division, block binding, and pattern matching have strong targeted coverage | Keep adding CRuby comparison cases whenever a new ambiguous syntax form is found in real code |
+
 ## Compatibility route
 
 ### Stage 0: Conformance infrastructure
