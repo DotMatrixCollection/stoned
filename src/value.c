@@ -20,7 +20,7 @@ Value val_class(Arena *a, const char *name, Value superclass) {
     klass->included_modules = NULL;
     klass->extended_modules = NULL;
     klass->is_module = 0;
-    Value v; v.kind = VAL_CLASS; v.klass = klass;
+    Value v; v.kind = VAL_CLASS; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.klass = klass;
     return v;
 }
 
@@ -30,7 +30,8 @@ Value val_object(Arena *a, Value klass) {
     obj->ivars = NULL;
     obj->singleton_env = NULL;
     obj->native = NULL;
-    Value v; v.kind = VAL_OBJECT; v.obj = obj;
+    obj->frozen = 0;
+    Value v; v.kind = VAL_OBJECT; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.obj = obj;
     return v;
 }
 
@@ -59,7 +60,7 @@ int val_object_get_ivar(Value obj, const char *name, Value *out) {
 }
 
 Value val_string(Arena *a, const char *s) {
-    Value v; v.kind = VAL_STRING; v.frozen = 0;
+    Value v; v.kind = VAL_STRING; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8;
     if (!s) { v.sval = ""; return v; }
     size_t len = strlen(s);
     char *buf = arena_alloc(a, len + 1);
@@ -69,7 +70,7 @@ Value val_string(Arena *a, const char *s) {
 }
 
 Value val_string_n(Arena *a, const char *s, size_t len) {
-    Value v; v.kind = VAL_STRING; v.frozen = 0;
+    Value v; v.kind = VAL_STRING; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8;
     char *buf = arena_alloc(a, len + 1);
     if (s) memcpy(buf, s, len);
     buf[len] = '\0';
@@ -84,7 +85,7 @@ Value val_array_new(void) {
     arr->cap   = 0;
     arr->singleton_env = NULL;
     arr->frozen = 0;
-    Value v; v.kind = VAL_ARRAY;
+    Value v; v.kind = VAL_ARRAY; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8;
     v.array = arr;
     return v;
 }
@@ -105,7 +106,7 @@ Value val_range(Arena *a, Value begin_val, Value end_val, int exclusive) {
     r->begin_val = begin_val;
     r->end_val   = end_val;
     r->exclusive = exclusive;
-    Value v; v.kind = VAL_RANGE; v.range = r;
+    Value v; v.kind = VAL_RANGE; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.range = r;
     return v;
 }
 
@@ -160,7 +161,7 @@ int val_hash_delete(RubyHash *h, Value key) {
 }
 
 Value val_method(struct Node *def, struct Env *closure, MethodVisibility visibility, const char *def_file) {
-    Value v; v.kind = VAL_METHOD;
+    Value v; v.kind = VAL_METHOD; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8;
     v.method.def_node = def;
     v.method.closure  = closure;
     v.method.visibility = visibility;
@@ -169,7 +170,7 @@ Value val_method(struct Node *def, struct Env *closure, MethodVisibility visibil
 }
 
 Value val_block(struct Node *blk, struct Env *closure) {
-    Value v; v.kind = VAL_BLOCK;
+    Value v; v.kind = VAL_BLOCK; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8;
     v.block.block_node = blk;
     v.block.closure    = closure;
     v.block.is_lambda  = 0;
@@ -179,7 +180,7 @@ Value val_block(struct Node *blk, struct Env *closure) {
 }
 
 Value val_proc(struct Node *blk, struct Env *closure) {
-    Value v; v.kind = VAL_BLOCK;
+    Value v; v.kind = VAL_BLOCK; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8;
     v.block.block_node = blk;
     v.block.closure    = closure;
     v.block.is_lambda  = 0;
@@ -188,7 +189,7 @@ Value val_proc(struct Node *blk, struct Env *closure) {
 }
 
 Value val_lambda(struct Node *blk, struct Env *closure) {
-    Value v; v.kind = VAL_BLOCK;
+    Value v; v.kind = VAL_BLOCK; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8;
     v.block.block_node = blk;
     v.block.closure    = closure;
     v.block.is_lambda  = 1;
@@ -203,19 +204,19 @@ static Value *alloc_val(Arena *a, Value inner) {
 }
 
 Value val_return(Arena *a, Value inner, struct Env *target_env) {
-    Value v; v.kind = VAL_RETURN; v.jump.wrapped = alloc_val(a, inner); v.jump.target_env = target_env; return v;
+    Value v; v.kind = VAL_RETURN; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.jump.wrapped = alloc_val(a, inner); v.jump.target_env = target_env; return v;
 }
 Value val_break(Arena *a, Value inner) {
-    Value v; v.kind = VAL_BREAK; v.jump.wrapped = alloc_val(a, inner); v.jump.target_env = NULL; return v;
+    Value v; v.kind = VAL_BREAK; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.jump.wrapped = alloc_val(a, inner); v.jump.target_env = NULL; return v;
 }
 Value val_next(Arena *a, Value inner) {
-    Value v; v.kind = VAL_NEXT; v.jump.wrapped = alloc_val(a, inner); v.jump.target_env = NULL; return v;
+    Value v; v.kind = VAL_NEXT; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.jump.wrapped = alloc_val(a, inner); v.jump.target_env = NULL; return v;
 }
 Value val_retry(void) {
-    Value v; v.kind = VAL_RETRY; v.jump.wrapped = NULL; v.jump.target_env = NULL; return v;
+    Value v; v.kind = VAL_RETRY; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.jump.wrapped = NULL; v.jump.target_env = NULL; return v;
 }
 Value val_exception(void) {
-    Value v; v.kind = VAL_EXCEPTION; v.jump.wrapped = NULL; v.jump.target_env = NULL; return v;
+    Value v; v.kind = VAL_EXCEPTION; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.jump.wrapped = NULL; v.jump.target_env = NULL; return v;
 }
 
 /* ------------------------------------------------------------------ */

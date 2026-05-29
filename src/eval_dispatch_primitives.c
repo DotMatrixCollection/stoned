@@ -92,6 +92,46 @@ static Value build_decimal_rational_value(Eval *ev, Env *env, double f, Node *si
     return val_float(f);
 }
 
+static int encoding_name_is_ascii_8bit(const char *name) {
+    return name && (strcasecmp(name, "ASCII-8BIT") == 0 ||
+                    strcasecmp(name, "ASCII_8BIT") == 0 ||
+                    strcasecmp(name, "BINARY") == 0);
+}
+
+static int encoding_name_is_utf8(const char *name) {
+    return name && (strcasecmp(name, "UTF-8") == 0 ||
+                    strcasecmp(name, "UTF_8") == 0 ||
+                    strcasecmp(name, "UTF8") == 0);
+}
+
+static Value string_encoding_object(Eval *ev, Value str) {
+    Value enc_class = val_nil();
+    if (env_get(ev->top_env, "Encoding", &enc_class) && enc_class.kind == VAL_CLASS) {
+        Value enc = val_nil();
+        const char *key = str.string_encoding == STRING_ENCODING_ASCII_8BIT ? "ASCII_8BIT" : "UTF_8";
+        if (env_get(enc_class.klass->class_env, key, &enc) && enc.kind != VAL_NIL)
+            return enc;
+    }
+    return val_string(ev->arena, str.string_encoding == STRING_ENCODING_ASCII_8BIT ? "ASCII-8BIT" : "UTF-8");
+}
+
+static StringEncodingTag string_encoding_from_value(Value enc) {
+    const char *name = NULL;
+    if (enc.kind == VAL_STRING || enc.kind == VAL_SYMBOL) {
+        name = enc.sval;
+    } else if (enc.kind == VAL_OBJECT && enc.obj && enc.obj->klass.kind == VAL_CLASS &&
+               strcmp(enc.obj->klass.klass->name, "Encoding") == 0) {
+        Value iv = val_nil();
+        if (val_object_get_ivar(enc, "name", &iv) && iv.kind == VAL_STRING)
+            name = iv.sval;
+    }
+    if (encoding_name_is_ascii_8bit(name))
+        return STRING_ENCODING_ASCII_8BIT;
+    if (encoding_name_is_utf8(name))
+        return STRING_ENCODING_UTF8;
+    return STRING_ENCODING_UTF8;
+}
+
 static Value float_to_exact_rational(Eval *ev, Env *env, double f, Node *site) {
     if (isnan(f) || isinf(f))
         return raise_float_domain_error(ev, site, f, 0);
@@ -920,7 +960,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         int c = strcmp(s, args[0].sval ? args[0].sval : "");
         *out = val_int(c < 0 ? -1 : c > 0 ? 1 : 0); return 1;
     }
-    if (strcmp(name, "encoding") == 0) { *out = val_string(ev->arena, "UTF-8"); return 1; }
+    if (strcmp(name, "encoding") == 0) { *out = string_encoding_object(ev, recv); return 1; }
     if (strcmp(name, "valid_encoding?") == 0) { *out = val_true(); return 1; }
     if (strcmp(name, "scrub") == 0) {
         /* All our strings are valid UTF-8; block form replaces invalid bytes (no-op here) */
@@ -958,6 +998,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             int64_t len = end - beg + 1;
             if (len < 0) len = 0;
             *out = val_string_n(ev->arena, s + beg, (size_t)len);
+            out->string_encoding = recv.string_encoding;
             return 1;
         }
         int64_t start = args[0].kind == VAL_INT ? args[0].ival : 0;
@@ -967,10 +1008,24 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         if (len < 0) { *out = val_nil(); return 1; }
         if (start + len > (int64_t)slen) len = (int64_t)slen - start;
         *out = val_string_n(ev->arena, s + start, (size_t)len);
+        out->string_encoding = recv.string_encoding;
         return 1;
     }
-    if (strcmp(name, "b") == 0 || strcmp(name, "force_encoding") == 0)
-        { *out = recv; return 1; } /* no-op: we're already UTF-8-only */
+    if (strcmp(name, "b") == 0) {
+        *out = recv;
+        out->string_encoding = STRING_ENCODING_ASCII_8BIT;
+        return 1;
+    }
+    if (strcmp(name, "force_encoding") == 0) {
+        if (argc < 1) {
+            *out = eval_raise_class(ev, site, "ArgumentError",
+                                    "wrong number of arguments (given 0, expected 1)");
+            return 1;
+        }
+        *out = recv;
+        out->string_encoding = string_encoding_from_value(args[0]);
+        return 1;
+    }
     if (strcmp(name, "encode") == 0)
         { *out = recv; return 1; } /* stub: no transcoding, identity for UTF-8 */
     if (strcmp(name, "to_i") == 0) {

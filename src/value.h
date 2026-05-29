@@ -38,6 +38,11 @@ typedef enum {
     METHOD_PROTECTED,
 } MethodVisibility;
 
+typedef enum {
+    STRING_ENCODING_UTF8,
+    STRING_ENCODING_ASCII_8BIT,
+} StringEncodingTag;
+
 /* Forward typedefs for class, object, and hash structures */
 typedef struct RubyArray  RubyArray;
 typedef struct RubyClass  RubyClass;
@@ -49,6 +54,7 @@ typedef struct RubyModuleInclusion RubyModuleInclusion;
 typedef struct Value {
     ValueKind kind;
     int       frozen; /* used for VAL_STRING/VAL_SYMBOL; arrays/hashes/objects have their own flag */
+    StringEncodingTag string_encoding; /* used for VAL_STRING */
     union {
         int         bval;    /* VAL_BOOL */
         int64_t     ival;    /* VAL_INT */
@@ -148,13 +154,13 @@ struct RubyRange {
 /* ------------------------------------------------------------------ */
 /* Constructors                                                         */
 /* ------------------------------------------------------------------ */
-static inline Value val_nil(void)           { Value v; v.kind = VAL_NIL;    v.frozen = 0; v.ival = 0; return v; }
-static inline Value val_true(void)          { Value v; v.kind = VAL_BOOL;   v.frozen = 0; v.bval = 1; return v; }
-static inline Value val_false(void)         { Value v; v.kind = VAL_BOOL;   v.frozen = 0; v.bval = 0; return v; }
+static inline Value val_nil(void)           { Value v; v.kind = VAL_NIL;    v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.ival = 0; return v; }
+static inline Value val_true(void)          { Value v; v.kind = VAL_BOOL;   v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.bval = 1; return v; }
+static inline Value val_false(void)         { Value v; v.kind = VAL_BOOL;   v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.bval = 0; return v; }
 static inline Value val_bool(int b)         { return b ? val_true() : val_false(); }
-static inline Value val_int(int64_t i)      { Value v; v.kind = VAL_INT;    v.frozen = 0; v.ival = i; return v; }
-static inline Value val_float(double f)     { Value v; v.kind = VAL_FLOAT;  v.frozen = 0; v.fval = f; return v; }
-static inline Value val_symbol(const char *s) { Value v; v.kind = VAL_SYMBOL; v.frozen = 0; v.sval = s; return v; }
+static inline Value val_int(int64_t i)      { Value v; v.kind = VAL_INT;    v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.ival = i; return v; }
+static inline Value val_float(double f)     { Value v; v.kind = VAL_FLOAT;  v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.fval = f; return v; }
+static inline Value val_symbol(const char *s) { Value v; v.kind = VAL_SYMBOL; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.sval = s; return v; }
 
 Value val_string(Arena *a, const char *s);
 Value val_string_n(Arena *a, const char *s, size_t len);
@@ -200,7 +206,7 @@ static inline int val_is_signal(Value v) {
            v.kind == VAL_THROW;
 }
 static inline Value val_hash_val(RubyHash *h) {
-    Value v; v.kind = VAL_HASH; v.hash = h; return v;
+    Value v; v.kind = VAL_HASH; v.frozen = 0; v.string_encoding = STRING_ENCODING_UTF8; v.hash = h; return v;
 }
 static inline int val_equal(Value a, Value b) {
     if (a.kind != b.kind) {

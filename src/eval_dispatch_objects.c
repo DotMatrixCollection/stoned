@@ -226,6 +226,13 @@ static int mode_is_read(const char *mode)   { return mode && (mode[0] == 'r' || 
 static int mode_is_write(const char *mode)  { return mode && (mode[0] == 'w' || mode_has_plus(mode)); }
 static int mode_is_append(const char *mode) { return mode && mode[0] == 'a'; }
 static int mode_is_binary(const char *mode) { return mode && strchr(mode, 'b') != NULL; }
+
+static Value file_string_with_mode_encoding(Arena *arena, const char *buf, size_t len, const char *mode) {
+    Value out = val_string_n(arena, buf, len);
+    if (mode_is_binary(mode))
+        out.string_encoding = STRING_ENCODING_ASCII_8BIT;
+    return out;
+}
 static int mode_allows_read(const char *mode){ return mode_is_read(mode); }
 static int mode_allows_write(const char *mode){ return mode_is_write(mode) || mode_is_append(mode); }
 
@@ -770,7 +777,7 @@ static Value file_read_stream(Eval *ev, Value recv, const char *mode, const char
         return eval_raise_encoding_error(ev, site, context);
     }
 
-    Value out = val_string_n(ev->arena, buf, len);
+    Value out = file_string_with_mode_encoding(ev->arena, buf, len, mode);
     free(buf);
     return out;
 }
@@ -820,7 +827,7 @@ static Value file_read_stream_with_length(Eval *ev, Value recv, const char *mode
         return eval_raise_encoding_error(ev, site, context);
     }
 
-    Value out = val_string_n(ev->arena, buf, got);
+    Value out = file_string_with_mode_encoding(ev->arena, buf, got, mode);
     free(buf);
     return out;
 }
@@ -933,7 +940,7 @@ static Value file_gets_stream(Eval *ev, Value recv, const char *mode, const char
         return eval_raise_encoding_error(ev, site, context);
     }
 
-    Value out = val_string_n(ev->arena, buf, len);
+    Value out = file_string_with_mode_encoding(ev->arena, buf, len, mode);
     free(buf);
     return out;
 }
@@ -1080,7 +1087,7 @@ static Value file_getc_stream(Eval *ev, Value recv, const char *mode, const char
             return eval_raise_encoding_error(ev, site, context);
     }
 
-    return val_string_n(ev->arena, buf, width);
+    return file_string_with_mode_encoding(ev->arena, buf, width, mode);
 }
 
 static Value file_readchar_stream(Eval *ev, Value recv, const char *mode, const char *context, Node *site) {

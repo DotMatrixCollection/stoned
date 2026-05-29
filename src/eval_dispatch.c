@@ -2049,6 +2049,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         /* String: dup returns unfrozen copy; clone preserves frozen */
         if (recv.kind == VAL_STRING) {
             Value copy = val_string(ev->arena, recv.sval);
+            copy.string_encoding = recv.string_encoding;
             if (is_clone) copy.frozen = recv.frozen;
             /* else dup: unfrozen */
             return copy;
