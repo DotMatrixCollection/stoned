@@ -3606,6 +3606,30 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                    argc >= 1 && args[0].kind == VAL_INT   ? val_float((double)args[0].ival) : val_float(0.0);
             return 1;
         }
+        /* String subclass (e.g. ColorizedString < String): store backing string in @__str__ */
+        if (strcmp(recv.klass->name, "String") != 0 &&
+            class_is_a_named_class(ev, recv.klass, "String")) {
+            Value obj = val_object(ev->arena, recv);
+            Value str_val = (argc >= 1 && args[0].kind == VAL_STRING)
+                ? val_string_n(ev->arena, args[0].sval, args[0].byte_len)
+                : val_string_n(ev->arena, "", 0);
+            val_object_set_ivar(ev->arena, obj, "__str__", str_val);
+            /* Call user-defined initialize if any (skip inherited String one) */
+            RubyClass *ki = recv.klass;
+            while (ki) {
+                Value im; RubyClass *iowner = NULL;
+                if (ruby_class_find_instance_method(ki, "initialize", &im, &iowner)) {
+                    if (iowner && strcmp(iowner->name, "String") != 0 && im.method.def_node) {
+                        Value r = call_method_value(ev, env, obj, im, iowner, "initialize", args, argc, blk, site);
+                        if (val_is_signal(r)) { *out = r; return 1; }
+                    }
+                    break;
+                }
+                ki = ki->superclass.kind == VAL_CLASS ? ki->superclass.klass : NULL;
+            }
+            *out = obj;
+            return 1;
+        }
         if (class_is_a_named_class(ev, recv.klass, "Exception")) {
             static const char *builtin_exc_names[] = {
                 "Exception","StandardError","RuntimeError","TypeError","ArgumentError",
@@ -6241,6 +6265,34 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         klass = klass->superclass.kind == VAL_CLASS ? klass->superclass.klass : NULL;
+    }
+    /* String subclass fallback: proxy built-in String methods through @__str__ */
+    if (recv.obj->klass.kind == VAL_CLASS &&
+        recv.obj->klass.klass &&
+        strcmp(recv.obj->klass.klass->name, "String") != 0 &&
+        class_is_a_named_class(ev, recv.obj->klass.klass, "String")) {
+        Value backing = val_string_n(ev->arena, "", 0);
+        val_object_get_ivar(recv, "__str__", &backing);
+        if (backing.kind != VAL_STRING)
+            backing = val_string_n(ev->arena, "", 0);
+        Value str_out;
+        if (dispatch_string(ev, env, backing, name, args, argc, blk, site, &str_out)) {
+            if (!val_is_signal(str_out) &&
+                (strcmp(name, "<<") == 0 || strcmp(name, "concat") == 0 ||
+                 strcmp(name, "replace") == 0 || strcmp(name, "clear") == 0 ||
+                 strcmp(name, "force_encoding") == 0)) {
+                /* Mutating ops: update backing and return self */
+                Value new_backing = str_out.kind == VAL_STRING ? str_out : backing;
+                val_object_set_ivar(ev->arena, recv, "__str__", new_backing);
+                *out = recv;
+            } else if (!val_is_signal(str_out) &&
+                       (strcmp(name, "to_s") == 0 || strcmp(name, "to_str") == 0)) {
+                *out = backing;
+            } else {
+                *out = str_out;
+            }
+            return 1;
+        }
     }
     return 0;
 }

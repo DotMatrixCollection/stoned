@@ -1925,6 +1925,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         !value_is_a_named_class(ev, recv, "Method") &&
         !value_is_a_named_class(ev, recv, "UnboundMethod") &&
         !value_is_a_named_class(ev, recv, "Struct") &&
+        !class_is_a_named_class(ev, recv.obj->klass.klass, "String") &&
         strcmp(recv.obj->klass.klass->name, "Regexp") != 0 &&
         strcmp(recv.obj->klass.klass->name, "MatchData") != 0 &&
         strcmp(recv.obj->klass.klass->name, "Time") != 0) {
