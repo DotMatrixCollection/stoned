@@ -110,3 +110,48 @@ puts method.super_method.owner.name
 puts method.super_method.call
 puts method.super_method.super_method.owner.name
 puts method.super_method.super_method.call
+
+module MatrixClassSideA
+  def build
+    "A"
+  end
+
+  def chain
+    "A"
+  end
+end
+
+class MatrixClassSideBefore
+  def self.build
+    "before"
+  end
+
+  extend MatrixClassSideA
+end
+
+class MatrixClassSideAfter
+  extend MatrixClassSideA
+
+  def self.build
+    "after"
+  end
+end
+
+class MatrixClassSideOnly
+  extend MatrixClassSideA
+end
+
+class MatrixClassSideSuper
+  extend MatrixClassSideA
+
+  def self.chain
+    "class>#{super}"
+  end
+end
+
+puts MatrixClassSideBefore.build
+puts MatrixClassSideAfter.build
+puts MatrixClassSideOnly.build
+puts MatrixClassSideSuper.chain
+puts MatrixClassSideBefore.respond_to?(:build)
+puts MatrixClassSideBefore.methods.include?(:build)

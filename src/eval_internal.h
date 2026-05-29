@@ -117,6 +117,8 @@ int val_is_a(Value v, Value klass_arg);
 int val_responds_to(Eval *ev, Value recv, const char *name, int include_private);
 int ruby_class_find_instance_method(RubyClass *klass, const char *name, Value *out, RubyClass **owner);
 int ruby_class_find_super_method(RubyClass *start, RubyClass *after, const char *name, Value *out, RubyClass **owner);
+int ruby_class_find_class_method(RubyClass *klass, const char *name, Value *out, RubyClass **owner);
+int ruby_class_find_class_super_method(RubyClass *start, RubyClass *after, const char *name, Value *out, RubyClass **owner);
 Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass *owner,
                         const char *name, Value *args, int argc, Value *blk, Node *site);
 int method_object_arity(Value method_obj);

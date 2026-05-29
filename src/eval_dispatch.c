@@ -258,8 +258,12 @@ static Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *s
     }
 
     if (self.kind == VAL_CLASS) {
-        for (int i = 0; i < argc; i++)
-            copy_module_methods(ev, self.klass->class_env, args[i].klass, 1);
+        for (int i = 0; i < argc; i++) {
+            RubyModuleInclusion *inc = arena_alloc(ev->arena, sizeof(RubyModuleInclusion));
+            inc->mod = args[i].klass;
+            inc->next = self.klass->extended_modules;
+            self.klass->extended_modules = inc;
+        }
     } else {
         Env **slot = value_singleton_env_slot(self);
         if (!*slot) *slot = env_new(ev->arena, NULL, 1);
@@ -274,6 +278,14 @@ static Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *s
             call_method_value(ev, ev->top_env, args[i], cm, args[i].klass, "extended", &self, 1, NULL, site);
     }
     return self;
+}
+
+static void collect_extended_module_methods(RubyClass *klass, Value *arr, int vis_mask) {
+    if (!klass) return;
+    RubyClass *visited[256];
+    int nv = 0;
+    for (RubyModuleInclusion *inc = klass->extended_modules; inc; inc = inc->next)
+        collect_all_instance_methods(inc->mod, arr, vis_mask, visited, &nv);
 }
 
 static void define_attr_reader_in_env(Eval *ev, Env *target_env,
@@ -407,13 +419,7 @@ static Value dispatch_dynamic_send(Eval *ev, Env *env, Value recv, const char *d
             if (recv.obj->klass.kind == VAL_CLASS)
                 found = ruby_class_find_instance_method(recv.obj->klass.klass, mname, &method, &owner);
         } else if (recv.kind == VAL_CLASS) {
-            size_t nlen = strlen(mname);
-            char *key = arena_alloc(ev->arena, nlen + 6);
-            memcpy(key, "self.", 5);
-            memcpy(key + 5, mname, nlen + 1);
-            for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
-                if (env_get(k->class_env, key, &method) && method.kind == VAL_METHOD) { found = 1; break; }
-            }
+            found = ruby_class_find_class_method(recv.klass, mname, &method, &owner);
         } else {
             Value klass = val_class_of(ev, recv);
             if (klass.kind == VAL_CLASS)
@@ -681,17 +687,10 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
 
     if (recv.kind == VAL_CLASS) {
         if (strcmp(name, "new") == 0) return 1;
-        size_t nlen = strlen(name);
-        char *key = arena_alloc(ev->arena, nlen + 6);
-        memcpy(key, "self.", 5);
-        memcpy(key + 5, name, nlen + 1);
-        RubyClass *k = recv.klass;
-        while (k) {
-            Value m;
-            if (env_get(k->class_env, key, &m) && method_visible_for_respond_to(m, include_private))
-                return 1;
-            k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL;
-        }
+        Value m;
+        if (ruby_class_find_class_method(recv.klass, name, &m, NULL) &&
+            method_visible_for_respond_to(m, include_private))
+            return 1;
         for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
             if (primitive_class_method_responds_to_name(k->name, name))
                 return 1;
@@ -772,20 +771,15 @@ static Value dispatch_respond_to_missing(Eval *ev, Env *env, Value recv, const c
             return val_bool(val_truthy(result));
         }
     } else if (recv.kind == VAL_CLASS) {
-        size_t nlen = strlen("respond_to_missing?");
-        char *key = arena_alloc(ev->arena, nlen + 6);
-        memcpy(key, "self.", 5);
-        memcpy(key + 5, "respond_to_missing?", nlen + 1);
-        for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
-            Value method;
-            if (env_get(k->class_env, key, &method) && method.kind == VAL_METHOD) {
-                Value args[2];
-                args[0] = val_symbol(name);
-                args[1] = val_bool(include_private);
-                Value result = call_method_value(ev, env, recv, method, k, "respond_to_missing?", args, 2, NULL, site);
-                if (val_is_signal(result)) return result;
-                return val_bool(val_truthy(result));
-            }
+        RubyClass *owner = NULL;
+        Value method;
+        if (ruby_class_find_class_method(recv.klass, "respond_to_missing?", &method, &owner)) {
+            Value args[2];
+            args[0] = val_symbol(name);
+            args[1] = val_bool(include_private);
+            Value result = call_method_value(ev, env, recv, method, owner, "respond_to_missing?", args, 2, NULL, site);
+            if (val_is_signal(result)) return result;
+            return val_bool(val_truthy(result));
         }
     } else {
         Value klass = val_class_of(ev, recv);
@@ -817,16 +811,13 @@ static Value dispatch_method_missing(Eval *ev, Env *env, Value recv, const char 
             return call_method_value(ev, env, recv, method, owner, "method_missing", mm_args, argc + 1, blk, site);
         }
     } else if (recv.kind == VAL_CLASS) {
-        char *key = arena_alloc(ev->arena, strlen("method_missing") + 6);
-        memcpy(key, "self.method_missing", strlen("self.method_missing") + 1);
-        for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
-            Value method;
-            if (env_get(k->class_env, key, &method) && method.kind == VAL_METHOD) {
-                Value mm_args[65];
-                mm_args[0] = val_symbol(name);
-                for (int i = 0; i < argc && i < 64; i++) mm_args[i + 1] = args[i];
-                return call_method_value(ev, env, recv, method, k, "method_missing", mm_args, argc + 1, blk, site);
-            }
+        RubyClass *owner = NULL;
+        Value method;
+        if (ruby_class_find_class_method(recv.klass, "method_missing", &method, &owner)) {
+            Value mm_args[65];
+            mm_args[0] = val_symbol(name);
+            for (int i = 0; i < argc && i < 64; i++) mm_args[i + 1] = args[i];
+            return call_method_value(ev, env, recv, method, owner, "method_missing", mm_args, argc + 1, blk, site);
         }
     } else {
         Value klass = val_class_of(ev, recv);
@@ -2173,6 +2164,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                     if (!sym_in_array(&arr, mname))
                         val_array_push(&arr, val_symbol(mname));
                 }
+                collect_extended_module_methods(k, &arr, 1);
                 const char *plist = primitive_class_methods_for_class(k->name);
                 if (plist) {
                     for (const char *p = plist; *p; ) {
@@ -2378,6 +2370,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                     if (match && !sym_in_array(&arr, mname))
                         val_array_push(&arr, val_symbol(mname));
                 }
+                collect_extended_module_methods(kc, &arr, vis_mask);
                 if (!include_super) break;
                 kc = (kc->superclass.kind == VAL_CLASS) ? kc->superclass.klass : NULL;
             }
@@ -2512,6 +2505,14 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                     if (owner && owner->name)
                         env_get(ev->top_env, owner->name, &owner_val);
                 }
+            }
+        }
+        if (method_val.kind == VAL_NIL && recv.kind == VAL_CLASS) {
+            Value m; RubyClass *owner = NULL;
+            if (ruby_class_find_class_method(recv.klass, mname, &m, &owner)) {
+                method_val = m;
+                if (owner && owner->name)
+                    env_get(ev->top_env, owner->name, &owner_val);
             }
         }
         /* For primitive types (Hash, Array, Symbol, etc.), look up inherited Ruby methods */
@@ -3110,13 +3111,8 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
         }
 
         if (env_get(env, "self", &self) && self.kind == VAL_CLASS) {
-            size_t nlen = strlen(name);
-            char *key = arena_alloc(ev->arena, nlen + 6);
-            memcpy(key, "self.", 5);
-            memcpy(key + 5, name, nlen + 1);
-            RubyClass *cklass = self.klass;
-            while (cklass) {
-                if (env_get(cklass->class_env, key, &fn) && fn.kind == VAL_METHOD) {
+            RubyClass *cklass = NULL;
+            if (ruby_class_find_class_method(self.klass, name, &fn, &cklass) && fn.kind == VAL_METHOD) {
                     Env *method_env = env_new(ev->arena, fn.method.closure, 1);
                     env_set(ev->arena, method_env, "self", self);
                     env_set(ev->arena, method_env, "__method__", val_symbol(name));
@@ -3136,8 +3132,6 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
                     if (result.kind == VAL_RETURN && result.jump.target_env == method_env) result = *result.jump.wrapped;
                     else if (val_is_signal(result)) return result;
                     return result;
-                }
-                cklass = cklass->superclass.kind == VAL_CLASS ? cklass->superclass.klass : NULL;
             }
         }
 

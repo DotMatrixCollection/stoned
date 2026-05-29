@@ -4059,35 +4059,28 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
 
     /* ---- end class reflection ---- */
 
-    size_t nlen = strlen(name);
-    char *key = arena_alloc(ev->arena, nlen + 6);
-    memcpy(key, "self.", 5);
-    memcpy(key + 5, name, nlen + 1);
-    RubyClass *cklass = recv.klass;
-    while (cklass) {
-        Value cm;
-        if (env_get(cklass->class_env, key, &cm) && cm.kind == VAL_METHOD) {
-            if (method_visibility_allows_call(ev, env, recv, cklass, cm.method.visibility,
-                                              public_only, explicit_receiver)) {
-                Value result = call_method_value(ev, env, recv, cm, cklass, name, args, argc, blk, site);
-                if (val_is_signal(result)) { *out = result; return 1; }
-                *out = result;
-                return 1;
-            }
-            if (cm.method.visibility == METHOD_PROTECTED) {
-                *out = eval_raise_class(ev, site, "NoMethodError",
-                                        "protected method '%s' called for an instance of %s",
-                                        name, value_class_name(ev, recv));
-                return 1;
-            }
-            if (cm.method.visibility == METHOD_PRIVATE) {
-                *out = eval_raise_class(ev, site, "NoMethodError",
-                                        "private method '%s' called for an instance of %s",
-                                        name, value_class_name(ev, recv));
-                return 1;
-            }
+    Value cm;
+    RubyClass *owner = NULL;
+    if (ruby_class_find_class_method(recv.klass, name, &cm, &owner) && cm.kind == VAL_METHOD) {
+        if (method_visibility_allows_call(ev, env, recv, owner, cm.method.visibility,
+                                          public_only, explicit_receiver)) {
+            Value result = call_method_value(ev, env, recv, cm, owner, name, args, argc, blk, site);
+            if (val_is_signal(result)) { *out = result; return 1; }
+            *out = result;
+            return 1;
         }
-        cklass = cklass->superclass.kind == VAL_CLASS ? cklass->superclass.klass : NULL;
+        if (cm.method.visibility == METHOD_PROTECTED) {
+            *out = eval_raise_class(ev, site, "NoMethodError",
+                                    "protected method '%s' called for an instance of %s",
+                                    name, value_class_name(ev, recv));
+            return 1;
+        }
+        if (cm.method.visibility == METHOD_PRIVATE) {
+            *out = eval_raise_class(ev, site, "NoMethodError",
+                                    "private method '%s' called for an instance of %s",
+                                    name, value_class_name(ev, recv));
+            return 1;
+        }
     }
     return 0;
 }

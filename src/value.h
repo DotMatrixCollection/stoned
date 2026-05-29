@@ -110,6 +110,7 @@ typedef struct RubyClass {
     struct Env *class_env;   /* Methods defined in this class */
     RubyModuleInclusion *prepended_modules;
     RubyModuleInclusion *included_modules;
+    RubyModuleInclusion *extended_modules; /* Modules mixed into the singleton class via extend */
     int         is_module;
 } RubyClass;
 

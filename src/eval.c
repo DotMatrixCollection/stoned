@@ -1245,7 +1245,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
 
         case NODE_SUPER: {
             Value self;
-            if (!env_get(env, "self", &self) || self.kind != VAL_OBJECT)
+            if (!env_get(env, "self", &self) || (self.kind != VAL_OBJECT && self.kind != VAL_CLASS))
                 return eval_raise_class(ev, node, "NoMethodError", "super called outside of instance method");
 
             Value cur_class_val;
@@ -1285,8 +1285,15 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
 
             Value method;
             RubyClass *owner = NULL;
-            if (ruby_class_find_super_method(self.obj->klass.klass, cur_class_val.klass,
-                                             method_name, &method, &owner)) {
+            int found_super = 0;
+            if (self.kind == VAL_OBJECT) {
+                found_super = ruby_class_find_super_method(self.obj->klass.klass, cur_class_val.klass,
+                                                           method_name, &method, &owner);
+            } else {
+                found_super = ruby_class_find_class_super_method(self.klass, cur_class_val.klass,
+                                                                 method_name, &method, &owner);
+            }
+            if (found_super) {
                 Value *blk = NULL;
                 for (Env *sc = env; sc; sc = sc->parent) {
                     if (sc->block_arg) { blk = sc->block_arg; break; }

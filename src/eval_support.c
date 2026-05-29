@@ -798,6 +798,65 @@ int ruby_class_find_super_method(RubyClass *start, RubyClass *after, const char 
     return ruby_class_find_super_method_inner(start, after, &seen_after, name, out, owner);
 }
 
+static int ruby_class_get_direct_class_method(RubyClass *klass, const char *name, Value *out) {
+    if (!klass || !klass->class_env || !name) return 0;
+    for (EnvEntry *entry = klass->class_env->vars; entry; entry = entry->next) {
+        if (!entry->name || strncmp(entry->name, "self.", 5) != 0) continue;
+        if (strcmp(entry->name + 5, name) == 0 && entry->val.kind == VAL_METHOD) {
+            *out = entry->val;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int ruby_class_find_class_method(RubyClass *klass, const char *name, Value *out, RubyClass **owner) {
+    for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+        if (ruby_class_get_direct_class_method(k, name, out)) {
+            if (owner) *owner = k;
+            return 1;
+        }
+        for (RubyModuleInclusion *inc = k->extended_modules; inc; inc = inc->next) {
+            RubyClass *module_owner = NULL;
+            if (ruby_class_find_instance_method(inc->mod, name, out, &module_owner)) {
+                if (owner) *owner = module_owner;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int ruby_class_find_class_super_method_inner(RubyClass *klass, RubyClass *after,
+                                                    int *seen_after, const char *name,
+                                                    Value *out, RubyClass **owner) {
+    for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+        if (*seen_after && ruby_class_get_direct_class_method(k, name, out)) {
+            if (owner) *owner = k;
+            return 1;
+        }
+        if (k == after) *seen_after = 1;
+
+        for (RubyModuleInclusion *inc = k->extended_modules; inc; inc = inc->next) {
+            if (*seen_after) {
+                RubyClass *module_owner = NULL;
+                if (ruby_class_find_instance_method(inc->mod, name, out, &module_owner)) {
+                    if (owner) *owner = module_owner;
+                    return 1;
+                }
+            } else if (ruby_class_find_super_method_inner(inc->mod, after, seen_after, name, out, owner)) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+int ruby_class_find_class_super_method(RubyClass *start, RubyClass *after, const char *name, Value *out, RubyClass **owner) {
+    int seen_after = 0;
+    return ruby_class_find_class_super_method_inner(start, after, &seen_after, name, out, owner);
+}
+
 static int ruby_class_has_module(RubyClass *klass, RubyClass *target) {
     for (RubyClass *k = klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
         if (k == target) return 1;
