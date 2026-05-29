@@ -1,0 +1,9 @@
+false
+true
+{x: 1, y: 2}
+{host: "localhost", port: 3000}
+{host: "example.test", port: nil}
+ArgumentError
+wrong number of arguments (given 1, expected 0)
+ArgumentError
+unknown keyword: :scheme

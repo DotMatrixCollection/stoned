@@ -66,6 +66,26 @@ static uint64_t method_string_hash(const char *s) {
     return h;
 }
 
+static Value wrap_array_as_enumerator(Eval *ev, Env *env, Value arr, Node *site) {
+    Value enum_class;
+    if (env_get(ev->top_env, "Enumerator", &enum_class) && enum_class.kind == VAL_CLASS) {
+        Value eargs[1] = {arr};
+        return dispatch_method(ev, env, enum_class, "new", eargs, 1, NULL, site, 0, 1);
+    }
+    return arr;
+}
+
+static ssize_t struct_member_index(Value members, const char *name) {
+    if (members.kind != VAL_ARRAY || !name)
+        return -1;
+    for (size_t i = 0; i < members.array->len; i++) {
+        Value member = members.array->elems[i];
+        if (member.kind == VAL_STRING && member.sval && strcmp(member.sval, name) == 0)
+            return (ssize_t)i;
+    }
+    return -1;
+}
+
 static int method_value_same_identity(Value a, Value b) {
     if (a.kind != b.kind) return 0;
     switch (a.kind) {
@@ -1385,7 +1405,7 @@ static const char *primitive_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Integer") == 0 || strcmp(klass_name, "Numeric") == 0)
         return "to_s,to_i,to_f,to_r,to_c,inspect,+,-,*,/,%,**,<,<=,>,>=,<=>,==,!=,abs,divmod,gcd,lcm,pow,digits,chr,succ,pred,next,times,upto,downto,step,zero?,nonzero?,positive?,negative?,odd?,even?,integer?,between?,clamp,floor,ceil,round,truncate,fdiv,remainder,gcd,lcm,bit_length,size,[]";
     if (strcmp(klass_name, "Float") == 0)
-        return "to_s,to_i,to_f,to_r,inspect,+,-,*,/,%,**,<,<=,>,>=,<=>,==,abs,divmod,floor,ceil,round,truncate,nan?,infinite?,finite?,zero?,positive?,negative?,between?,clamp";
+        return "to_s,to_i,to_f,to_r,inspect,+,-,*,/,%,**,<,<=,>,>=,<=>,==,abs,divmod,floor,ceil,round,truncate,rationalize,nan?,infinite?,finite?,zero?,positive?,negative?,between?,clamp";
     if (strcmp(klass_name, "String") == 0)
         return "to_s,to_i,to_f,to_sym,to_str,length,size,empty?,upcase,downcase,capitalize,swapcase,strip,lstrip,rstrip,chomp,chop,chars,bytes,lines,split,join,include?,start_with?,end_with?,index,rindex,[],[]=,slice,replace,reverse,center,ljust,rjust,count,delete,squeeze,tr,scan,sub,gsub,match,match?,=~,ord,hex,oct,succ,next,encode,encoding,freeze,frozen?,dup,clone,inspect,<<,+,*,each_line,each_char,each_byte,insert,delete_prefix,delete_suffix,b,unicode_normalize,force_encoding,valid_encoding?,ascii_only?,bytesize";
     if (strcmp(klass_name, "Symbol") == 0)
@@ -1397,7 +1417,7 @@ static const char *primitive_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Range") == 0)
         return "begin,first,end,last,exclude_end?,include?,member?,cover?,===,each,each_with_index,to_a,entries,size,count,length,min,max,step,map,collect,select,filter,reject,to_s,inspect";
     if (strcmp(klass_name, "Struct") == 0)
-        return "to_a,deconstruct,to_h,deconstruct_keys,members,each,inspect,to_s,==";
+        return "to_a,values,deconstruct,to_h,deconstruct_keys,members,length,size,each,each_pair,values_at,[],[]=,inspect,to_s,==";
     if (strcmp(klass_name, "Binding") == 0)
         return "eval,local_variable_get,local_variable_set,local_variables,source_location,dup,clone";
     if (strcmp(klass_name, "IO") == 0)
@@ -1451,7 +1471,7 @@ const char *primitive_class_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Process") == 0)
         return "pid";
     if (strcmp(klass_name, "Struct") == 0)
-        return "new";
+        return "new,[],members,keyword_init?";
     if (strcmp(klass_name, "Hash") == 0)
         return "[],new";
     if (strcmp(klass_name, "Array") == 0)
@@ -3605,14 +3625,43 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             Value obj = val_object(ev->arena, recv);
             if (keyword_init) {
                 /* keyword_init struct: accept a single keyword hash (or nothing) */
-                Value kw = (argc == 1 && args[0].kind == VAL_HASH) ? args[0] : val_nil();
+                if (argc > 1 || (argc == 1 && args[0].kind != VAL_HASH)) {
+                    *out = wrong_arg_count(ev, site, argc, 0);
+                    return 1;
+                }
+                Value kw = (argc == 1) ? args[0] : val_nil();
+                const char *consumed[128];
+                int n_consumed = 0;
                 for (size_t i = 0; i < struct_members.array->len; i++) {
                     Value member = struct_members.array->elems[i];
                     if (member.kind != VAL_STRING && member.kind != VAL_SYMBOL) continue;
                     Value sym = val_symbol(member.sval);
                     Value val = val_nil();
-                    if (kw.kind == VAL_HASH) val_hash_get(kw.hash, sym, &val);
+                    if (kw.kind == VAL_HASH && val_hash_get(kw.hash, sym, &val) && n_consumed < 128)
+                        consumed[n_consumed++] = member.sval;
                     val_object_set_ivar(ev->arena, obj, member.sval, val);
+                }
+                if (kw.kind == VAL_HASH) {
+                    for (size_t i = 0; i < kw.hash->len; i++) {
+                        Value key = kw.hash->keys[i];
+                        int found = 0;
+                        if (key.kind == VAL_SYMBOL || key.kind == VAL_STRING) {
+                            for (int j = 0; j < n_consumed; j++) {
+                                if (strcmp(key.sval, consumed[j]) == 0) {
+                                    found = 1;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!found) {
+                            if (key.kind == VAL_SYMBOL)
+                                *out = eval_raise_class(ev, site, "ArgumentError",
+                                                        "unknown keyword: :%s", key.sval);
+                            else
+                                *out = eval_raise_class(ev, site, "ArgumentError", "unknown keyword");
+                            return 1;
+                        }
+                    }
                 }
             } else {
                 if (argc > (int)struct_members.array->len) {
@@ -3722,6 +3771,22 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             *out = syms;
         } else { *out = val_array_new(); }
         return 1;
+    }
+    if (strcmp(name, "keyword_init?") == 0 &&
+        class_is_a_named_class(ev, recv.klass, "Struct") &&
+        recv.klass->class_env) {
+        Value kwinit = val_false();
+        if (env_get(recv.klass->class_env, "__struct_keyword_init__", &kwinit)) {
+            *out = val_bool(val_truthy(kwinit));
+        } else {
+            *out = val_false();
+        }
+        return 1;
+    }
+    if (strcmp(name, "[]") == 0 &&
+        class_is_a_named_class(ev, recv.klass, "Struct") &&
+        recv.klass->class_env) {
+        return dispatch_class(ev, env, recv, "new", args, argc, blk, site, out, public_only, explicit_receiver);
     }
 
     if (strcmp(name, "class_variables") == 0) {
@@ -4040,6 +4105,10 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         Value sm = val_nil();
         env_get(recv.obj->klass.klass->class_env, "__struct_members__", &sm);
         if (sm.kind == VAL_ARRAY) {
+            if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0) {
+                *out = val_int((int64_t)sm.array->len);
+                return 1;
+            }
             if (strcmp(name, "to_a") == 0 || strcmp(name, "deconstruct") == 0) {
                 Value arr = val_array_new();
                 for (size_t i = 0; i < sm.array->len; i++) {
@@ -4049,6 +4118,17 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     val_array_push(&arr, v);
                 }
                 *out = arr; return 1;
+            }
+            if (strcmp(name, "values") == 0) {
+                Value arr = val_array_new();
+                for (size_t i = 0; i < sm.array->len; i++) {
+                    if (sm.array->elems[i].kind != VAL_STRING) continue;
+                    Value v = val_nil();
+                    val_object_get_ivar(recv, sm.array->elems[i].sval, &v);
+                    val_array_push(&arr, v);
+                }
+                *out = arr;
+                return 1;
             }
             if (strcmp(name, "to_h") == 0 || strcmp(name, "deconstruct_keys") == 0) {
                 Value h = val_hash_new(ev->arena);
@@ -4123,7 +4203,17 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 *out = val_true(); return 1;
             }
             if (strcmp(name, "each") == 0) {
-                if (!blk) { *out = recv; return 1; }
+                if (!blk) {
+                    Value arr = val_array_new();
+                    for (size_t i = 0; i < sm.array->len; i++) {
+                        if (sm.array->elems[i].kind != VAL_STRING) continue;
+                        Value v = val_nil();
+                        val_object_get_ivar(recv, sm.array->elems[i].sval, &v);
+                        val_array_push(&arr, v);
+                    }
+                    *out = wrap_array_as_enumerator(ev, env, arr, site);
+                    return 1;
+                }
                 for (size_t i = 0; i < sm.array->len; i++) {
                     if (sm.array->elems[i].kind != VAL_STRING) continue;
                     Value v = val_nil();
@@ -4135,7 +4225,20 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 *out = recv; return 1;
             }
             if (strcmp(name, "each_pair") == 0) {
-                if (!blk) { *out = recv; return 1; }
+                if (!blk) {
+                    Value arr = val_array_new();
+                    for (size_t i = 0; i < sm.array->len; i++) {
+                        if (sm.array->elems[i].kind != VAL_STRING) continue;
+                        Value pair = val_array_new();
+                        Value v = val_nil();
+                        val_object_get_ivar(recv, sm.array->elems[i].sval, &v);
+                        val_array_push(&pair, val_symbol(sm.array->elems[i].sval));
+                        val_array_push(&pair, v);
+                        val_array_push(&arr, pair);
+                    }
+                    *out = wrap_array_as_enumerator(ev, env, arr, site);
+                    return 1;
+                }
                 for (size_t i = 0; i < sm.array->len; i++) {
                     if (sm.array->elems[i].kind != VAL_STRING) continue;
                     Value bargs[2];
@@ -4147,6 +4250,44 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     if (flow_signal_out(r, out)) return 1;
                 }
                 *out = recv; return 1;
+            }
+            if (strcmp(name, "values_at") == 0) {
+                Value arr = val_array_new();
+                for (int ai = 0; ai < argc; ai++) {
+                    if (args[ai].kind == VAL_INT) {
+                        int64_t idx = args[ai].ival;
+                        if (idx < 0) idx += (int64_t)sm.array->len;
+                        if (idx < 0 || idx >= (int64_t)sm.array->len) {
+                            val_array_push(&arr, val_nil());
+                            continue;
+                        }
+                        Value key = sm.array->elems[idx];
+                        Value v = val_nil();
+                        if (key.kind == VAL_STRING)
+                            val_object_get_ivar(recv, key.sval, &v);
+                        val_array_push(&arr, v);
+                        continue;
+                    }
+                    if (args[ai].kind == VAL_SYMBOL || args[ai].kind == VAL_STRING) {
+                        ssize_t idx = struct_member_index(sm, args[ai].sval);
+                        if (idx < 0) {
+                            *out = eval_raise_class(ev, site, "NameError",
+                                                    "no member '%s' in struct",
+                                                    args[ai].sval);
+                            return 1;
+                        }
+                        Value v = val_nil();
+                        val_object_get_ivar(recv, args[ai].sval, &v);
+                        val_array_push(&arr, v);
+                        continue;
+                    }
+                    *out = eval_raise_class(ev, site, "TypeError",
+                                            "no implicit conversion of %s into Integer",
+                                            value_class_name(ev, args[ai]));
+                    return 1;
+                }
+                *out = arr;
+                return 1;
             }
             if (strcmp(name, "[]") == 0 && argc == 1) {
                 if (args[0].kind == VAL_INT) {
@@ -4160,6 +4301,12 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     *out = v; return 1;
                 }
                 if (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) {
+                    if (struct_member_index(sm, args[0].sval) < 0) {
+                        *out = eval_raise_class(ev, site, "NameError",
+                                                "no member '%s' in struct",
+                                                args[0].sval);
+                        return 1;
+                    }
                     Value v = val_nil();
                     val_object_get_ivar(recv, args[0].sval, &v);
                     *out = v; return 1;
@@ -4182,6 +4329,12 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     *out = args[1]; return 1;
                 }
                 if (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) {
+                    if (struct_member_index(sm, args[0].sval) < 0) {
+                        *out = eval_raise_class(ev, site, "NameError",
+                                                "no member '%s' in struct",
+                                                args[0].sval);
+                        return 1;
+                    }
                     val_object_set_ivar(ev->arena, recv, args[0].sval, args[1]);
                     *out = args[1]; return 1;
                 }

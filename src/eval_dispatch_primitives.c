@@ -2,6 +2,8 @@
 #include "utf8.h"
 
 #include <ctype.h>
+#include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,6 +62,148 @@ static int utf8_space(uint32_t cp) {
         default:
             return 0;
     }
+}
+
+static Value raise_float_domain_error(Eval *ev, Node *site, double f, int unsigned_infinity_message) {
+    const char *msg = "NaN";
+    if (isinf(f))
+        msg = (unsigned_infinity_message || !signbit(f)) ? "Infinity" : "-Infinity";
+    return eval_raise_class(ev, site, "FloatDomainError", "%s", msg);
+}
+
+static Value build_rational_value(Eval *ev, Env *env, int64_t numer, int64_t denom, Node *site) {
+    Value rat_class;
+    if (env_get(ev->top_env, "Rational", &rat_class) && rat_class.kind == VAL_CLASS) {
+        Value rargs[2] = {val_int(numer), val_int(denom)};
+        return dispatch_method(ev, env, rat_class, "new", rargs, 2, NULL, site, 0, 1);
+    }
+    if (denom == 1) return val_int(numer);
+    return val_float((double)numer / (double)denom);
+}
+
+static Value build_decimal_rational_value(Eval *ev, Env *env, double f, Node *site) {
+    Value rat_class;
+    if (env_get(ev->top_env, "Rational", &rat_class) && rat_class.kind == VAL_CLASS) {
+        int64_t denom = 10000000LL;
+        int64_t numer = (int64_t)round(f * (double)denom);
+        Value rargs[2] = {val_int(numer), val_int(denom)};
+        return dispatch_method(ev, env, rat_class, "new", rargs, 2, NULL, site, 0, 1);
+    }
+    return val_float(f);
+}
+
+static Value float_to_exact_rational(Eval *ev, Env *env, double f, Node *site) {
+    if (isnan(f) || isinf(f))
+        return raise_float_domain_error(ev, site, f, 0);
+    if (f == 0.0)
+        return build_rational_value(ev, env, 0, 1, site);
+
+    double mag = fabs(f);
+    int exp = 0;
+    double frac = frexp(mag, &exp);
+    uint64_t mant = (uint64_t)llround(ldexp(frac, DBL_MANT_DIG));
+    int shift = exp - DBL_MANT_DIG;
+
+    while (shift < 0 && (mant & 1ULL) == 0) {
+        mant >>= 1;
+        shift++;
+    }
+
+    if (mant == 0)
+        return build_rational_value(ev, env, 0, 1, site);
+
+    if (shift >= 0) {
+        if (shift >= 63 || mant > ((uint64_t)INT64_MAX >> shift))
+            return build_decimal_rational_value(ev, env, f, site);
+        int64_t numer = (int64_t)(mant << shift);
+        if (signbit(f)) numer = -numer;
+        return build_rational_value(ev, env, numer, 1, site);
+    }
+
+    int denom_shift = -shift;
+    if (denom_shift >= 63 || mant > (uint64_t)INT64_MAX)
+        return build_decimal_rational_value(ev, env, f, site);
+    int64_t numer = (int64_t)mant;
+    int64_t denom = (int64_t)1 << denom_shift;
+    if (signbit(f)) numer = -numer;
+    return build_rational_value(ev, env, numer, denom, site);
+}
+
+static int coerce_value_to_double(Eval *ev, Env *env, Value v, Node *site, double *out, Value *err) {
+    if (v.kind == VAL_FLOAT) {
+        *out = v.fval;
+        return 1;
+    }
+    if (v.kind == VAL_INT) {
+        *out = (double)v.ival;
+        return 1;
+    }
+    Value converted = dispatch_method(ev, env, v, "to_f", NULL, 0, NULL, site, 0, -1);
+    if (val_is_signal(converted)) {
+        *err = converted;
+        return 0;
+    }
+    if (converted.kind == VAL_FLOAT) {
+        *out = converted.fval;
+        return 1;
+    }
+    if (converted.kind == VAL_INT) {
+        *out = (double)converted.ival;
+        return 1;
+    }
+    *err = eval_raise_class(ev, site, "TypeError", "can't convert %s into Float", val_kind_name(v.kind));
+    return 0;
+}
+
+static Value float_rationalize(Eval *ev, Env *env, double f, double eps, Node *site) {
+    if (isnan(f) || isinf(f))
+        return raise_float_domain_error(ev, site, f, 1);
+
+    double target = fabs(f);
+    if (target == 0.0 || eps == 0.0)
+        return float_to_exact_rational(ev, env, f, site);
+    if (eps < 0.0) eps = -eps;
+
+    uint64_t h0 = 0, h1 = 1;
+    uint64_t k0 = 1, k1 = 0;
+    double x = target;
+
+    for (int iter = 0; iter < 64; iter++) {
+        double a_d = floor(x);
+        if (!(a_d >= 0.0) || a_d > (double)INT64_MAX)
+            break;
+        uint64_t a = (uint64_t)a_d;
+        if (h1 > (uint64_t)INT64_MAX || k1 > (uint64_t)INT64_MAX)
+            break;
+        if (a != 0) {
+            if (h1 > (((uint64_t)INT64_MAX) - h0) / a) break;
+            if (k1 > (((uint64_t)INT64_MAX) - k0) / a) break;
+        }
+        uint64_t h = a * h1 + h0;
+        uint64_t k = a * k1 + k0;
+        if (h > (uint64_t)INT64_MAX || k > (uint64_t)INT64_MAX || k == 0)
+            break;
+
+        double approx = (double)h / (double)k;
+        if (fabs(target - approx) <= eps) {
+            int64_t numer = (int64_t)h;
+            if (signbit(f)) numer = -numer;
+            return build_rational_value(ev, env, numer, (int64_t)k, site);
+        }
+
+        double rem = x - a_d;
+        if (fabs(rem) < DBL_EPSILON) {
+            int64_t numer = (int64_t)h;
+            if (signbit(f)) numer = -numer;
+            return build_rational_value(ev, env, numer, (int64_t)k, site);
+        }
+
+        h0 = h1; h1 = h;
+        k0 = k1; k1 = k;
+        x = 1.0 / rem;
+    }
+
+    return float_to_exact_rational(ev, env, f, site);
 }
 
 typedef struct {
@@ -584,18 +728,26 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "to_r") == 0) {
-        Value rat_class;
-        if (env_get(ev->top_env, "Rational", &rat_class) && rat_class.kind == VAL_CLASS) {
-            double fv = recv.fval;
-            /* Represent as fraction: multiply by large power of 10, then GCD reduction
-               happens inside Rational.new via initialize */
-            int64_t denom = 10000000LL; /* 1e7 */
-            int64_t numer = (int64_t)round(fv * (double)denom);
-            Value args[2] = {val_int(numer), val_int(denom)};
-            *out = dispatch_method(ev, env, rat_class, "new", args, 2, NULL, site, 0, 1);
-        } else {
-            *out = recv;
+        *out = float_to_exact_rational(ev, env, recv.fval, site);
+        return 1;
+    }
+    if (strcmp(name, "rationalize") == 0) {
+        if (argc > 1) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+            return 1;
         }
+        double eps = 0.0;
+        if (argc == 1) {
+            Value err = val_nil();
+            if (!coerce_value_to_double(ev, env, args[0], site, &eps, &err)) {
+                *out = err;
+                return 1;
+            }
+        } else {
+            double mag = fabs(f);
+            eps = (nextafter(mag, INFINITY) - mag) / 2.0;
+        }
+        *out = float_rationalize(ev, env, recv.fval, eps, site);
         return 1;
     }
     if (argc == 1) {
@@ -2426,7 +2578,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     return 0;
 }
 
-int dispatch_nil(Eval *ev, Value recv, const char *name, Node *site, Value *out) {
+int dispatch_nil(Eval *ev, Env *env, Value recv, const char *name, Node *site, Value *out) {
     (void)recv;
     if (strcmp(name, "nil?") == 0) { *out = val_true(); return 1; }
     if (strcmp(name, "to_s") == 0) { *out = val_string(ev->arena, ""); return 1; }
@@ -2435,7 +2587,26 @@ int dispatch_nil(Eval *ev, Value recv, const char *name, Node *site, Value *out)
     if (strcmp(name, "to_f") == 0) { *out = val_float(0.0); return 1; }
     if (strcmp(name, "to_a") == 0) { *out = val_array_new(); return 1; }
     if (strcmp(name, "to_h") == 0) { *out = val_hash_new(ev->arena); return 1; }
-    if (strcmp(name, "to_r") == 0) { *out = val_int(0); return 1; } /* stub */
+    if (strcmp(name, "to_r") == 0) {
+        Value rat_class;
+        if (env_get(ev->top_env, "Rational", &rat_class) && rat_class.kind == VAL_CLASS) {
+            Value zero = val_int(0);
+            *out = dispatch_method(ev, env, rat_class, "new", &zero, 1, NULL, site, 0, 1);
+        } else {
+            *out = val_int(0);
+        }
+        return 1;
+    }
+    if (strcmp(name, "to_c") == 0) {
+        Value cplx_class;
+        if (env_get(ev->top_env, "Complex", &cplx_class) && cplx_class.kind == VAL_CLASS) {
+            Value cargs[2] = {val_int(0), val_int(0)};
+            *out = dispatch_method(ev, env, cplx_class, "new", cargs, 2, NULL, site, 0, 1);
+        } else {
+            *out = val_string(ev->arena, "(0+0i)");
+        }
+        return 1;
+    }
     if (strcmp(name, "freeze") == 0 || strcmp(name, "frozen?") == 0 || strcmp(name, "dup") == 0)
         { *out = recv; return 1; }
     if (strcmp(name, "!") == 0) { *out = val_true(); return 1; }

@@ -524,7 +524,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     };
     static const char *float_methods[] = {
         "to_s", "to_f", "to_i", "truncate", "to_r", "abs", "abs2", "zero?", "nonzero?",
-        "positive?", "negative?", "integer?", "nan?", "finite?", "infinite?", "ceil",
+        "positive?", "negative?", "integer?", "nan?", "finite?", "infinite?", "rationalize", "ceil",
         "floor", "round", "divmod", "between?", "clamp", "step",
         "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "<=>", NULL
     };
@@ -2439,7 +2439,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                     "integer?", "bit_length", "size", "coerce", NULL };
                 static const char *probe_float[] = {
                     "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "<=>",
-                    "to_f", "to_i", "to_r", "abs", "ceil", "floor", "round", "truncate",
+                    "to_f", "to_i", "to_r", "abs", "rationalize", "ceil", "floor", "round", "truncate",
                     "zero?", "nan?", "infinite?", "finite?", "positive?", "negative?",
                     "nonzero?", "divmod", "coerce", NULL };
                 static const char *probe_str[] = {
@@ -2660,7 +2660,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                 return builtin_kernel(ev, env, name, args, argc, blk, site);
         }
     }
-    if (recv.kind == VAL_NIL && dispatch_nil(ev, recv, name, site, &out)) return out;
+    if (recv.kind == VAL_NIL && dispatch_nil(ev, env, recv, name, site, &out)) return out;
     if (dispatch_bool(ev, recv, name, site, &out)) return out;
 
     /* Boolean comparison methods that need args */

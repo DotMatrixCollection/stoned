@@ -136,7 +136,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
                   Value *blk, Node *site, Value *out);
 int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out);
-int dispatch_nil(Eval *ev, Value recv, const char *name, Node *site, Value *out);
+int dispatch_nil(Eval *ev, Env *env, Value recv, const char *name, Node *site, Value *out);
 int dispatch_bool(Eval *ev, Value recv, const char *name, Node *site, Value *out);
 int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out, int public_only, int explicit_receiver);

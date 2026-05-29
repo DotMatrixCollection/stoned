@@ -1,0 +1,14 @@
+2
+2
+[3, 4]
+Enumerator
+[3, 4]
+Enumerator
+[[:x, 3], [:y, 4]]
+[4, 3, 4, nil]
+NameError
+no member 'z' in struct
+NameError
+no member 'z' in struct
+NameError
+no member 'z' in struct
