@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `602` tests are passing, birb's REPL fully evaluates expressions and echoes results, and a substantial RubyGems/Bundler bringup path now exists for compatibility probes. It is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `603` tests are passing, birb's REPL fully evaluates expressions and echoes results, and a substantial RubyGems/Bundler bringup path now exists for compatibility probes. It is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -67,7 +67,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `602 passed, 0 failed, 602 total`. Recent additions include pattern matching, Fiber basics, broader method/binding reflection, native `IO.pipe`, Rational/Complex numeric parity, exact-ish `Float#to_r` plus `Float#rationalize`, frozen collection mutation guards, collection clone/singleton preservation, Struct keyword-init and enumerator helpers, and continued RubyGems/Bundler command-surface bringup around local install, lockfile, config, binstub, activation, and `bundle exec` workflows.
+Current coverage in the tree: `603 passed, 0 failed, 603 total`. Recent additions include pattern matching, Fiber basics, broader method/binding reflection, native `IO.pipe`, Rational/Complex numeric parity, exact-ish `Float#to_r` plus `Float#rationalize`, frozen collection mutation guards, collection clone/singleton preservation, Struct keyword-init and enumerator helpers, a method/ancestor/visibility compatibility matrix, and continued RubyGems/Bundler command-surface bringup around local install, lockfile, config, binstub, activation, and `bundle exec` workflows.
 
 Bundler bringup note:
 
