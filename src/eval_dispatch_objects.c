@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/stat.h>
@@ -235,6 +236,32 @@ static Value file_string_with_mode_encoding(Arena *arena, const char *buf, size_
 }
 static int mode_allows_read(const char *mode){ return mode_is_read(mode); }
 static int mode_allows_write(const char *mode){ return mode_is_write(mode) || mode_is_append(mode); }
+
+static const char *encoding_find_key(const char *name) {
+    if (!name) return NULL;
+    if (strcasecmp(name, "UTF-8") == 0 || strcasecmp(name, "UTF_8") == 0 || strcasecmp(name, "UTF8") == 0)
+        return "UTF_8";
+    if (strcasecmp(name, "US-ASCII") == 0 || strcasecmp(name, "US_ASCII") == 0)
+        return "US_ASCII";
+    if (strcasecmp(name, "ASCII-8BIT") == 0 || strcasecmp(name, "ASCII_8BIT") == 0 ||
+        strcasecmp(name, "BINARY") == 0)
+        return "ASCII_8BIT";
+    if (strcasecmp(name, "EUC-JP") == 0 || strcasecmp(name, "EUC_JP") == 0)
+        return "EUC_JP";
+    if (strcasecmp(name, "Windows-31J") == 0 || strcasecmp(name, "Windows_31J") == 0)
+        return "Windows_31J";
+    if (strcasecmp(name, "ISO-8859-1") == 0 || strcasecmp(name, "ISO_8859_1") == 0)
+        return "ISO_8859_1";
+    if (strcasecmp(name, "UTF-16BE") == 0 || strcasecmp(name, "UTF_16BE") == 0)
+        return "UTF_16BE";
+    if (strcasecmp(name, "UTF-16LE") == 0 || strcasecmp(name, "UTF_16LE") == 0)
+        return "UTF_16LE";
+    if (strcasecmp(name, "UTF-32BE") == 0 || strcasecmp(name, "UTF_32BE") == 0)
+        return "UTF_32BE";
+    if (strcasecmp(name, "UTF-32LE") == 0 || strcasecmp(name, "UTF_32LE") == 0)
+        return "UTF_32LE";
+    return name;
+}
 
 static NativeFile *native_file(Value recv) {
     return recv.kind == VAL_OBJECT ? (NativeFile *)recv.obj->native : NULL;
@@ -1770,7 +1797,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             *out = eval_raise_class(ev, site, "ArgumentError", "Encoding.find requires a String");
             return 1;
         }
-        const char *enc_name = args[0].sval;
+        const char *enc_name = encoding_find_key(args[0].sval);
         Value enc_obj = val_nil();
         env_get(recv.klass->class_env, enc_name, &enc_obj);
         if (enc_obj.kind == VAL_NIL) {
@@ -1810,7 +1837,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         Value assigned = args[0];
         if (assigned.kind == VAL_STRING) {
             Value enc = val_nil();
-            env_get(recv.klass->class_env, assigned.sval, &enc);
+            env_get(recv.klass->class_env, encoding_find_key(assigned.sval), &enc);
             if (enc.kind == VAL_NIL) {
                 env_get(recv.klass->class_env, "UTF_8", &enc);
             }

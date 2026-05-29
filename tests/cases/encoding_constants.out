@@ -2,8 +2,12 @@ Encoding
 Encoding
 Encoding
 Encoding
+ASCII-8BIT
+ASCII-8BIT
 UTF-8
-true
+ASCII-8BIT
+UTF-8
+false
 US-ASCII
 UTF-8
 ASCII-8BIT
