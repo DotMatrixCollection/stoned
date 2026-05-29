@@ -4733,8 +4733,9 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 if (val_object_get_ivar(recv, "__method__", &stored_method) &&
                     stored_method.kind == VAL_METHOD && stored_method.method.def_node) {
                     RubyClass *owner_klass = NULL;
-                    if (receiver.kind == VAL_OBJECT && receiver.obj->klass.kind == VAL_CLASS)
-                        owner_klass = receiver.obj->klass.klass;
+                    Value owner_v = val_nil();
+                    if (val_object_get_ivar(recv, "__owner__", &owner_v) && owner_v.kind == VAL_CLASS)
+                        owner_klass = owner_v.klass;
                     *out = call_method_value(ev, env, receiver, stored_method, owner_klass,
                                              method_name_v.sval, args, argc, blk, site);
                 } else {

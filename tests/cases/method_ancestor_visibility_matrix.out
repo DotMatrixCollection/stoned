@@ -9,3 +9,9 @@ NoMethodError
 dynamic
 true
 false
+MatrixMethodPrepended
+prepended>child>base
+MatrixMethodChild
+child>base
+MatrixMethodBase
+base

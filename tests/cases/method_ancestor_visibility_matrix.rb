@@ -82,3 +82,31 @@ dyn = MatrixDynamic.new
 puts dyn.dynamic_value
 puts dyn.respond_to?(:dynamic_value)
 puts dyn.public_methods.include?(:respond_to_missing?)
+
+module MatrixMethodPrepended
+  def value
+    "prepended>#{super}"
+  end
+end
+
+class MatrixMethodBase
+  def value
+    "base"
+  end
+end
+
+class MatrixMethodChild < MatrixMethodBase
+  prepend MatrixMethodPrepended
+
+  def value
+    "child>#{super}"
+  end
+end
+
+method = MatrixMethodChild.new.method(:value)
+puts method.owner.name
+puts method.call
+puts method.super_method.owner.name
+puts method.super_method.call
+puts method.super_method.super_method.owner.name
+puts method.super_method.super_method.call
