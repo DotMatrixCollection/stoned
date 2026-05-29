@@ -155,3 +155,85 @@ puts MatrixClassSideOnly.build
 puts MatrixClassSideSuper.chain
 puts MatrixClassSideBefore.respond_to?(:build)
 puts MatrixClassSideBefore.methods.include?(:build)
+
+class MatrixSingletonBase
+  def self.base_only
+    "base"
+  end
+
+  def self.chain
+    "base"
+  end
+end
+
+class MatrixSingletonChild < MatrixSingletonBase
+  class << self
+    def child_only
+      "child"
+    end
+
+    def chain
+      "child>#{super}"
+    end
+
+    private
+
+    def secret
+      "secret"
+    end
+  end
+end
+
+puts MatrixSingletonChild.child_only
+puts MatrixSingletonChild.base_only
+puts MatrixSingletonChild.chain
+puts MatrixSingletonChild.respond_to?(:secret)
+puts MatrixSingletonChild.respond_to?(:secret, true)
+
+begin
+  MatrixSingletonChild.public_send(:secret)
+rescue => e
+  puts e.class
+end
+
+module MatrixFunctionModule
+  def helper
+    "helper"
+  end
+
+  def exposed
+    "exposed"
+  end
+
+  module_function :exposed
+end
+
+puts MatrixFunctionModule.exposed
+puts MatrixFunctionModule.respond_to?(:exposed)
+puts MatrixFunctionModule.private_instance_methods.include?(:exposed)
+puts MatrixFunctionModule.public_instance_methods.include?(:helper)
+puts MatrixFunctionModule.respond_to?(:helper)
+
+class MatrixFunctionHost
+  include MatrixFunctionModule
+
+  def call_helper
+    helper
+  end
+
+  def call_exposed
+    exposed
+  end
+end
+
+puts MatrixFunctionHost.new.call_helper
+puts MatrixFunctionHost.new.respond_to?(:exposed)
+puts MatrixFunctionHost.new.respond_to?(:exposed, true)
+
+begin
+  MatrixFunctionHost.new.public_send(:exposed)
+rescue => e
+  puts e.class
+end
+
+puts MatrixFunctionHost.new.call_exposed
