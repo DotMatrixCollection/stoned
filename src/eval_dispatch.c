@@ -142,7 +142,7 @@ int builtin_method_arity(const char *mname) {
         "valid_encoding?","force_encoding","b","hex","oct","dump","undump",
         "next","peek","rewind","size","to_a","next_values","peek_values",
         /* block-taking Enumerable/Array methods: block not counted in arity */
-        "each","reverse_each","map","collect","select","find_all","filter","reject","find","detect","find_index","any?","all?",
+        "each","reverse_each","cycle","map","collect","select","find_all","filter","reject","find","detect","find_index","any?","all?",
         "none?","one?","grep","grep_v","each_with_index","flat_map","collect_concat","group_by","sort_by",
         "min_by","max_by","minmax_by","count","each_slice","each_cons","each_with_object",
         "tally","chunk","chunk_while","slice_when","map!","collect!","select!","filter!",
@@ -553,7 +553,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "shift", "unshift", "prepend", "reverse", "reverse_each", "to_s", "to_a", "to_ary", "inspect", "join", "include?",
         "each", "each_with_index", "map", "collect", "select", "find_all", "filter", "reject",
         "reduce", "inject", "any?", "all?", "none?", "one?", "min", "max", "sum", "flatten",
-        "uniq", "sort", "compact", "zip", "grep", "grep_v", "replace", NULL
+        "uniq", "sort", "compact", "zip", "cycle", "grep", "grep_v", "replace", NULL
     };
     static const char *hash_methods[] = {
         "[]", "[]=", "fetch", "has_key?", "key?", "include?", "member?", "has_value?",
@@ -566,7 +566,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "transform_values!", "transform_keys!", "filter_map", "slice", "except",
         "invert", "key", "assoc", "rassoc", "values_at", "fetch_values",
         "group_by", "tally", "flat_map", "zip", "each_with_index", "min", "max",
-        "sum", "reduce", "inject", "first", "take", "drop", "replace",
+        "sum", "reduce", "inject", "first", "take", "drop", "cycle", "replace",
         NULL
     };
     static const char *proc_methods[] = {
@@ -577,7 +577,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "include?", "member?", "cover?", "===",
         "each", "reverse_each", "each_with_index", "to_a", "entries",
         "size", "count", "length", "min", "max", "step",
-        "map", "collect", "select", "find_all", "filter", "reject", "find_index", "grep", "grep_v", "one?",
+        "map", "collect", "select", "find_all", "filter", "reject", "find_index", "grep", "grep_v", "one?", "cycle",
         "to_s", "inspect", NULL
     };
     static const char *symbol_methods[] = {
