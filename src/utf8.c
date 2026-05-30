@@ -7,7 +7,6 @@ int utf8_decode_one(const char *s, size_t len, uint32_t *codepoint, size_t *widt
 
     if (!s || len == 0) return 0;
     c0 = (unsigned char)s[0];
-    if (c0 == 0) return 0;
 
     if (c0 < 0x80) {
         cp = c0;

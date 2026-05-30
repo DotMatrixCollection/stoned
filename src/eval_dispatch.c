@@ -3153,7 +3153,8 @@ Value eval_call(Eval *ev, Env *env, Node *node) {
             return eval_raise_class(ev, node, "TypeError", "'%s' is not a method", name);
 
 call_method:
-        if (!env_get(env, name, &fn))
+        /* fn is already set by the goto site; don't re-fetch and clobber it */
+        if (fn.kind != VAL_METHOD)
             return eval_raise_class(ev, node, "NoMethodError", "undefined method '%s'", name);
         Node *def = fn.method.def_node;
         Env *closure = fn.method.closure;

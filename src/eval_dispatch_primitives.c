@@ -1734,7 +1734,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "ord") == 0) {
         uint32_t cp = 0;
-        if (s[0] == '\0' || !utf8_decode_one(s, strlen(s), &cp, NULL)) {
+        if (recv.byte_len == 0 || !utf8_decode_one(s, recv.byte_len, &cp, NULL)) {
             *out = eval_raise_class(ev, site, "ArgumentError", "empty string");
             return 1;
         }

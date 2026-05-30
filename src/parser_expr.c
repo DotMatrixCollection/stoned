@@ -1137,17 +1137,18 @@ Node *parse_primary(Parser *p) {
                 return n;
             }
             Token nxt = peek(p);
+            // CONST(args) with adjacent paren is always a method call in Ruby
+            if (nxt.kind == TOK_LPAREN && token_adjacent(t, nxt)) {
+                advance(p);
+                NodeList *args = parse_args(p);
+                expect(p, TOK_RPAREN, "expected ')'");
+                Node *block = NULL;
+                if (check(p, TOK_LBRACE) || check(p, TOK_DO)) block = parse_block(p);
+                Node *n = node_new(p->arena, NODE_CALL, s);
+                n->call.recv = NULL; n->call.method = t.sval; n->call.args = args; n->call.block = block;
+                return n;
+            }
             if (kernel_const_call_name(t.sval)) {
-                if (nxt.kind == TOK_LPAREN && token_adjacent(t, nxt)) {
-                    advance(p);
-                    NodeList *args = parse_args(p);
-                    expect(p, TOK_RPAREN, "expected ')'");
-                    Node *block = NULL;
-                    if (check(p, TOK_LBRACE) || check(p, TOK_DO)) block = parse_block(p);
-                    Node *n = node_new(p->arena, NODE_CALL, s);
-                    n->call.recv = NULL; n->call.method = t.sval; n->call.args = args; n->call.block = block;
-                    return n;
-                }
                 int lparen_as_arg = (nxt.kind == TOK_LPAREN && nxt.col > t.col + t.len);
                 int lbracket_as_arg = (nxt.kind == TOK_LBRACKET && nxt.col > t.col + t.len);
                 Token sign_arg = peek_next_token(p);
