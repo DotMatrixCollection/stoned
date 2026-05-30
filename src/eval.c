@@ -1797,6 +1797,16 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             for (NodeList *l = node->hash.pairs; l; l = l->next) {
                 Node *pair = l->node;
                 if (!pair || pair->kind != NODE_PAIR) continue;
+                if (!pair->pair.key) {
+                    /* **kwsplat: merge the value hash */
+                    Value splat = eval_node(ev, env, pair->pair.value);
+                    CHECK(splat);
+                    if (splat.kind == VAL_HASH && splat.hash) {
+                        for (size_t i = 0; i < splat.hash->len; i++)
+                            val_hash_set(h.hash, splat.hash->keys[i], splat.hash->vals[i]);
+                    }
+                    continue;
+                }
                 Value key = eval_node(ev, env, pair->pair.key);
                 CHECK(key);
                 Value val = eval_node(ev, env, pair->pair.value);

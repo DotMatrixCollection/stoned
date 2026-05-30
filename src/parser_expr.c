@@ -1333,6 +1333,21 @@ Node *parse_primary(Parser *p) {
             p->allow_command_arg_commas = 0;
             skip_terminators(p);
             while (!check(p, TOK_RBRACE) && !check(p, TOK_EOF)) {
+                Span ps = tok_span(peek(p));
+                /* **hash_expr — kwsplat in hash literal */
+                if (check(p, TOK_STAR2)) {
+                    advance(p);
+                    Node *splat_val = parse_expr(p, 0);
+                    if (!splat_val) break;
+                    Node *pair = node_new(p->arena, NODE_PAIR, ps);
+                    pair->pair.key = NULL;  /* sentinel: kwsplat entry */
+                    pair->pair.value = splat_val;
+                    pairs = nodelist_append(p->arena, pairs, pair);
+                    skip_terminators(p);
+                    if (!match(p, TOK_COMMA)) break;
+                    skip_terminators(p);
+                    continue;
+                }
                 int used_label = 0;
                 Node *key = parse_hash_key(p, &used_label);
                 if (!key) break;
