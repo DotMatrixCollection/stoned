@@ -21,6 +21,46 @@ extern char **environ;
 
 static Value val_class_of(Eval *ev, Value v);
 static Value infer_builtin_method_owner(Eval *ev, Value recv);
+
+static uint64_t val_content_hash(Value v, int depth) {
+    if (depth > 16) return 0;
+    uint64_t h = 14695981039346656037ULL;
+    #define MIX(x) h ^= (uint64_t)(x); h *= 1099511628211ULL
+    switch (v.kind) {
+        case VAL_NIL:    MIX(1); break;
+        case VAL_BOOL:   MIX(v.ival ? 3 : 5); break;
+        case VAL_INT:    MIX(v.ival); break;
+        case VAL_FLOAT:  { uint64_t bits; memcpy(&bits, &v.fval, 8); MIX(bits); break; }
+        case VAL_SYMBOL:
+        case VAL_STRING: {
+            const char *s = v.sval ? v.sval : "";
+            MIX(v.kind);
+            while (*s) { MIX((uint8_t)*s++); }
+            break;
+        }
+        case VAL_ARRAY:
+            if (v.array) {
+                MIX(100);
+                for (size_t i = 0; i < v.array->len; i++)
+                    MIX(val_content_hash(v.array->elems[i], depth + 1));
+            }
+            break;
+        case VAL_HASH:
+            if (v.hash) {
+                MIX(200);
+                for (size_t i = 0; i < v.hash->len; i++) {
+                    MIX(val_content_hash(v.hash->keys[i], depth + 1));
+                    MIX(val_content_hash(v.hash->vals[i], depth + 1));
+                }
+            }
+            break;
+        default:
+            MIX((uintptr_t)v.obj);
+            break;
+    }
+    #undef MIX
+    return h >> 1; /* keep positive as Ruby int */
+}
 static const char *method_obj_methods[] = {
     "name", "original_name", "owner", "receiver", "unbind", "call", "[]", "===",
     "bind_call", "arity", "parameters", "super_method", "to_proc", "curry", ">>", "<<", "source_location",
@@ -2307,8 +2347,9 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             Value disp_out;
             if (dispatch_object(ev, env, recv, "hash", args, argc, blk, site, &disp_out, public_only, explicit_receiver))
                 return disp_out;
+            return val_int((int64_t)(uintptr_t)recv.obj);
         }
-        return dispatch_method(ev, env, recv, "object_id", NULL, 0, NULL, site, 0, 1);
+        return val_int((int64_t)val_content_hash(recv, 0));
     }
     if (strcmp(name, "==") == 0) {
         if (argc < 1) return val_false();
