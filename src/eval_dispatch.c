@@ -553,7 +553,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "shift", "unshift", "prepend", "reverse", "reverse_each", "to_s", "to_a", "to_ary", "inspect", "join", "include?",
         "each", "each_with_index", "map", "collect", "select", "find_all", "filter", "reject",
         "reduce", "inject", "any?", "all?", "none?", "one?", "min", "max", "sum", "flatten",
-        "uniq", "sort", "compact", "zip", "cycle", "grep", "grep_v", "partition", "replace", NULL
+        "uniq", "sort", "compact", "zip", "cycle", "grep", "grep_v", "partition", "flat_map", "collect_concat", "replace", NULL
     };
     static const char *hash_methods[] = {
         "[]", "[]=", "fetch", "has_key?", "key?", "include?", "member?", "has_value?",
@@ -561,7 +561,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "to_s", "inspect", "to_a", "to_h", "merge", "merge!", "update", "each", "each_pair",
         "each_key", "each_value", "each_with_object", "map", "collect", "select", "find_all", "filter",
         "reject", "any?", "all?", "none?", "one?", "find", "detect", "find_index", "reverse_each", "grep", "grep_v", "partition",
-        "min_by", "max_by", "sort_by", "sort", "flat_map", "reduce", "inject", "store",
+        "min_by", "max_by", "sort_by", "sort", "flat_map", "collect_concat", "reduce", "inject", "store",
         "clear", "dup", "nil?", "freeze", "frozen?", "transform_values", "transform_keys",
         "transform_values!", "transform_keys!", "filter_map", "slice", "except",
         "invert", "key", "assoc", "rassoc", "values_at", "fetch_values",
@@ -577,7 +577,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "include?", "member?", "cover?", "===",
         "each", "reverse_each", "each_with_index", "to_a", "entries",
         "size", "count", "length", "min", "max", "step",
-        "map", "collect", "select", "find_all", "filter", "reject", "find_index", "grep", "grep_v", "one?", "cycle", "partition",
+        "map", "collect", "select", "find_all", "filter", "reject", "find_index", "grep", "grep_v", "one?", "cycle", "partition", "flat_map", "collect_concat",
         "to_s", "inspect", NULL
     };
     static const char *symbol_methods[] = {
