@@ -1,5 +1,6 @@
 --LIST-BEFORE--
 *** LOCAL GEMS ***
+
 cleanme (1.0.0, 2.0.0, 3.0.0)
 --CLEANUP--
 Removing cleanme-1.0.0
@@ -7,6 +8,7 @@ Removing cleanme-2.0.0
 Cleaned up 2 old gem versions
 --LIST-AFTER--
 *** LOCAL GEMS ***
+
 cleanme (3.0.0)
 --V1-GONE--
 false

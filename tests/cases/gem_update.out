@@ -1,5 +1,6 @@
 --LIST-BEFORE--
 *** LOCAL GEMS ***
+
 updgem (1.0.0)
 --UPDATE--
 Fetching latest version info for updgem...
@@ -9,6 +10,7 @@ Downloading file:///tmp/stoned_gem_update_/server/gems/updgem-2.0.0.gem...
 Successfully installed updgem-2.0.0
 --LIST-AFTER--
 *** LOCAL GEMS ***
+
 updgem (1.0.0, 2.0.0)
 --ALREADY-LATEST--
 Fetching latest version info for updgem...

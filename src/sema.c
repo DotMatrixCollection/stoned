@@ -569,6 +569,19 @@ static void resolve(Sema *s, Node *node) {
                 resolve(s, l->node);
             break;
 
+        case NODE_CASE: {
+            resolve(s, node->case_stmt.subject);
+            for (NodeList *l = node->case_stmt.whens; l; l = l->next) {
+                Node *w = l->node;
+                if (!w || w->kind != NODE_WHEN) continue;
+                for (NodeList *p = w->when_clause.patterns; p; p = p->next)
+                    resolve(s, p->node);
+                resolve(s, w->when_clause.body);
+            }
+            resolve(s, node->case_stmt.else_body);
+            break;
+        }
+
         case NODE_PATCASE:
             resolve(s, node->patcase.subject);
             for (NodeList *l = node->patcase.ins; l; l = l->next) {
