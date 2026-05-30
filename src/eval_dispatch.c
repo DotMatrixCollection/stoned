@@ -1858,6 +1858,28 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             return dispatch_method(ev, env, recv, alias_target, args, argc, blk, site, public_only, explicit_receiver);
     }
 
+    /* User-defined instance methods take priority over built-in Kernel handlers.
+       Check the class hierarchy first for VAL_OBJECT before any built-in dispatch. */
+    if (recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS) {
+        Value um; RubyClass *um_owner = NULL;
+        if (ruby_class_find_instance_method(recv.obj->klass.klass, name, &um, &um_owner) &&
+            um.kind == VAL_METHOD) {
+            if (!method_visibility_allows_call(ev, env, recv, um_owner, um.method.visibility,
+                                               public_only, explicit_receiver)) {
+                if (um.method.visibility == METHOD_PROTECTED)
+                    return eval_raise_class(ev, site, "NoMethodError",
+                                            "protected method '%s' called for an instance of %s",
+                                            name, value_class_name(ev, recv));
+                if (um.method.visibility == METHOD_PRIVATE)
+                    return eval_raise_class(ev, site, "NoMethodError",
+                                            "private method '%s' called for an instance of %s",
+                                            name, value_class_name(ev, recv));
+            } else {
+                return call_method_value(ev, env, recv, um, um_owner, name, args, argc, blk, site);
+            }
+        }
+    }
+
     if (strcmp(name, "nil?") == 0) {
         if (argc != 0) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         return val_bool(recv.kind == VAL_NIL);
