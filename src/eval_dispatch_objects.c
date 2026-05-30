@@ -3938,13 +3938,23 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         if (!cname) { *out = eval_raise_class(ev, site, "TypeError", "const_set name must be a Symbol or String"); return 1; }
         if (!recv.klass->class_env) recv.klass->class_env = env_new(ev->arena, ev->top_env, 1);
         env_define(ev->arena, recv.klass->class_env, cname, args[1]);
-        /* Also register as flat path in top_env for nested const lookup */
+        /* Also register in top_env: bare name (Object constants are global) and Namespace::Name */
+        int is_object = (strcmp(recv.klass->name, "Object") == 0);
+        if (is_object) env_define(ev->arena, ev->top_env, cname, args[1]);
         size_t plen = strlen(recv.klass->name), nlen = strlen(cname);
         char *flat = arena_alloc(ev->arena, plen + 2 + nlen + 1);
         memcpy(flat, recv.klass->name, plen);
         memcpy(flat + plen, "::", 2);
         memcpy(flat + plen + 2, cname, nlen + 1);
         env_define(ev->arena, ev->top_env, flat, args[1]);
+        /* If the value is a class/module, update its name and register in its own class_env */
+        if (args[1].kind == VAL_CLASS && args[1].klass &&
+            (strncmp(args[1].klass->name, "#<", 2) == 0)) {
+            /* Copy name into arena — cname is already arena-allocated from sval */
+            args[1].klass->name = cname;
+            if (args[1].klass->class_env)
+                env_define(ev->arena, args[1].klass->class_env, cname, args[1]);
+        }
         *out = args[1]; return 1;
     }
     /* ---- Class reflection ---- */
@@ -4194,7 +4204,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             }
             const char *hook = is_prepend ? "self.prepended" : "self.included";
             Value hm;
-            if (args[i].klass->class_env && env_get(args[i].klass->class_env, hook, &hm) && hm.kind == VAL_METHOD)
+            if (args[i].klass->class_env && env_get_own(args[i].klass->class_env, hook, &hm) && hm.kind == VAL_METHOD)
                 call_method_value(ev, env, args[i], hm, args[i].klass, is_prepend ? "prepended" : "included", &recv, 1, NULL, site);
         }
         *out = recv;

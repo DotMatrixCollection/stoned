@@ -270,11 +270,12 @@ Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *site) {
         for (int i = 0; i < argc; i++)
             copy_module_methods(ev, *slot, args[i].klass, 0);
     }
-    /* Fire Module.extended(base) hook for each extended module */
+    /* Fire Module.extended(base) hook for each extended module.
+       Use env_get_own to avoid walking into parent module envs. */
     for (int i = 0; i < argc; i++) {
         if (args[i].kind != VAL_CLASS) continue;
         Value cm;
-        if (env_get(args[i].klass->class_env, "self.extended", &cm) && cm.kind == VAL_METHOD)
+        if (env_get_own(args[i].klass->class_env, "self.extended", &cm) && cm.kind == VAL_METHOD)
             call_method_value(ev, ev->top_env, args[i], cm, args[i].klass, "extended", &self, 1, NULL, site);
     }
     return self;
@@ -1595,13 +1596,14 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
             inc->mod = args[i].klass;
             inc->next = self.klass->included_modules;
             self.klass->included_modules = inc;
-            /* Call Module.included(base) hook if defined */
+            /* Call Module.included(base) hook if defined.
+               Use env_get_own to avoid inheriting hooks from parent module envs. */
             {
                 size_t ilen = strlen("included");
                 char *ikey = arena_alloc(ev->arena, ilen + 6);
                 memcpy(ikey, "self.", 5); memcpy(ikey + 5, "included", ilen + 1);
                 Value cm;
-                if (env_get(args[i].klass->class_env, ikey, &cm) && cm.kind == VAL_METHOD) {
+                if (env_get_own(args[i].klass->class_env, ikey, &cm) && cm.kind == VAL_METHOD) {
                     call_method_value(ev, env, args[i], cm, args[i].klass, "included", &self, 1, NULL, site);
                 }
             }
