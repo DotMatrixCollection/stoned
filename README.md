@@ -4,7 +4,7 @@
 
 This project is a from-scratch Ruby interpreter written in C so you can see how the language works instead of treating it like magic. Think of it like taking apart a toy robot and rebuilding the brain, one piece at a time, until it can walk and talk on its own.
 
-Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `610` tests are passing, birb's REPL fully evaluates expressions and echoes results, and a substantial RubyGems/Bundler bringup path now exists for compatibility probes. It is still honest about not being Ruby-complete yet.
+Right now it is past the "barely starts" stage and into "serious prototype" territory. The parser, semantic pass, evaluator, and regression suite are all in place, `611` tests are passing, birb's REPL fully evaluates expressions and echoes results, and a substantial RubyGems/Bundler bringup path now exists for compatibility probes. It is still honest about not being Ruby-complete yet.
 
 A Ruby interpreter written in C. It is still prototype-grade, but it now has a coherent end-to-end pipeline, a regression suite, and a growing subset of Ruby semantics that work reliably.
 
@@ -67,7 +67,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `610 passed, 0 failed, 610 total`. Recent additions include pattern matching, Fiber basics, broader method/binding reflection, native `IO.pipe`, Rational/Complex numeric parity, exact-ish `Float#to_r` plus `Float#rationalize`, frozen collection mutation guards, collection clone/singleton preservation, Struct keyword-init and enumerator helpers, a method/ancestor/visibility compatibility matrix, embedded-NUL string coverage, broader Enumerable grep/filter aliases, and continued RubyGems/Bundler command-surface bringup around local install, lockfile, config, binstub, activation, and `bundle exec` workflows.
+Current coverage in the tree: `611 passed, 0 failed, 611 total`. Recent additions include pattern matching, Fiber basics, broader method/binding reflection, native `IO.pipe`, Rational/Complex numeric parity, exact-ish `Float#to_r` plus `Float#rationalize`, frozen collection mutation guards, collection clone/singleton preservation, Struct keyword-init and enumerator helpers, a method/ancestor/visibility compatibility matrix, embedded-NUL string coverage, broader Enumerable grep/filter aliases and `one?`, and continued RubyGems/Bundler command-surface bringup around local install, lockfile, config, binstub, activation, and `bundle exec` workflows.
 
 Bundler bringup note:
 
@@ -85,7 +85,7 @@ What is working today:
 - Classes: instance methods, `def self.foo`, `class << self` / singleton-class bodies, inheritance, `initialize`, instance variables, `super` with checked arg forwarding, class reopening, `attr_reader`/`attr_writer`/`attr_accessor`
 - Visibility: `public`, `private`, `protected`, `private_class_method`/`public_class_method`/`protected_class_method`, `respond_to?` with `include_private`, explicit receiver restrictions, protected same-family receiver calls, `public_send` refusing hidden real methods
 - Modules: `module Foo ... end`, `include`, `prepend`, `extend`, instance method lookup through included and prepended modules, `super` through module ancestors
-- Built-in mixins: `Comparable` (`<`, `<=`, `>`, `>=`, `between?`, `clamp`) and `Enumerable` (`find`, `detect`, `entries`, `to_a`, `first`, `take`, `drop`, `count`, `map`/`collect`, `select`/`find_all`/`filter`, `reject`, `grep`, `grep_v`, `reduce`/`inject`, `any?`, `all?`, `none?`, `include?`/`member?`, `min`, `max`, `minmax`, `min_by`, `max_by`, `minmax_by`, `sort`, `sort_by`, `sum`, `flat_map`, `each_with_object`, `zip`, `group_by`, `tally`, `filter_map`, `each_slice`, `each_cons`, `take_while`, `drop_while`)
+- Built-in mixins: `Comparable` (`<`, `<=`, `>`, `>=`, `between?`, `clamp`) and `Enumerable` (`find`, `detect`, `entries`, `to_a`, `first`, `take`, `drop`, `count`, `map`/`collect`, `select`/`find_all`/`filter`, `reject`, `grep`, `grep_v`, `reduce`/`inject`, `any?`, `all?`, `none?`, `one?`, `include?`/`member?`, `min`, `max`, `minmax`, `min_by`, `max_by`, `minmax_by`, `sort`, `sort_by`, `sum`, `flat_map`, `each_with_object`, `zip`, `group_by`, `tally`, `filter_map`, `each_slice`, `each_cons`, `take_while`, `drop_while`)
 - File loading: `require_relative`, `require`, `$LOAD_PATH` search, duplicate-load skipping, canonicalized feature identity across normalized relative, absolute, and mixed spellings, readable `LoadError` reporting on load failures, and `__dir__`
 - Dispatch hooks: `method_missing` and `respond_to_missing?` for objects, classes, and primitive-backed reopened classes; class/module reflection is now consistent across `class`, `is_a?`, and `instance_of?`, with stricter arity enforcement on core reflection built-ins and user-defined methods
 - Method reflection: `Object#method`, `Class#instance_method`, `Method#name`/`owner`/`receiver`/`arity`/`parameters`/`source_location`/`super_method`/`to_proc`/`curry`/`unbind`, `UnboundMethod#name`/`owner`/`arity`/`parameters`/`source_location`/`super_method`/`bind`/`bind_call`, plus method-object equality, hashing, `===`, and stable `inspect`/`to_s` semantics for repeated lookups
