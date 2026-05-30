@@ -2625,6 +2625,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  end\n"
         "\n"
         "  def partition\n"
+        "    return to_enum(:partition) unless block_given?\n"
         "    left = []; right = []\n"
         "    each do |x|\n"
         "      if yield(x); left << x; else; right << x; end\n"
