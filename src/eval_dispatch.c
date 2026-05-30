@@ -145,7 +145,7 @@ int builtin_method_arity(const char *mname) {
         "each","reverse_each","cycle","map","collect","select","find_all","filter","reject","find","detect","find_index","any?","all?",
         "none?","one?","grep","grep_v","partition","each_with_index","flat_map","collect_concat","group_by","sort_by",
         "min_by","max_by","minmax_by","count","each_slice","each_cons","each_with_object",
-        "tally","chunk","chunk_while","slice_when","map!","collect!","select!","filter!",
+        "tally","chunk","chunk_while","slice_when","slice_before","map!","collect!","select!","filter!",
         "reject!","delete_if","keep_if","each_line","each_char","each_byte","each_key",
         "each_value","shuffle","flatten!","compact!",
         NULL
@@ -553,7 +553,8 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "shift", "unshift", "prepend", "reverse", "reverse_each", "to_s", "to_a", "to_ary", "inspect", "join", "include?",
         "each", "each_with_index", "map", "collect", "select", "find_all", "filter", "reject",
         "reduce", "inject", "any?", "all?", "none?", "one?", "min", "max", "sum", "flatten",
-        "uniq", "sort", "compact", "zip", "cycle", "grep", "grep_v", "partition", "flat_map", "collect_concat", "replace", NULL
+        "uniq", "sort", "compact", "zip", "cycle", "grep", "grep_v", "partition", "flat_map", "collect_concat",
+        "chunk", "chunk_while", "slice_when", "slice_before", "replace", NULL
     };
     static const char *hash_methods[] = {
         "[]", "[]=", "fetch", "has_key?", "key?", "include?", "member?", "has_value?",
@@ -566,6 +567,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "transform_values!", "transform_keys!", "filter_map", "slice", "except",
         "invert", "key", "assoc", "rassoc", "values_at", "fetch_values",
         "group_by", "tally", "flat_map", "zip", "each_with_index", "min", "max",
+        "chunk", "chunk_while", "slice_when", "slice_before",
         "sum", "reduce", "inject", "first", "take", "drop", "cycle", "replace",
         NULL
     };
@@ -578,6 +580,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "each", "reverse_each", "each_with_index", "to_a", "entries",
         "size", "count", "length", "min", "max", "step",
         "map", "collect", "select", "find_all", "filter", "reject", "find_index", "grep", "grep_v", "one?", "cycle", "partition", "flat_map", "collect_concat",
+        "chunk", "chunk_while", "slice_when", "slice_before",
         "to_s", "inspect", NULL
     };
     static const char *symbol_methods[] = {
