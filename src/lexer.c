@@ -472,10 +472,13 @@ static Token scan_char_literal(Lexer *l, size_t start, uint32_t sline, uint32_t 
 static Token scan_symbol(Lexer *l, size_t start, uint32_t sline, uint32_t scol) {
     /* ':' already consumed */
     if (peek_ch(l) == '"') {
-        advance(l);
-        Token inner = scan_string_dq(l, start, sline, scol);
-        inner.kind = TOK_SYMBOL;
-        return inner;
+        advance(l); /* consume the opening " */
+        /* Push interpolating string mode so #{...} inside :"..." works.
+           ival=2 signals the parser to wrap the result in to_sym. */
+        imode_push(l, LMODE_INTERP_STR);
+        Token t = make_tok(l, TOK_INTERP_BEG, start, sline, scol);
+        t.ival = 2; /* symbol-string flag */
+        return t;
     }
     if (peek_ch(l) == '\'') {
         advance(l);
@@ -751,6 +754,111 @@ static int preceded_by_class_keyword(const char *src, size_t start) {
     return 1;
 }
 
+/* ------------------------------------------------------------------ */
+/* Interpolated regex content scanner (LMODE_INTERP_REGEX)            */
+/*                                                                      */
+/* Like scan_interp_str_content but:                                    */
+/*   - closes on '/' when not inside a [...] character class            */
+/*   - preserves '\' escapes as-is (regex needs them verbatim)          */
+/*   - on close, reads trailing flags and stores them in TOK_INTERP_END */
+/*     using ival = flags | 0x100 as the "this is a regex end" marker  */
+/* ------------------------------------------------------------------ */
+static Token scan_interp_regex_content(Lexer *l) {
+    size_t   start = l->pos;
+    uint32_t sline = l->line;
+    uint32_t scol  = col_of(l, start);
+    int depth = l->imode_depth - 1;
+
+    int8_t *in_class = &l->regex_in_class[depth];
+
+    /* Closing '/' outside a character class → INTERP_END with flags */
+    if (!at_end(l) && peek_ch(l) == '/' && !(*in_class)) {
+        advance(l); /* consume '/' */
+        int64_t flags = 0;
+        while (!at_end(l)) {
+            char f = peek_ch(l);
+            if      (f == 'i') { flags |= 1; advance(l); }
+            else if (f == 'm') { flags |= 2; advance(l); }
+            else if (f == 'x') { flags |= 4; advance(l); }
+            else if (isalpha((unsigned char)f)) { advance(l); }
+            else break;
+        }
+        imode_pop(l);
+        Token t; memset(&t, 0, sizeof(t));
+        t.kind = TOK_INTERP_END;
+        t.ival = flags | 0x100; /* 0x100 = regex marker, low bits = flags */
+        t.line = sline; t.col = scol;
+        return t;
+    }
+
+    if (at_end(l)) {
+        /* EOF inside regex */
+        imode_pop(l);
+        Token t; memset(&t, 0, sizeof(t));
+        t.kind = TOK_INTERP_END;
+        t.ival = 0x100;
+        t.line = sline; t.col = scol;
+        return t;
+    }
+
+    /* Interpolation start before any chars → INTERP_EXPR_BEG */
+    if (peek_ch(l) == '#' && peek2(l) == '{') {
+        advance(l); advance(l);
+        imode_push(l, LMODE_INTERP_EXPR);
+        Token t; memset(&t, 0, sizeof(t));
+        t.kind = TOK_INTERP_EXPR_BEG;
+        t.line = sline; t.col = scol; t.len = 2;
+        return t;
+    }
+
+    /* Accumulate literal regex chars */
+    size_t cap  = 64;
+    char  *buf  = arena_alloc(l->arena, cap);
+    size_t blen = 0;
+
+#define RBUF_PUSH(ch) do { \
+    if (blen + 1 >= cap) { \
+        char *nb = arena_alloc(l->arena, cap * 2); \
+        memcpy(nb, buf, blen); buf = nb; cap *= 2; \
+    } \
+    buf[blen++] = (char)(ch); \
+} while(0)
+
+    while (!at_end(l)) {
+        char c = peek_ch(l);
+
+        /* Closing '/' outside character class — stop, handle next call */
+        if (c == '/' && !(*in_class)) break;
+
+        /* Interpolation — stop, handle next call */
+        if (c == '#' && peek2(l) == '{') break;
+
+        advance(l);
+
+        if (c == '\\') {
+            /* Preserve escape sequences verbatim for the regex engine */
+            RBUF_PUSH('\\');
+            if (!at_end(l)) RBUF_PUSH(advance(l));
+            continue;
+        }
+
+        /* Track character-class context so '/' inside [...] doesn't close */
+        if (c == '[' && !(*in_class)) { *in_class = 1; }
+        else if (c == ']' && *in_class)  { *in_class = 0; }
+
+        RBUF_PUSH(c);
+    }
+    RBUF_PUSH('\0');
+
+    Token t; memset(&t, 0, sizeof(t));
+    t.kind = TOK_INTERP_LIT;
+    t.sval = buf;
+    t.slen = blen > 0 ? blen - 1 : 0; /* exclude NUL */
+    t.line = sline; t.col = scol;
+    return t;
+#undef RBUF_PUSH
+}
+
 /* Called when hd_active && imode_top == LMODE_INTERP_STR.
    Reads body content from l->src[l->pos..hd_body_end), stripping
    hd_min_indent leading chars at the start of each line. */
@@ -996,6 +1104,33 @@ static Token scan_heredoc(Lexer *l, size_t start, uint32_t sline, uint32_t scol)
 /* ------------------------------------------------------------------ */
 static Token scan_regexp(Lexer *l, size_t start, uint32_t sline, uint32_t scol) {
     /* opening '/' already consumed */
+
+    /* Peek ahead: if the content has #{, use the interpolation machinery */
+    {
+        size_t save_pos = l->pos;
+        int    in_cls   = 0;
+        int    has_interp = 0;
+        while (!at_end(l)) {
+            char c = peek_ch(l);
+            if (c == '\\') { l->pos += 2; continue; }
+            if (c == '[' && !in_cls) { in_cls = 1; l->pos++; continue; }
+            if (c == ']' && in_cls)  { in_cls = 0; l->pos++; continue; }
+            if (c == '/' && !in_cls) break;
+            if (c == '#' && l->pos + 1 < l->len && l->src[l->pos + 1] == '{') {
+                has_interp = 1; break;
+            }
+            l->pos++;
+        }
+        l->pos = save_pos; /* restore; we only peeked */
+        if (has_interp) {
+            imode_push(l, LMODE_INTERP_REGEX);
+            l->regex_in_class[l->imode_depth - 1] = 0;
+            Token t = make_tok(l, TOK_INTERP_BEG, start, sline, scol);
+            t.ival = 3; /* regex-string flag */
+            return t;
+        }
+    }
+
     size_t cap = 64;
     char *buf = arena_alloc(l->arena, cap);
     size_t blen = 0;
@@ -1060,6 +1195,8 @@ static Token scan(Lexer *l) {
             return scan_heredoc_content(l);
         return scan_interp_str_content(l);
     }
+    if (imode_top(l) == LMODE_INTERP_REGEX)
+        return scan_interp_regex_content(l);
 
     l->had_space = 0;
     skip_whitespace(l);

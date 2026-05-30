@@ -1024,13 +1024,19 @@ Node *parse_primary(Parser *p) {
             return parse_percent_list(p, s, t, NODE_SYMBOL);
         case TOK_INTERP_BEG: {
             int is_backtick = (t.ival == 1);
+            int is_sym_str  = (t.ival == 2);
+            int is_regex    = (t.ival == 3);
             advance(p);
+            int64_t regex_flags = 0; /* filled from TOK_INTERP_END when is_regex */
             Node *n = node_new(p->arena, NODE_ROPE, s);
             RopeNode *rope = NULL;
             parse_one_interp_string:
             while (1) {
                 Token seg = peek(p);
-                if (seg.kind == TOK_INTERP_END || seg.kind == TOK_EOF) { advance(p); break; }
+                if (seg.kind == TOK_INTERP_END || seg.kind == TOK_EOF) {
+                    if (is_regex && (seg.ival & 0x100)) regex_flags = seg.ival & ~0x100;
+                    advance(p); break;
+                }
                 if (seg.kind == TOK_INTERP_LIT) {
                     advance(p);
                     RopeNode *lit = rope_lit(p->arena, seg.sval ? seg.sval : "", seg.slen);
@@ -1077,6 +1083,33 @@ Node *parse_primary(Parser *p) {
                 NodeList *args = arena_alloc(p->arena, sizeof(NodeList));
                 args->node = n;
                 args->next = NULL;
+                call->call.args = args;
+                call->call.block = NULL;
+                return call;
+            }
+            if (is_sym_str) {
+                /* :"#{expr}" — interpolated symbol: evaluate as string then call to_sym */
+                Node *call = node_new(p->arena, NODE_CALL, s);
+                call->call.recv = n;
+                call->call.method = "to_sym";
+                call->call.args = NULL;
+                call->call.block = NULL;
+                return call;
+            }
+            if (is_regex) {
+                /* /#{expr}/ — interpolated regex: Regexp.new(string, flags) */
+                Node *const_node = node_new(p->arena, NODE_CONST, s);
+                const_node->sval = "Regexp";
+                Node *flags_node = node_new(p->arena, NODE_INT, s);
+                flags_node->ival = regex_flags;
+                NodeList *args = arena_alloc(p->arena, sizeof(NodeList));
+                args->node = n;
+                args->next = arena_alloc(p->arena, sizeof(NodeList));
+                args->next->node = flags_node;
+                args->next->next = NULL;
+                Node *call = node_new(p->arena, NODE_CALL, s);
+                call->call.recv = const_node;
+                call->call.method = "new";
                 call->call.args = args;
                 call->call.block = NULL;
                 return call;

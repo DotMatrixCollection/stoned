@@ -248,7 +248,7 @@ static void copy_module_methods(Eval *ev, Env *target, RubyClass *mod, int singl
     }
 }
 
-static Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *site) {
+Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *site) {
     if (self.kind != VAL_CLASS && !value_singleton_env_slot(self))
         return eval_raise_class(ev, site, "TypeError", "extend requires an object");
 
@@ -2141,10 +2141,16 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         return arr;
     }
     if (strcmp(name, "singleton_class") == 0) {
-        /* Return a synthetic singleton class object */
-        Value sc_klass;
-        if (!env_get(ev->top_env, "Class", &sc_klass)) sc_klass = val_class_of(ev, recv);
-        /* For now return the actual class — proper singleton_class is complex */
+        /* Return a synthetic singleton-class proxy object.
+           Storing __singleton_of__ lets define_method/attr_* route methods
+           as class methods on the target rather than instance methods. */
+        if (recv.kind == VAL_CLASS && recv.klass) {
+            Value klass_val = val_class_of(ev, recv);
+            Value proxy = val_object(ev->arena, klass_val);
+            val_object_set_ivar(ev->arena, proxy, "__singleton_of__", recv);
+            return proxy;
+        }
+        /* For plain objects, the singleton class is represented by the object's class */
         return val_class_of(ev, recv);
     }
     if (strcmp(name, "singleton_methods") == 0) {
@@ -2195,10 +2201,21 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (argc < 1 || !blk) { return val_nil(); }
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
         if (!mname) return val_nil();
-        Env **slot = value_singleton_env_slot(recv);
-        if (slot) {
-            if (!*slot) *slot = env_new(ev->arena, NULL, 1);
-            env_define(ev->arena, *slot, mname, val_method(blk->block.block_node, blk->block.closure, METHOD_PUBLIC, blk->block.def_file));
+        Value method = val_method(blk->block.block_node, blk->block.closure, METHOD_PUBLIC, blk->block.def_file);
+        if (recv.kind == VAL_CLASS && recv.klass) {
+            /* Class singleton method: stored as "self.mname" in the class_env */
+            size_t nlen = strlen(mname);
+            char *key = arena_alloc(ev->arena, nlen + 6);
+            memcpy(key, "self.", 5);
+            memcpy(key + 5, mname, nlen + 1);
+            if (!recv.klass->class_env) recv.klass->class_env = env_new(ev->arena, NULL, 1);
+            env_define(ev->arena, recv.klass->class_env, key, method);
+        } else {
+            Env **slot = value_singleton_env_slot(recv);
+            if (slot) {
+                if (!*slot) *slot = env_new(ev->arena, NULL, 1);
+                env_define(ev->arena, *slot, mname, method);
+            }
         }
         return val_symbol(mname);
     }

@@ -161,6 +161,7 @@ typedef enum {
     LMODE_INTERP_STR,       /* inside "..." — scanning string content */
     LMODE_INTERP_BACKTICK,  /* inside `...` — scanning backtick content */
     LMODE_INTERP_EXPR,      /* inside #{...} — scanning expression */
+    LMODE_INTERP_REGEX,     /* inside /.../  — scanning regex content with interpolation */
 } LexMode;
 
 typedef struct LexLocalVar {
@@ -217,6 +218,9 @@ typedef struct {
 
     /* close char for %(...) / %{...} / %[...] interpolated string literals */
     char         percent_close[LEX_INTERP_DEPTH];
+
+    /* regex interpolation state: tracks character-class nesting per imode depth */
+    int8_t       regex_in_class[LEX_INTERP_DEPTH];
 } Lexer;
 
 void  lexer_init(Lexer *l, const char *src, size_t len, Arena *arena);

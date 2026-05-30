@@ -3606,6 +3606,44 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                    argc >= 1 && args[0].kind == VAL_INT   ? val_float((double)args[0].ival) : val_float(0.0);
             return 1;
         }
+        /* Class.new([superclass]) { block } — create an anonymous class */
+        if (strcmp(recv.klass->name, "Class") == 0 || strcmp(recv.klass->name, "Module") == 0) {
+            int is_module = (strcmp(recv.klass->name, "Module") == 0);
+            Value superclass = val_nil();
+            if (!is_module && argc > 0 && args[0].kind == VAL_CLASS)
+                superclass = args[0];
+            else if (!is_module) {
+                /* default superclass = Object */
+                env_get(ev->top_env, "Object", &superclass);
+            }
+            Value new_klass = val_class(ev->arena, is_module ? "#<Module>" : "#<Class>", superclass);
+            if (is_module) new_klass.klass->is_module = 1;
+            /* Build class_env now so def inside the block stores methods correctly */
+            new_klass.klass->class_env = env_new(ev->arena, ev->top_env, 1);
+            env_set(ev->arena, new_klass.klass->class_env, "self", new_klass);
+            env_set(ev->arena, new_klass.klass->class_env, "__class__", new_klass);
+            env_set(ev->arena, new_klass.klass->class_env, "__singleton_target__", val_nil());
+            set_current_method_visibility(ev->arena, new_klass.klass->class_env, METHOD_PUBLIC);
+            if (blk) {
+                /* Evaluate block body in a frame that parents to the block's original closure
+                   (so outer locals like block variables are visible), but with self/__class__/
+                   __singleton_target__ overridden so def stores methods in the new class.
+                   Use env_define (not env_set) to write only to block_frame, not up to the
+                   method env where self = the calling class. */
+                Node *bn = blk->block.block_node;
+                Env *block_frame = env_new(ev->arena, blk->block.closure, 0);
+                env_define(ev->arena, block_frame, "self", new_klass);
+                env_define(ev->arena, block_frame, "__class__", new_klass);
+                env_define(ev->arena, block_frame, "__singleton_target__", val_nil());
+                set_current_method_visibility(ev->arena, block_frame, METHOD_PUBLIC);
+                Value bargs[1] = { new_klass };
+                bind_params(ev, block_frame, bn->block.params, bargs, 1);
+                Value r = eval_node(ev, block_frame, bn->block.body);
+                if (val_is_signal(r) && r.kind != VAL_RETURN) { *out = r; return 1; }
+            }
+            *out = new_klass;
+            return 1;
+        }
         /* String subclass (e.g. ColorizedString < String): store backing string in @__str__ */
         if (strcmp(recv.klass->name, "String") != 0 &&
             class_is_a_named_class(ev, recv.klass, "String")) {
@@ -4135,6 +4173,39 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
 
     /* ---- end class reflection ---- */
 
+    /* include/prepend/extend as explicit receiver class methods: klass.include(Mod) */
+    if (strcmp(name, "include") == 0 || strcmp(name, "prepend") == 0) {
+        int is_prepend = (name[0] == 'p');
+        if (!recv.klass->class_env) recv.klass->class_env = env_new(ev->arena, ev->top_env, 1);
+        for (int i = 0; i < argc; i++) {
+            if (args[i].kind != VAL_CLASS || !args[i].klass->is_module) {
+                *out = eval_raise_class(ev, site, "TypeError", "%s requires a Module", name);
+                return 1;
+            }
+            RubyModuleInclusion *inc = arena_alloc(ev->arena, sizeof(RubyModuleInclusion));
+            inc->mod = args[i].klass;
+            if (is_prepend) {
+                /* link to end of prepended list */
+                inc->next = recv.klass->prepended_modules;
+                recv.klass->prepended_modules = inc;
+            } else {
+                inc->next = recv.klass->included_modules;
+                recv.klass->included_modules = inc;
+            }
+            const char *hook = is_prepend ? "self.prepended" : "self.included";
+            Value hm;
+            if (args[i].klass->class_env && env_get(args[i].klass->class_env, hook, &hm) && hm.kind == VAL_METHOD)
+                call_method_value(ev, env, args[i], hm, args[i].klass, is_prepend ? "prepended" : "included", &recv, 1, NULL, site);
+        }
+        *out = recv;
+        return 1;
+    }
+    if (strcmp(name, "extend") == 0) {
+        extern Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *site);
+        *out = builtin_extend(ev, recv, args, argc, site);
+        return 1;
+    }
+
     Value cm;
     RubyClass *owner = NULL;
     if (ruby_class_find_class_method(recv.klass, name, &cm, &owner) && cm.kind == VAL_METHOD) {
@@ -4166,6 +4237,34 @@ Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name, 
 int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                     Value *blk, Node *site, Value *out, int public_only, int explicit_receiver) {
     if (recv.kind != VAL_OBJECT) return 0;
+
+    /* Singleton-class proxy: forward define_method / attr_* / method_defined? to the target class */
+    Value singleton_of = val_nil();
+    if (val_object_get_ivar(recv, "__singleton_of__", &singleton_of) &&
+        singleton_of.kind == VAL_CLASS && singleton_of.klass) {
+        if (strcmp(name, "define_method") == 0) {
+            if (argc < 1) { *out = val_nil(); return 1; }
+            const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
+            if (!mname) { *out = val_nil(); return 1; }
+            Value method_proc = (argc == 2) ? args[1] : (blk ? *blk : val_nil());
+            if (method_proc.kind != VAL_BLOCK) { *out = val_nil(); return 1; }
+            Node *def = node_new(ev->arena, NODE_DEF, site ? site->span : (Span){0, 0, 0});
+            def->def.name = mname;
+            def->def.params = method_proc.block.block_node ? method_proc.block.block_node->block.params : NULL;
+            def->def.body = method_proc.block.block_node ? method_proc.block.block_node->block.body : NULL;
+            Value method = val_method(def, method_proc.block.closure, METHOD_PUBLIC, method_proc.block.def_file);
+            size_t nlen = strlen(mname);
+            char *key = arena_alloc(ev->arena, nlen + 6);
+            memcpy(key, "self.", 5);
+            memcpy(key + 5, mname, nlen + 1);
+            if (!singleton_of.klass->class_env) singleton_of.klass->class_env = env_new(ev->arena, NULL, 1);
+            env_define(ev->arena, singleton_of.klass->class_env, key, method);
+            *out = val_symbol(mname);
+            return 1;
+        }
+        /* Proxy other class-level calls to the target class */
+        return dispatch_class(ev, env, singleton_of, name, args, argc, blk, site, out, public_only, explicit_receiver);
+    }
 
     /* Struct instance methods: to_a, to_h, members, ==, inspect */
     if (recv.obj->klass.kind == VAL_CLASS &&

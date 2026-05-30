@@ -775,7 +775,9 @@ static int match_pattern(Eval *ev, Env *env, Env *binding_env, Value val, Node *
 static void fire_method_added(Eval *ev, Env *env, Value klass, const char *mname, Node *site) {
     if (klass.kind != VAL_CLASS) return;
     Value hook;
-    if (env_get(klass.klass->class_env, "self.method_added", &hook) && !val_is_signal(hook)) {
+    RubyClass *hook_owner = NULL;
+    /* Look through the full class method chain (includes extended modules) */
+    if (ruby_class_find_class_method(klass.klass, "method_added", &hook, &hook_owner)) {
         Value sym = val_symbol(mname);
         dispatch_method(ev, env, klass, "method_added", &sym, 1, NULL, site, 0, 1);
         /* ignore errors from the hook — it's informational */
@@ -1368,6 +1370,11 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 if (val_is_signal(result)) return result;
                 return result;
             }
+            /* super to a built-in type: initialize is always effectively a no-op
+               since object allocation already handles setup. Return self so that
+               patterns like `def initialize; super; @extra = 1; end` don't crash. */
+            if (self.kind == VAL_OBJECT && strcmp(method_name, "initialize") == 0)
+                return self;
             return eval_raise_class(ev, node, "NoMethodError", "super: no superclass method '%s'", method_name);
         }
 
