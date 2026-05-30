@@ -142,7 +142,7 @@ int builtin_method_arity(const char *mname) {
         "valid_encoding?","force_encoding","b","hex","oct","dump","undump",
         "next","peek","rewind","size","to_a","next_values","peek_values",
         /* block-taking Enumerable/Array methods: block not counted in arity */
-        "each","map","collect","select","find_all","filter","reject","find","detect","find_index","any?","all?",
+        "each","reverse_each","map","collect","select","find_all","filter","reject","find","detect","find_index","any?","all?",
         "none?","one?","grep","grep_v","each_with_index","flat_map","collect_concat","group_by","sort_by",
         "min_by","max_by","minmax_by","count","each_slice","each_cons","each_with_object",
         "tally","chunk","chunk_while","slice_when","map!","collect!","select!","filter!",
@@ -550,7 +550,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     };
     static const char *arr_methods[] = {
         "length", "size", "count", "empty?", "first", "last", "push", "append", "pop",
-        "shift", "unshift", "prepend", "reverse", "to_s", "to_a", "to_ary", "inspect", "join", "include?",
+        "shift", "unshift", "prepend", "reverse", "reverse_each", "to_s", "to_a", "to_ary", "inspect", "join", "include?",
         "each", "each_with_index", "map", "collect", "select", "find_all", "filter", "reject",
         "reduce", "inject", "any?", "all?", "none?", "one?", "min", "max", "sum", "flatten",
         "uniq", "sort", "compact", "zip", "grep", "grep_v", "replace", NULL
@@ -560,7 +560,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "value?", "delete", "keys", "values", "length", "size", "count", "empty?",
         "to_s", "inspect", "to_a", "to_h", "merge", "merge!", "update", "each", "each_pair",
         "each_key", "each_value", "each_with_object", "map", "collect", "select", "find_all", "filter",
-        "reject", "any?", "all?", "none?", "one?", "find", "detect", "find_index", "grep", "grep_v",
+        "reject", "any?", "all?", "none?", "one?", "find", "detect", "find_index", "reverse_each", "grep", "grep_v",
         "min_by", "max_by", "sort_by", "sort", "flat_map", "reduce", "inject", "store",
         "clear", "dup", "nil?", "freeze", "frozen?", "transform_values", "transform_keys",
         "transform_values!", "transform_keys!", "filter_map", "slice", "except",
@@ -575,7 +575,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     static const char *range_methods[] = {
         "begin", "first", "end", "last", "exclude_end?",
         "include?", "member?", "cover?", "===",
-        "each", "each_with_index", "to_a", "entries",
+        "each", "reverse_each", "each_with_index", "to_a", "entries",
         "size", "count", "length", "min", "max", "step",
         "map", "collect", "select", "find_all", "filter", "reject", "find_index", "grep", "grep_v", "one?",
         "to_s", "inspect", NULL
