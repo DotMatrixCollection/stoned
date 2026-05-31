@@ -2085,6 +2085,7 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
         static const char *set_shim =
 "class Set\n"
 "  include Enumerable\n"
+"  def self.[](*args); new(args); end\n"
 "  def initialize(enum = nil)\n"
 "    @h = {}\n"
 "    enum.each { |v| @h[v] = true } if enum\n"
