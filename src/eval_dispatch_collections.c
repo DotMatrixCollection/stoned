@@ -1439,7 +1439,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 else val_array_push(&pair, val_nil());
             }
             if (blk) {
-                Value r = call_block(ev, env, *blk, pair.array->elems, (int)pair.array->len, site);
+                Value r = call_block(ev, env, *blk, &pair, 1, site);
                 if (ev->errored || val_is_signal(r)) { *out = r; return 1; }
             } else {
                 val_array_push(&result, pair);
