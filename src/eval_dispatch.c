@@ -1634,8 +1634,11 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
     }
     if (strcmp(name, "include") == 0) {
         Value self;
-        if (!env_get(env, "self", &self) || self.kind != VAL_CLASS)
-            return eval_raise_class(ev, site, "TypeError", "include must be called in a class or module body");
+        if (!env_get(env, "self", &self) || self.kind != VAL_CLASS) {
+            /* Top-level include: include into Object */
+            if (!env_get(ev->top_env, "Object", &self) || self.kind != VAL_CLASS)
+                return eval_raise_class(ev, site, "TypeError", "include must be called in a class or module body");
+        }
         for (int i = 0; i < argc; i++) {
             if (args[i].kind != VAL_CLASS || !args[i].klass->is_module)
                 return eval_raise_class(ev, site, "TypeError", "include requires a Module");
@@ -2684,6 +2687,31 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (strcmp(name, "inspect") == 0 && recv.kind != VAL_OBJECT && recv.kind != VAL_CLASS)
         return val_string(ev->arena, val_inspect(ev->arena, recv));
 
+    /* User-defined Ruby methods defined DIRECTLY on reopened primitive classes take priority
+       over built-ins.  Only env_get_own (not ruby_class_find_instance_method) so that
+       Enumerable/Comparable prelude methods (which are inherited, not direct) do not shadow
+       the faster built-in implementations. */
+    {
+        const char *prim_class2 = NULL;
+        if (recv.kind == VAL_STRING) prim_class2 = "String";
+        else if (recv.kind == VAL_INT) prim_class2 = "Integer";
+        else if (recv.kind == VAL_FLOAT) prim_class2 = "Float";
+        else if (recv.kind == VAL_ARRAY) prim_class2 = "Array";
+        else if (recv.kind == VAL_HASH) prim_class2 = "Hash";
+        else if (recv.kind == VAL_RANGE) prim_class2 = "Range";
+        else if (recv.kind == VAL_SYMBOL) prim_class2 = "Symbol";
+        else if (recv.kind == VAL_NIL) prim_class2 = "NilClass";
+        else if (recv.kind == VAL_BOOL) prim_class2 = recv.bval ? "TrueClass" : "FalseClass";
+        if (prim_class2) {
+            Value klass2;
+            if (env_get(ev->top_env, prim_class2, &klass2) && klass2.kind == VAL_CLASS) {
+                Value m2;
+                if (env_get_own(klass2.klass->class_env, name, &m2) && m2.kind == VAL_METHOD)
+                    return call_method_value(ev, env, recv, m2, klass2.klass, name, args, argc, blk, site);
+            }
+        }
+    }
+
     if (dispatch_integer(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (dispatch_float(ev, env, recv, name, args, argc, blk, site, &out)) return out;
     if (dispatch_string(ev, env, recv, name, args, argc, blk, site, &out)) return out;
@@ -2734,13 +2762,22 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (prim_class) {
             Value klass;
             if (env_get(ev->top_env, prim_class, &klass) && klass.kind == VAL_CLASS) {
-                /* Alias stored as VAL_SYMBOL */
+                /* Alias stored as VAL_SYMBOL — points to a built-in; call built-in directly
+               to avoid infinite recursion if the built-in was also redefined by user code */
                 Value alias_val;
                 if (env_get_own(klass.klass->class_env, name, &alias_val) &&
                     (alias_val.kind == VAL_SYMBOL || alias_val.kind == VAL_STRING) &&
-                    alias_val.sval && strcmp(alias_val.sval, name) != 0)
-                    return dispatch_method(ev, env, recv, alias_val.sval, args, argc, blk, site, public_only, explicit_receiver);
-                /* User-defined Ruby method on the class */
+                    alias_val.sval && strcmp(alias_val.sval, name) != 0) {
+                    const char *tgt = alias_val.sval;
+                    if (dispatch_integer(ev, env, recv, tgt, args, argc, blk, site, &out)) return out;
+                    if (dispatch_float(ev, env, recv, tgt, args, argc, blk, site, &out)) return out;
+                    if (dispatch_string(ev, env, recv, tgt, args, argc, blk, site, &out)) return out;
+                    if (recv.kind == VAL_ARRAY && dispatch_array(ev, env, recv, tgt, args, argc, blk, site, &out)) return out;
+                    if (recv.kind == VAL_HASH && dispatch_hash(ev, env, recv, tgt, args, argc, blk, site, &out)) return out;
+                    if (recv.kind == VAL_RANGE && dispatch_range(ev, env, recv, tgt, args, argc, blk, site, &out)) return out;
+                    return dispatch_method(ev, env, recv, tgt, args, argc, blk, site, public_only, explicit_receiver);
+                }
+                /* User-defined Ruby method on the class (fallback, normally caught above) */
                 Value m; RubyClass *owner = NULL;
                 if (ruby_class_find_instance_method(klass.klass, name, &m, &owner) && m.kind == VAL_METHOD)
                     return call_method_value(ev, env, recv, m, owner, name, args, argc, blk, site);
