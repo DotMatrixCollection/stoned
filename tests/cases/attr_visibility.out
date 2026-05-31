@@ -1,0 +1,8 @@
+Bob
+private method 'name=' called for an instance of Person
+Charlie
+protected method 'secret' called for an instance of Person
+true
+100
+private: private
+private: private

@@ -354,7 +354,7 @@ static void define_attr_reader_in_env(Eval *ev, Env *target_env,
     def->def.name = method_name;
     def->def.body = body;
 
-    env_define(a, target_env, method_name, val_method(def, ev->top_env, METHOD_PUBLIC, ev->current_file));
+    env_define(a, target_env, method_name, val_method(def, ev->top_env, current_method_visibility(target_env), ev->current_file));
 }
 
 static void define_attr_reader(Eval *ev, Value klass, const char *attr) {
@@ -408,7 +408,7 @@ static void define_attr_writer_in_env(Eval *ev, Env *target_env,
     def->def.params = params;
     def->def.body = body;
 
-    env_define(a, target_env, method_name, val_method(def, ev->top_env, METHOD_PUBLIC, ev->current_file));
+    env_define(a, target_env, method_name, val_method(def, ev->top_env, current_method_visibility(target_env), ev->current_file));
 }
 
 static void define_attr_writer(Eval *ev, Value klass, const char *attr) {
