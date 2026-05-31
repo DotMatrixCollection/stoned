@@ -67,7 +67,7 @@ The interpreter currently builds cleanly and the regression suite passes:
 make test
 ```
 
-Current coverage in the tree: `657 passed, 0 failed, 657 total`. Recent additions include pattern matching, Fiber basics, broader method/binding reflection, native `IO.pipe`, Rational/Complex numeric parity, exact-ish `Float#to_r` plus `Float#rationalize`, frozen collection mutation guards, collection clone/singleton preservation, Struct keyword-init and enumerator helpers, a method/ancestor/visibility compatibility matrix, embedded-NUL string coverage, broader Enumerable grep/filter aliases, `one?`, `find_index`/`index`, `reverse_each`, `cycle`, `partition`, `collect_concat`, blockless key/predicate Enumerable enumerators, and chunking helpers, and continued RubyGems/Bundler command-surface bringup around local install, lockfile, config, binstub, activation, and `bundle exec` workflows.
+Current coverage in the tree: `658 passed, 0 failed, 658 total`. Recent additions include pattern matching, Fiber basics, broader method/binding reflection, native `IO.pipe`, Rational/Complex numeric parity, exact-ish `Float#to_r` plus `Float#rationalize`, frozen collection mutation guards, collection clone/singleton preservation, Struct keyword-init and enumerator helpers, a method/ancestor/visibility compatibility matrix, embedded-NUL string coverage, broader Enumerable grep/filter aliases, `one?`, `find_index`/`index`, `reverse_each`, `cycle`, `partition`, `collect_concat`, blockless key/predicate Enumerable enumerators, generic Enumerable blockless enumerators, and chunking helpers, and continued RubyGems/Bundler command-surface bringup around local install, lockfile, config, binstub, activation, and `bundle exec` workflows.
 
 Bundler bringup note:
 
