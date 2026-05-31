@@ -240,6 +240,19 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         return 1;
     }
+    if (strcmp(name, "delete_at") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
+        if (argc < 1 || args[0].kind != VAL_INT) { *out = val_nil(); return 1; }
+        int64_t idx = args[0].ival;
+        int64_t alen = (int64_t)recv.array->len;
+        if (idx < 0) idx += alen;
+        if (idx < 0 || idx >= alen) { *out = val_nil(); return 1; }
+        Value deleted = recv.array->elems[(size_t)idx];
+        memmove(recv.array->elems + idx, recv.array->elems + idx + 1,
+                (recv.array->len - (size_t)idx - 1) * sizeof(Value));
+        recv.array->len--;
+        *out = deleted; return 1;
+    }
     if (strcmp(name, "clear") == 0) {
         if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         recv.array->len = 0; *out = recv; return 1;
@@ -278,6 +291,35 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             recv.array->elems[0] = args[i];
             recv.array->len++;
         }
+        *out = recv; return 1;
+    }
+    if (strcmp(name, "insert") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
+        if (argc < 1 || args[0].kind != VAL_INT) { *out = eval_raise_class(ev, site, "ArgumentError", "Array#insert requires an Integer index"); return 1; }
+        int64_t idx = args[0].ival;
+        int64_t alen = (int64_t)recv.array->len;
+        if (idx < 0) idx = alen + idx + 1;
+        if (idx < 0) idx = 0;
+        while ((int64_t)recv.array->len < idx) {
+            while (recv.array->len >= recv.array->cap) {
+                size_t nc = recv.array->cap == 0 ? 8 : recv.array->cap * 2;
+                recv.array->elems = realloc(recv.array->elems, nc * sizeof(Value));
+                recv.array->cap = nc;
+            }
+            recv.array->elems[recv.array->len++] = val_nil();
+        }
+        int ins_count = argc - 1;
+        while (recv.array->len + (size_t)ins_count > recv.array->cap) {
+            size_t nc = recv.array->cap == 0 ? 8 : recv.array->cap * 2;
+            if (nc < recv.array->len + (size_t)ins_count) nc = recv.array->len + (size_t)ins_count;
+            recv.array->elems = realloc(recv.array->elems, nc * sizeof(Value));
+            recv.array->cap = nc;
+        }
+        memmove(recv.array->elems + idx + ins_count, recv.array->elems + idx,
+                (recv.array->len - (size_t)idx) * sizeof(Value));
+        for (int i = 0; i < ins_count; i++)
+            recv.array->elems[(size_t)idx + i] = args[1 + i];
+        recv.array->len += (size_t)ins_count;
         *out = recv; return 1;
     }
     if (strcmp(name, "dig") == 0) {
