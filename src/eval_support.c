@@ -753,9 +753,13 @@ int ruby_class_find_instance_method(RubyClass *klass, const char *name, Value *o
                 return 1;
             }
         }
-        if (env_get_own(k->class_env, name, out) && out->kind == VAL_METHOD) {
-            if (owner) *owner = k;
-            return 1;
+        if (env_get_own(k->class_env, name, out)) {
+            if (out->kind == VAL_METHOD) {
+                if (owner) *owner = k;
+                return 1;
+            }
+            if (out->kind == VAL_UNDEF_METHOD)
+                return 1; /* blocked — caller must check kind */
         }
         for (RubyModuleInclusion *inc = k->included_modules; inc; inc = inc->next) {
             RubyClass *module_owner = NULL;

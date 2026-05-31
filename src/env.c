@@ -72,6 +72,20 @@ void env_define(Arena *a, Env *env, const char *name, Value val) {
     env->vars = e;
 }
 
+int env_remove_own(Env *env, const char *name) {
+    if (!env) return 0;
+    EnvEntry *prev = NULL;
+    for (EnvEntry *e = env->vars; e; e = e->next) {
+        if (strcmp(e->name, name) == 0) {
+            if (prev) prev->next = e->next;
+            else       env->vars = e->next;
+            return 1;
+        }
+        prev = e;
+    }
+    return 0;
+}
+
 void global_set(Arena *a, GlobalTable *gt, const char *name, Value val) {
     for (GlobalEntry *e = gt->head; e; e = e->next) {
         if (strcmp(e->name, name) == 0) { e->val = val; return; }

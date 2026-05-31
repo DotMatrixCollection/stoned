@@ -2363,6 +2363,56 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = val_symbol(mname);
         return 1;
     }
+    if (strcmp(name, "remove_method") == 0 || strcmp(name, "undef_method") == 0) {
+        if (argc < 1) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+            return 1;
+        }
+        int is_undef = (strcmp(name, "undef_method") == 0);
+        for (int ai = 0; ai < argc; ai++) {
+            if (args[ai].kind != VAL_SYMBOL && args[ai].kind != VAL_STRING) {
+                *out = eval_raise_class(ev, site, "TypeError", "expected Symbol or String");
+                return 1;
+            }
+            const char *mname = args[ai].sval;
+            if (is_undef) {
+                /* Store sentinel that blocks lookup from falling through to superclass */
+                Value sentinel; sentinel.kind = VAL_UNDEF_METHOD; sentinel.frozen = 0;
+                sentinel.string_encoding = STRING_ENCODING_UTF8; sentinel.byte_len = 0; sentinel.ival = 0;
+                env_define(ev->arena, recv.klass->class_env, mname, sentinel);
+                /* Fire method_undefined hook */
+                Value hook; RubyClass *hook_owner = NULL;
+                if (ruby_class_find_class_method(recv.klass, "method_undefined", &hook, &hook_owner)) {
+                    Value sym = val_symbol(mname);
+                    dispatch_method(ev, env, recv, "method_undefined", &sym, 1, NULL, site, 0, 1);
+                    ev->current_exception = val_nil();
+                    ev->exception_class = NULL;
+                    ev->exception_msg[0] = '\0';
+                }
+            } else {
+                /* remove_method: method must exist in this class (not just inherited) */
+                Value existing;
+                if (!env_get_own(recv.klass->class_env, mname, &existing) ||
+                    existing.kind == VAL_UNDEF_METHOD) {
+                    *out = eval_raise_class(ev, site, "NameError",
+                                            "method '%s' not defined in %s", mname, recv.klass->name);
+                    return 1;
+                }
+                env_remove_own(recv.klass->class_env, mname);
+                /* Fire method_removed hook */
+                Value hook; RubyClass *hook_owner = NULL;
+                if (ruby_class_find_class_method(recv.klass, "method_removed", &hook, &hook_owner)) {
+                    Value sym = val_symbol(mname);
+                    dispatch_method(ev, env, recv, "method_removed", &sym, 1, NULL, site, 0, 1);
+                    ev->current_exception = val_nil();
+                    ev->exception_class = NULL;
+                    ev->exception_msg[0] = '\0';
+                }
+            }
+        }
+        *out = recv;
+        return 1;
+    }
     if (recv.klass->is_module && recv.klass->class_env) {
         Value const_val;
         if (env_get(recv.klass->class_env, name, &const_val) && const_val.kind != VAL_METHOD) {
@@ -4112,10 +4162,13 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
         if (!mname) { *out = eval_raise_class(ev, site, "TypeError", "expected Symbol or String"); return 1; }
-        Value method; RubyClass *owner = NULL;
+        Value method = val_nil(); RubyClass *owner = NULL;
         int is_primitive = 0;
-        if (!singleton_class_method_lookup(ev, env, recv, mname, &method) &&
-            !ruby_class_find_instance_method(recv.klass, mname, &method, &owner)) {
+        singleton_class_method_lookup(ev, env, recv, mname, &method);
+        if (method.kind != VAL_METHOD)
+            ruby_class_find_instance_method(recv.klass, mname, &method, &owner);
+        if (method.kind == VAL_UNDEF_METHOD) { *out = val_false(); return 1; }
+        if (method.kind != VAL_METHOD) {
             for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
                 if (primitive_class_responds_to_name(k->name, mname)) {
                     is_primitive = 1;

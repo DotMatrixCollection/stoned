@@ -701,8 +701,10 @@ int val_responds_to(Eval *ev, Value recv, const char *name, int include_private)
         if (find_instance_alias_name(recv.obj->klass.klass, name))
             return 1;
         Value m;
-        if (ruby_class_find_instance_method(recv.obj->klass.klass, name, &m, NULL))
+        if (ruby_class_find_instance_method(recv.obj->klass.klass, name, &m, NULL)) {
+            if (m.kind == VAL_UNDEF_METHOD) return 0;
             return method_visible_for_respond_to(m, include_private);
+        }
         /* For built-in classes, check via a synthetic primitive value */
         if (recv.obj->klass.kind == VAL_CLASS && recv.obj->klass.klass) {
             const char *cn = recv.obj->klass.klass->name;
@@ -1902,20 +1904,25 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
        Check the class hierarchy first for VAL_OBJECT before any built-in dispatch. */
     if (recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS) {
         Value um; RubyClass *um_owner = NULL;
-        if (ruby_class_find_instance_method(recv.obj->klass.klass, name, &um, &um_owner) &&
-            um.kind == VAL_METHOD) {
-            if (!method_visibility_allows_call(ev, env, recv, um_owner, um.method.visibility,
-                                               public_only, explicit_receiver)) {
-                if (um.method.visibility == METHOD_PROTECTED)
-                    return eval_raise_class(ev, site, "NoMethodError",
-                                            "protected method '%s' called for an instance of %s",
-                                            name, value_class_name(ev, recv));
-                if (um.method.visibility == METHOD_PRIVATE)
-                    return eval_raise_class(ev, site, "NoMethodError",
-                                            "private method '%s' called for an instance of %s",
-                                            name, value_class_name(ev, recv));
-            } else {
-                return call_method_value(ev, env, recv, um, um_owner, name, args, argc, blk, site);
+        if (ruby_class_find_instance_method(recv.obj->klass.klass, name, &um, &um_owner)) {
+            if (um.kind == VAL_UNDEF_METHOD)
+                return eval_raise_class(ev, site, "NoMethodError",
+                                        "undefined method '%s' for an instance of %s",
+                                        name, value_class_name(ev, recv));
+            if (um.kind == VAL_METHOD) {
+                if (!method_visibility_allows_call(ev, env, recv, um_owner, um.method.visibility,
+                                                   public_only, explicit_receiver)) {
+                    if (um.method.visibility == METHOD_PROTECTED)
+                        return eval_raise_class(ev, site, "NoMethodError",
+                                                "protected method '%s' called for an instance of %s",
+                                                name, value_class_name(ev, recv));
+                    if (um.method.visibility == METHOD_PRIVATE)
+                        return eval_raise_class(ev, site, "NoMethodError",
+                                                "private method '%s' called for an instance of %s",
+                                                name, value_class_name(ev, recv));
+                } else {
+                    return call_method_value(ev, env, recv, um, um_owner, name, args, argc, blk, site);
+                }
             }
         }
     }

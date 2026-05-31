@@ -1,0 +1,5 @@
+removed: foo
+removed: bar
+undefined: baz
+foo gone
+baz gone

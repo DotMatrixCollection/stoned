@@ -27,6 +27,8 @@ int   env_get_own(Env *env, const char *name, Value *out);
 int   env_update(Env *env, const char *name, Value val);
 /* Define in the current frame only (for def/class — never updates parent) */
 void  env_define(Arena *a, Env *env, const char *name, Value val);
+/* Unlink a named entry from the current frame only; returns 1 if it was there */
+int   env_remove_own(Env *env, const char *name);
 
 /* Global variable table (flat, no scoping) */
 typedef struct GlobalEntry {

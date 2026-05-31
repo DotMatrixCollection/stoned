@@ -22,8 +22,9 @@ typedef enum {
     VAL_RANGE,      /* begin..end or begin...end */
     VAL_CLASS,      /* user-defined class */
     VAL_OBJECT,     /* instance of a class */
-    VAL_METHOD,     /* user-defined: Node* + closure Env* */
-    VAL_BLOCK,      /* block/proc: Node* + closure Env* */
+    VAL_METHOD,       /* user-defined: Node* + closure Env* */
+    VAL_UNDEF_METHOD, /* sentinel: undef_method blocks lookup from falling through */
+    VAL_BLOCK,        /* block/proc: Node* + closure Env* */
     /* Control flow signals — not real values, used to unwind */
     VAL_EXCEPTION,
     VAL_RETURN,
