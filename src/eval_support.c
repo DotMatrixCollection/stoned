@@ -279,10 +279,11 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
                 piece_len = nlen < 0 ? 0 : (size_t)nlen;
                 break;
             }
-            case 'b': {
+            case 'b': case 'B': {
                 /* Binary — C doesn't have %b, implement with width/pad support */
                 int64_t n = v.kind == VAL_INT ? v.ival : 0;
-                char bitbuf[70]; int bi = 0;
+                char bitbuf[74]; int bi = 0;
+                int alt_flag = (strchr(spec, '#') != NULL);
                 if (n == 0) { bitbuf[bi++] = '0'; }
                 else {
                     uint64_t un = (uint64_t)n;
@@ -290,25 +291,40 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
                     for (int li=0, ri=bi-1; li<ri; li++,ri--) { char c=bitbuf[li]; bitbuf[li]=bitbuf[ri]; bitbuf[ri]=c; }
                 }
                 bitbuf[bi] = '\0';
+                /* prepend 0b prefix if # flag and value != 0 */
+                const char *prefix = (alt_flag && n != 0) ? (fmt[i]=='B' ? "0B" : "0b") : "";
+                size_t prefix_len = strlen(prefix);
                 /* Extract width and padding char from spec */
                 int width = 0; char pad_char = ' '; int left_align = 0;
                 const char *sp = spec + 1; /* skip leading % */
-                if (*sp == '-') { left_align = 1; sp++; }
+                while (*sp == '-' || *sp == '+' || *sp == '#' || *sp == ' ') {
+                    if (*sp == '-') left_align = 1;
+                    sp++;
+                }
                 if (*sp == '0') { pad_char = '0'; sp++; }
                 while (*sp >= '0' && *sp <= '9') { width = width * 10 + (*sp - '0'); sp++; }
-                if (width > 0 && bi < width) {
-                    int pad = width - bi;
+                int content_len = (int)(prefix_len + (size_t)bi);
+                if (width > 0 && content_len < width) {
+                    int pad = width - content_len;
                     if (left_align) {
-                        memcpy(tmp, bitbuf, (size_t)bi);
-                        memset(tmp + bi, ' ', (size_t)pad);
-                        tmp[bi + pad] = '\0';
+                        memcpy(tmp, prefix, prefix_len);
+                        memcpy(tmp + prefix_len, bitbuf, (size_t)bi);
+                        memset(tmp + content_len, ' ', (size_t)pad);
+                        tmp[content_len + pad] = '\0';
+                    } else if (pad_char == '0') {
+                        memcpy(tmp, prefix, prefix_len);
+                        memset(tmp + prefix_len, '0', (size_t)pad);
+                        memcpy(tmp + prefix_len + pad, bitbuf, (size_t)bi + 1);
                     } else {
-                        memset(tmp, pad_char, (size_t)pad);
-                        memcpy(tmp + pad, bitbuf, (size_t)bi + 1);
+                        memset(tmp, ' ', (size_t)pad);
+                        memcpy(tmp + pad, prefix, prefix_len);
+                        memcpy(tmp + pad + prefix_len, bitbuf, (size_t)bi + 1);
                     }
                     piece = tmp; piece_len = (size_t)width;
                 } else {
-                    piece = bitbuf; piece_len = (size_t)bi;
+                    memcpy(tmp, prefix, prefix_len);
+                    memcpy(tmp + prefix_len, bitbuf, (size_t)bi + 1);
+                    piece = tmp; piece_len = (size_t)content_len;
                 }
                 break;
             }
