@@ -2658,6 +2658,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  end\n"
         "\n"
         "  def sort_by\n"
+        "    return to_enum(:sort_by) unless block_given?\n"
         "    pairs = map { |x| [yield(x), x] }\n"
         "    pairs.sort { |a, b| a[0] <=> b[0] }.map { |pair| pair[1] }\n"
         "  end\n"
