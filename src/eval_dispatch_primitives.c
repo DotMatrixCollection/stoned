@@ -731,17 +731,20 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     }
     if (strcmp(name, "step") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Integer#step requires a limit"); return 1; }
-        double limit = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
-        double step  = argc >= 2 ? (args[1].kind == VAL_INT ? (double)args[1].ival : args[1].fval) : 1.0;
+        int limit_is_float = (args[0].kind == VAL_FLOAT);
+        int step_is_float  = (argc >= 2 && args[1].kind == VAL_FLOAT);
+        int use_float = limit_is_float || step_is_float;
+        double limit = limit_is_float ? args[0].fval : (double)args[0].ival;
+        double step  = argc >= 2 ? (step_is_float ? args[1].fval : (double)args[1].ival) : 1.0;
         if (step == 0.0) { *out = eval_raise_class(ev, site, "ArgumentError", "step cannot be 0"); return 1; }
         if (!blk) {
             Value arr = val_array_new();
-            for (double i = (double)n; step > 0 ? i <= limit : i >= limit; i += step)
-                val_array_push(&arr, val_int((int64_t)i));
+            for (double i = (double)n; step > 0 ? i <= limit + 1e-10 : i >= limit - 1e-10; i += step)
+                val_array_push(&arr, use_float ? val_float(i) : val_int((int64_t)i));
             *out = wrap_as_enumerator(ev, env, arr, site);
         } else {
-            for (double i = (double)n; step > 0 ? i <= limit : i >= limit; i += step) {
-                Value arg = val_int((int64_t)i);
+            for (double i = (double)n; step > 0 ? i <= limit + 1e-10 : i >= limit - 1e-10; i += step) {
+                Value arg = use_float ? val_float(i) : val_int((int64_t)i);
                 Value r = call_block(ev, env, *blk, &arg, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
