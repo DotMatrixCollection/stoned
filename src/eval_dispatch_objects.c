@@ -1527,7 +1527,7 @@ const char *primitive_class_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Reline::Unicode") == 0)
         return "encoding_system_needs";
     if (strcmp(klass_name, "Thread") == 0)
-        return "current,main";
+        return NULL;
     if (strcmp(klass_name, "Regexp") == 0)
         return "new,escape,quote,union";
     if (strcmp(klass_name, "Time") == 0)
@@ -2260,33 +2260,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             { *out = val_nil(); return 1; }
         return 0;
     }
-    if (strcmp(recv.klass->name, "Thread") == 0) {
-        if (strcmp(name, "current") == 0) {
-            /* Return a singleton Thread object representing the main thread */
-            Value thread_obj = val_nil();
-            if (!global_get(&ev->globals, "__main_thread__", &thread_obj) ||
-                thread_obj.kind != VAL_OBJECT) {
-                thread_obj = val_object(ev->arena, recv);
-                val_object_set_ivar(ev->arena, thread_obj, "name", val_string(ev->arena, "main"));
-                global_set(ev->arena, &ev->globals, "__main_thread__", thread_obj);
-            }
-            *out = thread_obj;
-            return 1;
-        }
-        if (strcmp(name, "main") == 0) {
-            Value thread_obj = val_nil();
-            if (!global_get(&ev->globals, "__main_thread__", &thread_obj) ||
-                thread_obj.kind != VAL_OBJECT) {
-                thread_obj = val_object(ev->arena, recv);
-                val_object_set_ivar(ev->arena, thread_obj, "name", val_string(ev->arena, "main"));
-                global_set(ev->arena, &ev->globals, "__main_thread__", thread_obj);
-            }
-            *out = thread_obj;
-            return 1;
-        }
-        *out = val_nil();
-        return 1;
-    }
+    /* Thread class methods are handled by the Ruby prelude */
     if (strcmp(recv.klass->name, "Process") == 0 && strcmp(name, "pid") == 0) {
         if (argc != 0) {
             *out = wrong_arg_count(ev, site, argc, 0);

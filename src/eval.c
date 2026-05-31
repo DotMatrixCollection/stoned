@@ -1926,7 +1926,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         if (strcmp(builtins[i], "Comparable") == 0 || strcmp(builtins[i], "Enumerable") == 0 ||
             strcmp(builtins[i], "Kernel") == 0)
             klass.klass->is_module = 1;
-        if (strcmp(builtins[i], "Thread") == 0 || strcmp(builtins[i], "Process") == 0)
+        if (strcmp(builtins[i], "Process") == 0)
             klass.klass->is_module = 1;
         env_define(arena, ev->top_env, builtins[i], klass);
     }
@@ -3074,6 +3074,44 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  def self.count_objects; {}; end\n"
         "end\n";
 
+    static const char *prelude_thread =
+        "class Thread\n"
+        "  def initialize(is_main = false, &blk)\n"
+        "    @locals = {}\n"
+        "    @alive = is_main\n"
+        "    @status = 'run'\n"
+        "    @value = (!is_main && blk) ? blk.call : nil\n"
+        "  end\n"
+        "  def join(timeout = nil); self; end\n"
+        "  def value; @value; end\n"
+        "  def alive?; @alive; end\n"
+        "  def status; @status; end\n"
+        "  def [](key); @locals ||= {}; @locals[key]; end\n"
+        "  def []=(key, val); @locals ||= {}; @locals[key] = val; end\n"
+        "  def key?(key); @locals ||= {}; @locals.key?(key); end\n"
+        "  def keys; @locals ||= {}; @locals.keys; end\n"
+        "  def thread_variable_get(key); self[key]; end\n"
+        "  def thread_variable_set(key, val); self[key] = val; end\n"
+        "  def thread_variable?(key); key?(key); end\n"
+        "  def priority; 0; end\n"
+        "  def priority=(v); v; end\n"
+        "  def thread_name; nil; end\n"
+        "  def thread_name=(v); v; end\n"
+        "  def abort_on_exception; false; end\n"
+        "  def abort_on_exception=(v); v; end\n"
+        "  def backtrace; []; end\n"
+        "  def inspect; \"#<Thread:0x#{object_id.to_s(16)} run>\"; end\n"
+        "  @@current = new(true)\n"
+        "  def self.current; @@current; end\n"
+        "  def self.main; @@current; end\n"
+        "  def self.list; [@@current]; end\n"
+        "  def self.pass; nil; end\n"
+        "  def self.stop; nil; end\n"
+        "  def self.kill(t); nil; end\n"
+        "  def self.abort_on_exception; false; end\n"
+        "  def self.abort_on_exception=(v); v; end\n"
+        "end\n";
+
     static const char *prelude_mutex_queue =
         "class Mutex\n"
         "  def initialize; @locked = false; end\n"
@@ -3501,7 +3539,8 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         strlen(prelude_file_constants) + strlen(prelude_rbconfig) +
         strlen(prelude_marshal) + strlen(prelude_signal) +
         strlen(prelude_process_status) + strlen(prelude_mutex_queue) +
-        strlen(prelude_rational) + strlen(prelude_random) + 2;
+        strlen(prelude_rational) + strlen(prelude_random) +
+        strlen(prelude_thread) + 2;
     char *prelude = arena_alloc(arena, prelude_len);
     prelude[0] = '\0';
     strcat(prelude, prelude_comparable);
@@ -3513,6 +3552,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
     strcat(prelude, prelude_marshal);
     strcat(prelude, prelude_signal);
     strcat(prelude, prelude_process_status);
+    strcat(prelude, prelude_thread);
     strcat(prelude, prelude_mutex_queue);
     strcat(prelude, prelude_random);
 
