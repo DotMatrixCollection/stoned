@@ -773,15 +773,20 @@ Value call_method_value(Eval *ev, Env *env, Value recv, Value method, RubyClass 
     if ((effective_argc < required) || (!has_splat && effective_argc > total))
         return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
 
-    Env *method_env = env_new(ev->arena, method.method.closure, 1);
-    env_set(ev->arena, method_env, "self", recv);
-    env_set(ev->arena, method_env, "__method__", val_symbol(name));
+    /* Block-derived methods (define_method / define_singleton_method) are closures:
+       is_def=0 lets body assignments propagate into captured variables. */
+    int is_closure_method = is_block_node ||
+        (method.method.closure && method.method.closure->is_def == 0);
+    (void)is_closure_method;
+    Env *method_env = env_new(ev->arena, method.method.closure, is_block_node ? 0 : 1);
+    env_define(ev->arena, method_env, "self", recv);
+    env_define(ev->arena, method_env, "__method__", val_symbol(name));
     Value owner_val = recv.kind == VAL_OBJECT ? recv.obj->klass : val_nil();
     if (owner) {
         owner_val.kind = VAL_CLASS;
         owner_val.klass = owner;
     }
-    env_set(ev->arena, method_env, "__class__", owner_val);
+    env_define(ev->arena, method_env, "__class__", owner_val);
     if (blk) method_env->block_arg = blk;
     bind_params(ev, method_env, params, args, argc);
     if (ev->exception_class != NULL) return val_exception();

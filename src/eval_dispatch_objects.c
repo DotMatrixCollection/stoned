@@ -2343,11 +2343,14 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             return 1;
         }
 
-        Node *def = node_new(ev->arena, NODE_DEF, site ? site->span : (Span){0, 0, 0});
-        def->def.name = mname;
-        def->def.params = method_proc.block.block_node ? method_proc.block.block_node->block.params : NULL;
-        def->def.body = method_proc.block.block_node ? method_proc.block.block_node->block.body : NULL;
-        Value method = val_method(def, method_proc.block.closure, current_method_visibility(env), method_proc.block.def_file);
+        /* Store the block node directly so is_block_node=1 in call_method_value,
+           which enables closure variable mutation (is_def=0 env frame). */
+        Node *block_node = method_proc.block.block_node;
+        if (!block_node) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "define_method: nil block node");
+            return 1;
+        }
+        Value method = val_method(block_node, method_proc.block.closure, current_method_visibility(env), method_proc.block.def_file);
 
         Value singleton_target = val_nil();
         if (env_get(env, "__singleton_target__", &singleton_target) &&

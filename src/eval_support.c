@@ -1158,7 +1158,7 @@ static void bind_pattern(Eval *ev, Env *env, Node *pattern, Value val) {
 
     if (pattern->kind == NODE_PARAM) {
         if (pattern->param.name)
-            env_set(ev->arena, env, pattern->param.name, val);
+            env_define(ev->arena, env, pattern->param.name, val);
         return;
     }
 
@@ -1367,7 +1367,7 @@ void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc) {
             eval_raise_class(ev, NULL, "ArgumentError", "missing keyword: %s", kname);
             return;
         }
-        env_set(ev->arena, env, kname, kval);
+        env_define(ev->arena, env, kname, kval);
     }
 
     /* Bind **opts with the remaining (unconsumed) kwargs */
@@ -1390,7 +1390,7 @@ void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc) {
                     val_hash_set(rest_hash.hash, k, kwargs.hash->vals[i]);
             }
         }
-        if (p->param.name) env_set(ev->arena, env, p->param.name, rest_hash);
+        if (p->param.name) env_define(ev->arena, env, p->param.name, rest_hash);
         break;
     }
 
