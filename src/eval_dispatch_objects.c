@@ -3782,12 +3782,21 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             return 1;
         }
         Value struct_members = val_nil();
-        if (class_is_a_named_class(ev, recv.klass, "Struct") &&
-            recv.klass->class_env &&
-            env_get(recv.klass->class_env, "__struct_members__", &struct_members) &&
-            struct_members.kind == VAL_ARRAY) {
+        /* Walk the superclass chain to find the struct definition (__struct_members__
+           may be on a parent anonymous struct class, not on the subclass itself). */
+        RubyClass *struct_def_class = NULL;
+        if (class_is_a_named_class(ev, recv.klass, "Struct")) {
+            for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+                if (k->class_env && env_get_own(k->class_env, "__struct_members__", &struct_members) &&
+                    struct_members.kind == VAL_ARRAY) {
+                    struct_def_class = k;
+                    break;
+                }
+            }
+        }
+        if (struct_def_class && struct_members.kind == VAL_ARRAY) {
             Value kwinit_flag;
-            int keyword_init = env_get(recv.klass->class_env, "__struct_keyword_init__", &kwinit_flag) &&
+            int keyword_init = env_get_own(struct_def_class->class_env, "__struct_keyword_init__", &kwinit_flag) &&
                                 val_truthy(kwinit_flag);
             Value obj = val_object(ev->arena, recv);
             if (keyword_init) {
@@ -3924,29 +3933,28 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
     }
 
-    /* Struct subclass class methods: members */
-    if (strcmp(name, "members") == 0 &&
-        class_is_a_named_class(ev, recv.klass, "Struct") &&
-        recv.klass->class_env) {
-        Value sm = val_nil();
-        if (env_get(recv.klass->class_env, "__struct_members__", &sm) && sm.kind == VAL_ARRAY) {
+    /* Struct subclass class methods: members / keyword_init? */
+    if ((strcmp(name, "members") == 0 || strcmp(name, "keyword_init?") == 0) &&
+        class_is_a_named_class(ev, recv.klass, "Struct")) {
+        /* Walk superclass chain to find the struct definition */
+        Value sm = val_nil(); RubyClass *sdc = NULL;
+        for (RubyClass *k = recv.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+            if (k->class_env && env_get_own(k->class_env, "__struct_members__", &sm) && sm.kind == VAL_ARRAY)
+                { sdc = k; break; }
+        }
+        if (strcmp(name, "members") == 0) {
             Value syms = val_array_new();
-            for (size_t i = 0; i < sm.array->len; i++) {
-                Value s = sm.array->elems[i];
-                val_array_push(&syms, val_symbol(s.kind == VAL_STRING ? s.sval : "?"));
+            if (sdc) {
+                for (size_t i = 0; i < sm.array->len; i++) {
+                    Value s = sm.array->elems[i];
+                    val_array_push(&syms, val_symbol(s.kind == VAL_STRING ? s.sval : "?"));
+                }
             }
             *out = syms;
-        } else { *out = val_array_new(); }
-        return 1;
-    }
-    if (strcmp(name, "keyword_init?") == 0 &&
-        class_is_a_named_class(ev, recv.klass, "Struct") &&
-        recv.klass->class_env) {
-        Value kwinit = val_false();
-        if (env_get(recv.klass->class_env, "__struct_keyword_init__", &kwinit)) {
-            *out = val_bool(val_truthy(kwinit));
         } else {
-            *out = val_false();
+            Value kwinit = val_false();
+            if (sdc) env_get_own(sdc->class_env, "__struct_keyword_init__", &kwinit);
+            *out = val_bool(val_truthy(kwinit));
         }
         return 1;
     }
@@ -4334,10 +4342,11 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
 
     /* Struct instance methods: to_a, to_h, members, ==, inspect */
     if (recv.obj->klass.kind == VAL_CLASS &&
-        class_is_a_named_class(ev, recv.obj->klass.klass, "Struct") &&
-        recv.obj->klass.klass->class_env) {
+        class_is_a_named_class(ev, recv.obj->klass.klass, "Struct")) {
         Value sm = val_nil();
-        env_get(recv.obj->klass.klass->class_env, "__struct_members__", &sm);
+        for (RubyClass *k = recv.obj->klass.klass; k; k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+            if (k->class_env && env_get_own(k->class_env, "__struct_members__", &sm) && sm.kind == VAL_ARRAY) break;
+        }
         if (sm.kind == VAL_ARRAY) {
             if (strcmp(name, "length") == 0 || strcmp(name, "size") == 0) {
                 *out = val_int((int64_t)sm.array->len);
