@@ -2492,6 +2492,10 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 *out = val_int(arr_out.kind == VAL_ARRAY ? (int64_t)arr_out.array->len : 0);
                 return 1;
             }
+            /* Float range: size is Infinity (uncountably many) */
+            if (r->begin_val.kind == VAL_FLOAT || r->end_val.kind == VAL_FLOAT) {
+                *out = val_float(1.0 / 0.0); return 1;
+            }
             *out = val_nil(); return 1;
         }
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
