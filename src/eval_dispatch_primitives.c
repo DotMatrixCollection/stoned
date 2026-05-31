@@ -856,10 +856,43 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "round") == 0) {
-        int ndigits = (argc >= 1 && args[0].kind == VAL_INT) ? (int)args[0].ival : 0;
-        if (ndigits == 0) { *out = val_int((int64_t)round(f)); return 1; }
-        double factor = pow(10.0, (double)ndigits);
-        *out = val_float(round(f * factor) / factor);
+        int ndigits = 0;
+        const char *half_mode = "up"; /* default: half away from zero */
+        int arg_idx = 0;
+        if (arg_idx < argc && args[arg_idx].kind == VAL_INT) {
+            ndigits = (int)args[arg_idx].ival;
+            arg_idx++;
+        }
+        if (arg_idx < argc && args[arg_idx].kind == VAL_HASH) {
+            Value hval;
+            if (val_hash_get(args[arg_idx].hash, val_symbol("half"), &hval) && hval.kind == VAL_SYMBOL)
+                half_mode = hval.sval;
+        }
+        double factor = (ndigits == 0) ? 1.0 : pow(10.0, (double)ndigits);
+        double scaled = f * factor;
+        double floored = floor(scaled);
+        double frac = scaled - floored;
+        double result;
+        if (fabs(frac - 0.5) < 1e-10) {
+            if (strcmp(half_mode, "down") == 0) {
+                /* round half toward zero */
+                result = (scaled >= 0.0) ? floored : floored + 1.0;
+            } else if (strcmp(half_mode, "even") == 0) {
+                /* round half to nearest even integer */
+                int64_t lo = (int64_t)floored;
+                result = (lo % 2 == 0) ? floored : floored + 1.0;
+            } else {
+                /* :up = half away from zero (C standard round) */
+                result = round(scaled);
+            }
+        } else {
+            result = round(scaled);
+        }
+        if (ndigits <= 0) {
+            *out = val_int((int64_t)(ndigits < 0 ? result / factor : result));
+        } else {
+            *out = val_float(result / factor);
+        }
         return 1;
     }
     if (strcmp(name, "divmod") == 0) {
