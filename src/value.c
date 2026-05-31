@@ -370,8 +370,10 @@ const char *val_inspect(Arena *a, Value v) {
                     case '\n': buf[j++] = '\\'; buf[j++] = 'n';  break;
                     case '\r': buf[j++] = '\\'; buf[j++] = 'r';  break;
                     case '\t': buf[j++] = '\\'; buf[j++] = 't';  break;
+                    case '\x1b': buf[j++] = '\\'; buf[j++] = 'e';  break;
                     default:
-                        if (c < 0x20 || (v.string_encoding == STRING_ENCODING_ASCII_8BIT && c > 0x7e)) {
+                        if (c < 0x20 || c == 0x7f ||
+                            (v.string_encoding == STRING_ENCODING_ASCII_8BIT && c > 0x7e)) {
                             buf[j++] = '\\'; buf[j++] = 'x';
                             buf[j++] = "0123456789abcdef"[c >> 4];
                             buf[j++] = "0123456789abcdef"[c & 0xf];

@@ -494,7 +494,7 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         if (n < 0 || n > 0x10FFFF) { *out = eval_raise_class(ev, site, "RangeError", "%lld out of char range", (long long)n); return 1; }
         if (n <= 127) {
             char buf[2] = { (char)n, '\0' };
-            *out = val_string(ev->arena, buf);
+            *out = val_string_n(ev->arena, buf, 1);
         } else {
             /* UTF-8 encode the codepoint */
             char buf[5]; int len = 0;
@@ -1642,17 +1642,27 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     }
     if (strcmp(name, "inspect") == 0) {
         size_t len = strlen(s);
-        char *buf = arena_alloc(ev->arena, len * 2 + 3);
+        char *buf = arena_alloc(ev->arena, len * 4 + 3);
         size_t j = 0;
+        static const char hex[] = "0123456789abcdef";
         buf[j++] = '"';
         for (size_t i = 0; i < len; i++) {
-            switch (s[i]) {
+            unsigned char ch = (unsigned char)s[i];
+            switch (ch) {
                 case '"':  buf[j++] = '\\'; buf[j++] = '"';  break;
                 case '\\': buf[j++] = '\\'; buf[j++] = '\\'; break;
                 case '\n': buf[j++] = '\\'; buf[j++] = 'n';  break;
                 case '\r': buf[j++] = '\\'; buf[j++] = 'r';  break;
                 case '\t': buf[j++] = '\\'; buf[j++] = 't';  break;
-                default:   buf[j++] = s[i]; break;
+                case '\x1b': buf[j++] = '\\'; buf[j++] = 'e';  break;
+                default:
+                    if (ch < 0x20 || ch == 0x7f) {
+                        buf[j++] = '\\'; buf[j++] = 'x';
+                        buf[j++] = hex[ch >> 4]; buf[j++] = hex[ch & 0xf];
+                    } else {
+                        buf[j++] = (char)ch;
+                    }
+                    break;
             }
         }
         buf[j++] = '"';
