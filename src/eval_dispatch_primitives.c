@@ -1319,17 +1319,27 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     if (strcmp(name, "slice!") == 0) {
         if (argc < 1) { *out = val_nil(); return 1; }
         size_t slen = strlen(s);
-        int64_t idx = args[0].kind == VAL_INT ? args[0].ival : 0;
+        if (args[0].kind != VAL_INT) { *out = val_nil(); return 1; }
+        int64_t idx = args[0].ival;
         if (idx < 0) idx += (int64_t)slen;
         if (idx < 0 || (size_t)idx >= slen) { *out = val_nil(); return 1; }
+        size_t start = (size_t)idx;
+        size_t take;
         if (argc >= 2 && args[1].kind == VAL_INT) {
             int64_t len = args[1].ival;
             if (len < 0) { *out = val_nil(); return 1; }
-            size_t take = ((size_t)idx + (size_t)len > slen) ? slen - (size_t)idx : (size_t)len;
-            *out = val_string_n(ev->arena, s + idx, take);
+            take = (start + (size_t)len > slen) ? slen - start : (size_t)len;
         } else {
-            *out = val_string_n(ev->arena, s + idx, 1);
+            take = 1;
         }
+        /* Store the remaining string in *out; dispatch_method post-call recomputes
+           the sliced portion and returns it as the actual method return value. */
+        size_t rlen = slen - take;
+        char *rbuf = arena_alloc(ev->arena, rlen + 1);
+        memcpy(rbuf, s, start);
+        memcpy(rbuf + start, s + start + take, slen - start - take);
+        rbuf[rlen] = '\0';
+        *out = val_string(ev->arena, rbuf);
         return 1;
     }
     if (strcmp(name, "delete_prefix") == 0 || strcmp(name, "delete_prefix!") == 0) {

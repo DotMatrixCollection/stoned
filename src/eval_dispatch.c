@@ -3428,5 +3428,34 @@ call_method:
         if (argc > 0) return args[argc - 1];
     }
 
+    /* String#slice! binding update: dispatch_string puts the remaining string in result.
+       We update the receiver binding with it and return the sliced portion. */
+    if (!val_is_signal(result) && strcmp(node->call.method, "slice!") == 0 &&
+        recv.kind == VAL_STRING && result.kind == VAL_STRING && node->call.recv &&
+        argc >= 1 && args[0].kind == VAL_INT) {
+        Node *recv_node = node->call.recv;
+        if (recv_node->kind == NODE_LVAR)
+            env_set(ev->arena, env, recv_node->sval, result);
+        else if (recv_node->kind == NODE_IVAR) {
+            Value self;
+            if (env_get(env, "self", &self) && self.kind == VAL_OBJECT)
+                val_object_set_ivar(ev->arena, self, recv_node->sval, result);
+        } else if (recv_node->kind == NODE_GVAR)
+            global_set(ev->arena, &ev->globals, recv_node->sval, result);
+        /* Recompute and return the sliced portion from the original receiver + args */
+        const char *s = recv.sval;
+        size_t slen = strlen(s);
+        int64_t idx = args[0].ival;
+        if (idx < 0) idx += (int64_t)slen;
+        if (idx < 0 || (size_t)idx >= slen) return val_nil();
+        if (argc >= 2 && args[1].kind == VAL_INT) {
+            int64_t len = args[1].ival;
+            if (len < 0) return val_nil();
+            size_t take = ((size_t)idx + (size_t)len > slen) ? slen - (size_t)idx : (size_t)len;
+            return val_string_n(ev->arena, s + (size_t)idx, take);
+        }
+        return val_string_n(ev->arena, s + (size_t)idx, 1);
+    }
+
     return result;
 }
