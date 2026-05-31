@@ -3382,6 +3382,7 @@ call_method:
         (strcmp(node->call.method, "<<") == 0 ||
          strcmp(node->call.method, "concat") == 0 ||
          strcmp(node->call.method, "replace") == 0 ||
+         strcmp(node->call.method, "clear") == 0 ||
          strcmp(node->call.method, "prepend") == 0 ||
          strcmp(node->call.method, "insert") == 0 ||
          strcmp(node->call.method, "force_encoding") == 0 ||
