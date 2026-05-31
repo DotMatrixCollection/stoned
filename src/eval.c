@@ -2020,6 +2020,15 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
     }
 
     {
+        Value re_class;
+        if (env_get(ev->top_env, "Regexp", &re_class) && re_class.kind == VAL_CLASS) {
+            env_define(arena, re_class.klass->class_env, "IGNORECASE", val_int(1));
+            env_define(arena, re_class.klass->class_env, "EXTENDED",   val_int(4));
+            env_define(arena, re_class.klass->class_env, "MULTILINE",  val_int(2));
+        }
+    }
+
+    {
         Value env_hash = val_hash_new(arena);
         for (char **entry = environ; entry && *entry; entry++) {
             const char *eq = strchr(*entry, '=');

@@ -122,6 +122,7 @@ static Node *parse_body_until_rparen(Parser *p) {
     Node *n = node_new(p->arena, NODE_BODY, s);
     NodeList *stmts = NULL;
 
+    p->masgn_paren_depth++;
     while (1) {
         skip_terminators(p);
         Token t = peek(p);
@@ -134,6 +135,7 @@ static Node *parse_body_until_rparen(Parser *p) {
         }
         if (stmt) stmts = nodelist_append(p->arena, stmts, stmt);
     }
+    p->masgn_paren_depth--;
 
     n->body.stmts = stmts;
     return n;

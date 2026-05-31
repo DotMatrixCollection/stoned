@@ -21,6 +21,7 @@ typedef struct {
     int        allow_command_arg_commas;
     int        command_arg_depth;
     int        stop_at_param_pipe;
+    int        masgn_paren_depth; /* >0 inside (...) that may be a nested masgn target */
 } Parser;
 
 void  parser_init(Parser *p, const char *src, size_t len, Arena *arena);

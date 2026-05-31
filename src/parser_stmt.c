@@ -877,6 +877,10 @@ Node *parse_stmt(Parser *p) {
         if (check(p, TOK_COMMA)) {
             Node *lhs = parse_expr_list(p, expr, 7, 1);
             if (!match(p, TOK_EQ)) {
+                /* Inside (...) this may be a nested destructuring target like (a, b)
+                   in (a, b), c = rhs. Return the list as a plain array node. */
+                if (p->masgn_paren_depth > 0)
+                    return lhs;
                 Token t2 = peek(p);
                 error(p, "expected '=' after multiple assignment target", t2.line, t2.col);
                 return NULL;
