@@ -2483,6 +2483,17 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "  def to_s; @path; end\n"
 "  def inspect; \"#<Tempfile:#{@path}>\"; end\n"
 "  def fileno; @file ? @file.fileno : nil; end\n"
+"  def eof?; @file ? @file.eof? : true; end\n"
+"  def gets(*args); @file ? @file.gets(*args) : nil; end\n"
+"  def readline(*args); @file ? @file.readline(*args) : (raise EOFError, 'end of file reached'); end\n"
+"  def readlines(*args); @file ? @file.readlines(*args) : []; end\n"
+"  def each_line(*args, &blk); @file ? @file.each_line(*args, &blk) : self; end\n"
+"  alias each each_line\n"
+"  def getc; @file ? @file.getc : nil; end\n"
+"  def getbyte; @file ? @file.getbyte : nil; end\n"
+"  def pos; @file ? @file.tell : 0; end\n"
+"  def tell; @file ? @file.tell : 0; end\n"
+"  def truncate(len); @file ? @file.truncate(len) : 0; end\n"
 "end\n";
         return eval_ruby_string(ev, tempfile_shim, "tempfile_shim", site);
     }
