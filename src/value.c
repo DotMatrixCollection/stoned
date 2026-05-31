@@ -242,10 +242,43 @@ const char *val_to_s(Arena *a, Value v) {
             } else if (v.fval == -1.0/0.0) {
                 memcpy(buf, "-Infinity", 10);
             } else {
-                snprintf(buf, 64, "%g", v.fval);
-                /* ensure a decimal point is present so 1.0 doesn't print as "1" */
-                if (!strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'n') && !strchr(buf, 'i'))
-                    strncat(buf, ".0", 64 - strlen(buf) - 1);
+                /* Shortest round-trip representation (matches MRI Float#to_s).
+                   Probe with %.*e to find minimum significant digits, then render
+                   in decimal notation (-4<=exp<=16) or scientific (otherwise). */
+                char esc[64];
+                int sig;
+                for (sig = 0; sig <= 16; sig++) {
+                    snprintf(esc, sizeof(esc), "%.*e", sig, v.fval);
+                    char *end;
+                    if (strtod(esc, &end) == v.fval) break;
+                }
+                if (sig > 16) { sig = 16; snprintf(esc, sizeof(esc), "%.*e", 16, v.fval); }
+
+                char *ep = strrchr(esc, 'e');
+                int exp = ep ? atoi(ep + 1) : 0;
+
+                if (exp >= -4 && exp <= 14) {
+                    /* Decimal notation: use %.*f with computed decimal places */
+                    int digs = sig - exp;
+                    if (digs < 0) digs = 0;
+                    snprintf(buf, 64, "%.*f", digs, v.fval);
+                    if (strtod(buf, NULL) != v.fval) {
+                        for (digs++; digs <= 17; digs++) {
+                            snprintf(buf, 64, "%.*f", digs, v.fval);
+                            if (strtod(buf, NULL) == v.fval) break;
+                        }
+                    }
+                    if (!strchr(buf, '.'))
+                        strncat(buf, ".0", 64 - strlen(buf) - 1);
+                } else {
+                    /* Scientific notation: build Ruby-style m.mmmme+dd */
+                    char mant[48];
+                    size_t mlen = ep ? (size_t)(ep - esc) : strlen(esc);
+                    strncpy(mant, esc, mlen); mant[mlen] = '\0';
+                    if (!strchr(mant, '.'))
+                        strncat(mant, ".0", sizeof(mant) - strlen(mant) - 1);
+                    snprintf(buf, 64, "%se%+03d", mant, exp);
+                }
             }
             return buf;
         case VAL_STRING: return v.sval ? v.sval : "";
