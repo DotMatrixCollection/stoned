@@ -1,0 +1,11 @@
+Animal.inherited(Dog),Animal.inherited(Cat),Animal.inherited(Poodle)
+true
+C.SportsCar,V.Car,V.SportsCar
+Persistable->Record,Serializable->Record
+Validatable=>Form
+valid:base
+debug:Object
+true
+I am a
+true
+false

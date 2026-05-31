@@ -1,0 +1,4 @@
+Child+Base(a,b)
+Child+Base[hi]
+Grand+Child+Base(x,y)
+O:Spy,W:Observer,W:Spy

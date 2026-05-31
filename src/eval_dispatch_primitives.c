@@ -2550,11 +2550,14 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 replaced = 1;
                 regex_gsub_after_replace:
                 if (mlen == 0) {
-                    if (pos < slen) {
+                    /* Empty match at m.beg: emit char at that position as a literal
+                       and advance past it. Pre-match chars (pos..m.beg-1) were
+                       already copied, so use m.beg, not the stale pos. */
+                    if ((size_t)m.beg < slen) {
                         while (used + 2 > cap) { cap *= 2; char *nb = realloc(buf, cap); if (!nb) { free(buf); *out = val_nil(); return 1; } buf = nb; }
-                        buf[used++] = s[pos];
+                        buf[used++] = s[m.beg];
                     }
-                    pos++;
+                    pos = (size_t)m.beg + 1;
                 } else {
                     pos = (size_t)m.end;
                 }

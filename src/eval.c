@@ -1334,8 +1334,22 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             } else {
                 Env *frame = env;
                 Value method_val;
-                if (env_get(cur_class_val.klass->class_env, method_name, &method_val) &&
-                    method_val.kind == VAL_METHOD) {
+                /* Class methods are stored as "self.<name>" — try that key first
+                   when self is a class, then fall back to bare name for instance methods. */
+                int found_def = 0;
+                Value self_fwd;
+                if (env_get(env, "self", &self_fwd) && self_fwd.kind == VAL_CLASS) {
+                    size_t mnlen = strlen(method_name);
+                    char *cm_key = arena_alloc(ev->arena, mnlen + 6);
+                    memcpy(cm_key, "self.", 5);
+                    memcpy(cm_key + 5, method_name, mnlen + 1);
+                    found_def = env_get_own(cur_class_val.klass->class_env, cm_key, &method_val) &&
+                                method_val.kind == VAL_METHOD;
+                }
+                if (!found_def)
+                    found_def = env_get(cur_class_val.klass->class_env, method_name, &method_val) &&
+                                method_val.kind == VAL_METHOD;
+                if (found_def) {
                     NodeList *params = method_val.method.def_node->def.params;
                     for (; params && super_argc < 64; params = params->next) {
                         Node *p = params->node;
@@ -1646,6 +1660,19 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                 klass.klass->class_env = env_new(ev->arena, target_env, 1);
                 env_define(ev->arena, target_env, leaf_name, klass);
                 env_define(ev->arena, ev->top_env, full_name, klass);
+                /* Fire Class.inherited(subclass) hook — walk the superclass chain
+                   to find the first definition, matching Ruby class-method inheritance. */
+                if (superclass.kind == VAL_CLASS) {
+                    RubyClass *sc = superclass.klass;
+                    while (sc) {
+                        Value cm;
+                        if (env_get_own(sc->class_env, "self.inherited", &cm) && cm.kind == VAL_METHOD) {
+                            call_method_value(ev, env, superclass, cm, sc, "inherited", &klass, 1, NULL, node);
+                            break;
+                        }
+                        sc = sc->superclass.kind == VAL_CLASS ? sc->superclass.klass : NULL;
+                    }
+                }
             }
 
             env_set(ev->arena, klass.klass->class_env, "self", klass);
