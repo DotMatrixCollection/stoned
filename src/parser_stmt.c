@@ -445,6 +445,22 @@ Node *parse_stmt(Parser *p) {
     Token t = peek(p);
     Span s = tok_span(t);
 
+    /* BEGIN { body } and END { body } — program lifecycle hooks */
+    if (t.kind == TOK_CONST && (strcmp(t.sval, "BEGIN") == 0 || strcmp(t.sval, "END") == 0)) {
+        int is_begin = (strcmp(t.sval, "BEGIN") == 0);
+        Token nxt = peek_next_token_stmt(p);
+        if (nxt.kind == TOK_LBRACE) {
+            advance(p); /* consume BEGIN/END */
+            advance(p); /* consume { */
+            skip_terminators(p);
+            Node *body = parse_body(p, 1);
+            expect(p, TOK_RBRACE, "expected '}'");
+            Node *n = node_new(p->arena, is_begin ? NODE_PROG_BEGIN : NODE_PROG_END, s);
+            n->begin_stmt.body = body;
+            return n;
+        }
+    }
+
     if (t.kind == TOK_IF || t.kind == TOK_UNLESS) {
         advance(p);
         NodeKind kind = (t.kind == TOK_IF) ? NODE_IF : NODE_UNLESS;

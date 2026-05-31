@@ -99,6 +99,10 @@ typedef enum {
     /* Interpolated string (rope) */
     NODE_ROPE,
 
+    /* BEGIN { } / END { } program lifecycle hooks */
+    NODE_PROG_BEGIN,    /* BEGIN { body } — runs before program */
+    NODE_PROG_END,      /* END { body } — runs after program */
+
     /* Structure */
     NODE_BODY,          /* sequence of statements */
     NODE_PROGRAM,       /* top-level body */

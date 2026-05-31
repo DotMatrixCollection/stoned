@@ -508,8 +508,9 @@ static const char *defined_expr(Eval *ev, Env *env, Node *node) {
         case NODE_LVAR: {
             Value v;
             if (env_get(env, node->sval, &v)) return "local-variable";
-            Value self;
-            if (env_get(env, "self", &self) && defined_method(ev, env, self, node->sval, node))
+            Value self = val_nil();
+            env_get(env, "self", &self);
+            if (defined_method(ev, env, self, node->sval, node))
                 return "method";
             return NULL;
         }
@@ -551,8 +552,9 @@ static const char *defined_expr(Eval *ev, Env *env, Node *node) {
             return "expression";
         case NODE_CALL:
             if (!node->call.recv) {
-                Value self;
-                if (env_get(env, "self", &self) && defined_method(ev, env, self, node->call.method, node))
+                Value self = val_nil();
+                env_get(env, "self", &self);
+                if (defined_method(ev, env, self, node->call.method, node))
                     return "method";
                 return NULL;
             }
@@ -1846,12 +1848,48 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
         case NODE_BODY:
         case NODE_PROGRAM: {
             Value result = val_nil();
+            /* Pass 1: run all BEGIN { } blocks first, in order */
             for (NodeList *l = node->body.stmts; l; l = l->next) {
+                if (l->node && l->node->kind == NODE_PROG_BEGIN) {
+                    result = eval_node(ev, env, l->node->begin_stmt.body);
+                    if (ev->errored || val_is_signal(result)) return result;
+                }
+            }
+            /* Pass 2: run all normal stmts (skip BEGIN/END nodes) */
+            for (NodeList *l = node->body.stmts; l; l = l->next) {
+                if (!l->node) continue;
+                if (l->node->kind == NODE_PROG_BEGIN || l->node->kind == NODE_PROG_END) continue;
                 result = eval_node(ev, env, l->node);
                 if (ev->errored || val_is_signal(result)) return result;
             }
+            /* Pass 3: run END { } blocks in LIFO order — collect then reverse */
+            {
+                NodeList *end_blocks = NULL;
+                for (NodeList *l = node->body.stmts; l; l = l->next) {
+                    if (l->node && l->node->kind == NODE_PROG_END)
+                        end_blocks = nodelist_append(ev->arena, end_blocks, l->node);
+                }
+                /* Reverse the list */
+                NodeList *reversed = NULL;
+                for (NodeList *l = end_blocks; l; l = l->next) {
+                    NodeList *item = arena_alloc(ev->arena, sizeof(NodeList));
+                    item->node = l->node;
+                    item->next = reversed;
+                    reversed = item;
+                }
+                for (NodeList *l = reversed; l; l = l->next) {
+                    eval_node(ev, env, l->node->begin_stmt.body);
+                }
+            }
             return result;
         }
+
+        case NODE_PROG_BEGIN:
+            return eval_node(ev, env, node->begin_stmt.body);
+
+        case NODE_PROG_END:
+            /* standalone END block outside NODE_PROGRAM: run immediately */
+            return eval_node(ev, env, node->begin_stmt.body);
 
         default:
             return eval_error(ev, node, "cannot evaluate node kind %s", node_kind_name(node->kind));
