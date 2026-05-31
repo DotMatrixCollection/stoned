@@ -1105,7 +1105,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     if (!cont) break;
                 }
             }
-            return result;
+            return val_nil();
         }
 
         case NODE_FOR: {
