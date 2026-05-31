@@ -3552,6 +3552,11 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = obj;
         return 1;
     }
+    if (strcmp(name, "allocate") == 0) {
+        /* Create object without calling initialize */
+        *out = val_object(ev->arena, recv);
+        return 1;
+    }
     if (strcmp(name, "new") == 0) {
         if (strcmp(recv.klass->name, "Regexp") == 0) {
             Value obj;
