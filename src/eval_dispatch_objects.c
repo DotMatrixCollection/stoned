@@ -1210,7 +1210,7 @@ static Value md_group_str(Arena *a, const char *s, long beg_i, long end_i,
 
 /* Extract named capture group names from a regexp pattern in order.
    Returns a VAL_ARRAY of strings (or nil for unnamed groups). */
-static Value extract_named_groups(Arena *a, const char *pattern, size_t ncaps) {
+Value extract_named_groups(Arena *a, const char *pattern, size_t ncaps) {
     Value arr = val_array_new();
     if (!pattern || ncaps == 0) return arr;
 
@@ -1253,7 +1253,7 @@ static Value extract_named_groups(Arena *a, const char *pattern, size_t ncaps) {
     return arr;
 }
 
-static Value build_match_data(Eval *ev, Value regexp, Value string, RegexMatch match) {
+Value build_match_data(Eval *ev, Value regexp, Value string, RegexMatch match) {
     Value md_class;
     Value obj;
 

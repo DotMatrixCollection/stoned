@@ -2530,6 +2530,10 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                         for (size_t ci = m.capture_count; ci < 9; ci++)
                             global_set(ev->arena, &ev->globals, cap_keys[ci], val_nil());
                     }
+                    {
+                        Value md = build_match_data(ev, args[0], recv, m);
+                        global_set(ev->arena, &ev->globals, "~", md);
+                    }
                     regex_match_free(&m);
                     Value r = call_block(ev, env, *blk, &matched, 1, site);
                     if (ev->errored) { free(buf); *out = val_nil(); return 1; }
@@ -2556,7 +2560,11 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                         goto regex_gsub_after_replace;
                     }
                     const char *raw = val_to_s(ev->arena, args[1]);
-                    /* Expand backreferences: \1..\9, \0/\& (match), \\ (literal \) */
+                    /* Get regex source pattern for \k<name> named backreference expansion */
+                    Value gsub_src_v; const char *gsub_pat = NULL;
+                    if (val_object_get_ivar(args[0], "source", &gsub_src_v) && gsub_src_v.kind == VAL_STRING)
+                        gsub_pat = gsub_src_v.sval;
+                    /* Expand backreferences: \1..\9, \0/\& (match), \k<name>, \\ (literal \) */
                     {
                         size_t rraw = strlen(raw), rout_cap = rraw * 2 + 64;
                         char *rout = arena_alloc(ev->arena, rout_cap);
@@ -2578,6 +2586,44 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                                     while (ro + mlen2 + 1 > rout_cap) { rout_cap *= 2; char *nr = arena_alloc(ev->arena, rout_cap); memcpy(nr, rout, ro); rout = nr; }
                                     memcpy(rout + ro, s + m.beg, mlen2); ro += mlen2;
                                     ri += 2; continue;
+                                }
+                                if (next == 'k' && ri + 2 < rraw && raw[ri + 2] == '<') {
+                                    /* Named backreference: \k<capname> */
+                                    size_t ns = ri + 3, ne = ns;
+                                    while (ne < rraw && raw[ne] != '>') ne++;
+                                    if (ne < rraw && ne > ns) {
+                                        size_t name_len = ne - ns;
+                                        int ci = -1;
+                                        if (gsub_pat && name_len < 64) {
+                                            size_t cap_idx = 0;
+                                            for (const char *pp = gsub_pat; *pp && ci < 0; pp++) {
+                                                if (*pp == '\\') { pp++; continue; }
+                                                if (*pp == '(' && *(pp+1) == '?') {
+                                                    const char *q = pp + 2;
+                                                    char cl = 0;
+                                                    if (*q == '<' && *(q+1) != '=' && *(q+1) != '!') { q++; cl = '>'; }
+                                                    else if (*q == '\'') { q++; cl = '\''; }
+                                                    else { continue; }
+                                                    const char *nm = q;
+                                                    while (*q && *q != cl) q++;
+                                                    if (*q == cl && q > nm) {
+                                                        if ((size_t)(q-nm) == name_len && strncmp(nm, raw+ns, name_len) == 0)
+                                                            ci = (int)cap_idx;
+                                                        cap_idx++;
+                                                        pp = q;
+                                                    }
+                                                    continue;
+                                                }
+                                                if (*pp == '(') cap_idx++;
+                                            }
+                                        }
+                                        if (ci >= 0 && ci < (int)m.capture_count && m.cap_beg[ci] >= 0) {
+                                            size_t clen = (size_t)(m.cap_end[ci] - m.cap_beg[ci]);
+                                            while (ro + clen + 1 > rout_cap) { rout_cap *= 2; char *nr = arena_alloc(ev->arena, rout_cap); memcpy(nr, rout, ro); rout = nr; }
+                                            memcpy(rout + ro, s + m.cap_beg[ci], clen); ro += clen;
+                                        }
+                                        ri = ne + 1; continue;
+                                    }
                                 }
                                 if (next == '\\') { if (ro + 2 > rout_cap) { rout_cap *= 2; char *nr = arena_alloc(ev->arena, rout_cap); memcpy(nr, rout, ro); rout = nr; } rout[ro++] = '\\'; ri += 2; continue; }
                             }

@@ -154,6 +154,8 @@ int primitive_class_method_responds_to_name(const char *klass_name, const char *
 Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name, int forced_arity);
 int value_is_regexp(Value v);
 Value regexp_search_value(Eval *ev, Value regexp, Value string, int return_index, Node *site);
+Value extract_named_groups(Arena *a, const char *pattern, size_t ncaps);
+Value build_match_data(Eval *ev, Value regexp, Value string, RegexMatch match);
 
 static inline int flow_signal_out(Value v, Value *out) {
     if (v.kind == VAL_BREAK) {
