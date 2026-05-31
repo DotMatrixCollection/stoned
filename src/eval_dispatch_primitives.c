@@ -924,11 +924,17 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
     if (strcmp(name, "step") == 0) {
         if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Float#step requires a limit"); return 1; }
-        if (!blk)     { *out = eval_raise_class(ev, site, "LocalJumpError", "Float#step requires a block"); return 1; }
         double limit = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
         double step  = argc >= 2 ? (args[1].kind == VAL_INT ? (double)args[1].ival : args[1].fval) : 1.0;
         if (step == 0.0) { *out = eval_raise_class(ev, site, "ArgumentError", "step cannot be 0"); return 1; }
-        for (double i = f; step > 0 ? i <= limit : i >= limit; i += step) {
+        if (!blk) {
+            Value arr = val_array_new();
+            for (double i = f; step > 0 ? i <= limit + 1e-10 : i >= limit - 1e-10; i += step)
+                val_array_push(&arr, val_float(i));
+            *out = wrap_as_enumerator(ev, env, arr, site);
+            return 1;
+        }
+        for (double i = f; step > 0 ? i <= limit + 1e-10 : i >= limit - 1e-10; i += step) {
             Value arg = val_float(i);
             Value r = call_block(ev, env, *blk, &arg, 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
@@ -1844,6 +1850,26 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         size_t slen = recv.byte_len;
         for (size_t i = 0; i < slen; i++)
             val_array_push(&arr, val_int((int64_t)(unsigned char)s[i]));
+        *out = arr;
+        return 1;
+    }
+    if (strcmp(name, "codepoints") == 0) {
+        Value arr = val_array_new();
+        size_t slen = recv.byte_len;
+        for (size_t i = 0; i < slen; ) {
+            unsigned char c = (unsigned char)s[i];
+            uint32_t cp = 0;
+            size_t seq;
+            if (c < 0x80)       { cp = c; seq = 1; }
+            else if (c < 0xC0)  { cp = c; seq = 1; } /* invalid continuation */
+            else if (c < 0xE0)  { cp = (c & 0x1F); seq = 2; }
+            else if (c < 0xF0)  { cp = (c & 0x0F); seq = 3; }
+            else                { cp = (c & 0x07); seq = 4; }
+            for (size_t j = 1; j < seq && i + j < slen; j++)
+                cp = (cp << 6) | ((unsigned char)s[i + j] & 0x3F);
+            val_array_push(&arr, val_int((int64_t)cp));
+            i += seq;
+        }
         *out = arr;
         return 1;
     }
