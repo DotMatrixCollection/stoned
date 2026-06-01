@@ -616,7 +616,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         NULL
     };
     static const char *proc_methods[] = {
-        "call", "[]", "lambda?", "arity", "to_s", "inspect", NULL
+        "call", "[]", "lambda?", "arity", "parameters", "to_proc", "to_s", "inspect", NULL
     };
     static const char *range_methods[] = {
         "begin", "first", "end", "last", "exclude_end?",
@@ -2663,6 +2663,8 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                 return forced_arity;
             return val_int(proc_arity(recv.block.block_node->block.params, recv.block.is_lambda));
         }
+        if (strcmp(name, "to_proc") == 0)
+            return recv;
         if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0)
             return val_string(ev->arena, recv.block.is_lambda ? "#<Proc:lambda>" : "#<Proc>");
         if (strcmp(name, "parameters") == 0) {
