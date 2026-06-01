@@ -17,6 +17,24 @@ static Value wrap_result_as_enumerator(Eval *ev, Env *env, Value arr, Node *site
     return arr;
 }
 
+static Value hash_pairs_array(RubyHash *h) {
+    Value pairs = val_array_new();
+    for (size_t i = 0; i < h->len; i++) {
+        Value pair = val_array_new();
+        val_array_push(&pair, h->keys[i]);
+        val_array_push(&pair, h->vals[i]);
+        val_array_push(&pairs, pair);
+    }
+    return pairs;
+}
+
+static Value hash_keys_or_values_array(RubyHash *h, int keys) {
+    Value arr = val_array_new();
+    for (size_t i = 0; i < h->len; i++)
+        val_array_push(&arr, keys ? h->keys[i] : h->vals[i]);
+    return arr;
+}
+
 static int hash_is_process_env(Eval *ev, RubyHash *h) {
     Value env_hash = val_nil();
     return env_get(ev->top_env, "ENV", &env_hash) &&
@@ -1670,7 +1688,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = current; return 1;
     }
     if (strcmp(name, "find") == 0 || strcmp(name, "detect") == 0) {
-        if (!blk) { *out = val_nil(); return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         for (size_t i = 0; i < h->len; i++) {
             Value pair[2] = { h->keys[i], h->vals[i] };
             Value r = call_block(ev, env, *blk, pair, 2, site);
@@ -1685,7 +1703,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = val_nil(); return 1;
     }
     if (strcmp(name, "find_all") == 0 || strcmp(name, "filter") == 0 || strcmp(name, "select") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         Value result = val_hash_new(ev->arena);
         for (size_t i = 0; i < h->len; i++) {
             Value pair[2] = { h->keys[i], h->vals[i] };
@@ -1696,7 +1714,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = result; return 1;
     }
     if (strcmp(name, "flat_map") == 0 || strcmp(name, "collect_concat") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         Value result = val_array_new();
         for (size_t i = 0; i < h->len; i++) {
             Value pair[2] = { h->keys[i], h->vals[i] };
@@ -1796,7 +1814,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#map requires a block");
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         else {
             Value result = val_array_new();
             for (size_t i = 0; i < h->len; i++) {
@@ -1811,8 +1829,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "select") == 0 || strcmp(name, "filter") == 0 || strcmp(name, "reject") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError",
-                                          strcmp(name, "reject") == 0 ? "Hash#reject requires a block" : "Hash#select requires a block");
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         else {
             Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
             for (size_t i = 0; i < h->len; i++) {
@@ -1829,7 +1846,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     /* Hash#select! / Hash#filter! / Hash#keep_if — mutate in place, keep matching */
     if (strcmp(name, "select!") == 0 || strcmp(name, "filter!") == 0 || strcmp(name, "keep_if") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         int changed = 0;
         for (size_t i = 0; i < h->len; ) {
@@ -1849,7 +1866,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     /* Hash#reject! / Hash#delete_if — mutate in place, remove matching */
     if (strcmp(name, "reject!") == 0 || strcmp(name, "delete_if") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         int changed = 0;
         for (size_t i = 0; i < h->len; ) {
@@ -1887,7 +1904,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "group_by") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         Value result = val_hash_new(ev->arena);
         for (size_t i = 0; i < h->len; i++) {
             Value pair[2] = { h->keys[i], h->vals[i] };
@@ -1918,7 +1935,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "flat_map") == 0) {
-        if (!blk) *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#flat_map requires a block");
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         else {
             Value result = val_array_new();
             for (size_t i = 0; i < h->len; i++) {
@@ -2007,7 +2024,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         return 1;
     }
     if (strcmp(name, "transform_values") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#transform_values requires a block"); return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_keys_or_values_array(h, 0), site); return 1; }
         Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
         for (size_t i = 0; i < h->len; i++) {
             Value r = call_block(ev, env, *blk, &h->vals[i], 1, site);
@@ -2018,7 +2035,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = result; return 1;
     }
     if (strcmp(name, "transform_values!") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#transform_values! requires a block"); return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_keys_or_values_array(h, 0), site); return 1; }
         if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         for (size_t i = 0; i < h->len; i++) {
             Value r = call_block(ev, env, *blk, &h->vals[i], 1, site);
@@ -2029,7 +2046,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = recv; return 1;
     }
     if (strcmp(name, "transform_keys") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#transform_keys requires a block"); return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_keys_or_values_array(h, 1), site); return 1; }
         Value result = val_hash_new(ev->arena);
         for (size_t i = 0; i < h->len; i++) {
             Value r = call_block(ev, env, *blk, &h->keys[i], 1, site);
@@ -2040,7 +2057,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = result; return 1;
     }
     if (strcmp(name, "transform_keys!") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#transform_keys! requires a block"); return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_keys_or_values_array(h, 1), site); return 1; }
         if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         /* collect new keys first to avoid aliasing the underlying array */
         Value new_keys[256];
@@ -2055,7 +2072,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         *out = recv; return 1;
     }
     if (strcmp(name, "filter_map") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Hash#filter_map requires a block"); return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         Value result = val_array_new();
         for (size_t i = 0; i < h->len; i++) {
             Value pair[2] = { h->keys[i], h->vals[i] };
