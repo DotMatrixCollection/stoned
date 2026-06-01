@@ -9,13 +9,14 @@ io.each_line("\n") { |l| print l.chomp + "!" }
 puts
 io.rewind
 puts io.each_line { }.class
-
-begin
-  io.each_line
-rescue => e
-  puts e.class
-  puts e.message
-end
+io.rewind
+line_enum = io.each_line
+puts line_enum.class
+p line_enum.to_a
+io.rewind
+line_enum = io.each_line("\n")
+puts line_enum.class
+p line_enum.to_a
 
 io.close
 f.close

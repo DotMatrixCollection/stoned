@@ -4,7 +4,9 @@
 "é"
 "x"
 File
+Enumerator
+[195, 169, 120]
+Enumerator
+["é", "x"]
 ArgumentError
 wrong number of arguments (given 1, expected 0)
-LocalJumpError
-File#each_char requires a block

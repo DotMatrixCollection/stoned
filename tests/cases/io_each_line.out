@@ -3,5 +3,7 @@ beta
 gamma
 alpha!beta!gamma!
 IO
-LocalJumpError
-IO#each_line requires a block
+Enumerator
+["alpha\n", "beta\n", "gamma\n"]
+Enumerator
+["alpha\n", "beta\n", "gamma\n"]

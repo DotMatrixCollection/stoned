@@ -4,7 +4,9 @@
 "é"
 "x"
 IO
+Enumerator
+[195, 169, 120]
+Enumerator
+["é", "x"]
 ArgumentError
 wrong number of arguments (given 1, expected 0)
-LocalJumpError
-IO#each_char requires a block

@@ -5736,12 +5736,19 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "each_byte") == 0) {
-            if (!blk) {
-                *out = eval_raise_class(ev, site, "LocalJumpError", "IO#each_byte requires a block");
-                return 1;
-            }
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            if (!blk) {
+                Value arr = val_array_new();
+                while (1) {
+                    Value byte = file_getbyte_stream(ev, recv, mode.sval, site);
+                    if (val_is_signal(byte)) { *out = byte; return 1; }
+                    if (byte.kind == VAL_NIL) break;
+                    val_array_push(&arr, byte);
+                }
+                *out = wrap_array_as_enumerator(ev, env, arr, site);
                 return 1;
             }
             while (1) {
@@ -5760,12 +5767,19 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "each_char") == 0) {
-            if (!blk) {
-                *out = eval_raise_class(ev, site, "LocalJumpError", "IO#each_char requires a block");
-                return 1;
-            }
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            if (!blk) {
+                Value arr = val_array_new();
+                while (1) {
+                    Value ch = file_getc_stream(ev, recv, mode.sval, "IO#each_char", site);
+                    if (val_is_signal(ch)) { *out = ch; return 1; }
+                    if (ch.kind == VAL_NIL) break;
+                    val_array_push(&arr, ch);
+                }
+                *out = wrap_array_as_enumerator(ev, env, arr, site);
                 return 1;
             }
             while (1) {
@@ -5785,7 +5799,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "each_line") == 0) {
             if (!blk) {
-                *out = eval_raise_class(ev, site, "LocalJumpError", "IO#each_line requires a block");
+                Value arr = val_array_new();
+                while (1) {
+                    Value line = file_gets_stream(ev, recv, mode.sval, "IO#each_line", args, argc, site);
+                    if (val_is_signal(line)) { *out = line; return 1; }
+                    if (line.kind == VAL_NIL) break;
+                    val_array_push(&arr, line);
+                }
+                *out = wrap_array_as_enumerator(ev, env, arr, site);
                 return 1;
             }
             while (1) {
@@ -6023,12 +6044,19 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "each_byte") == 0) {
-            if (!blk) {
-                *out = eval_raise_class(ev, site, "LocalJumpError", "File#each_byte requires a block");
-                return 1;
-            }
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            if (!blk) {
+                Value arr = val_array_new();
+                while (1) {
+                    Value byte = file_getbyte_stream(ev, recv, mode.sval, site);
+                    if (val_is_signal(byte)) { *out = byte; return 1; }
+                    if (byte.kind == VAL_NIL) break;
+                    val_array_push(&arr, byte);
+                }
+                *out = wrap_array_as_enumerator(ev, env, arr, site);
                 return 1;
             }
             while (1) {
@@ -6047,12 +6075,19 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             return 1;
         }
         if (strcmp(name, "each_char") == 0) {
-            if (!blk) {
-                *out = eval_raise_class(ev, site, "LocalJumpError", "File#each_char requires a block");
-                return 1;
-            }
             if (argc != 0) {
                 *out = wrong_arg_count(ev, site, argc, 0);
+                return 1;
+            }
+            if (!blk) {
+                Value arr = val_array_new();
+                while (1) {
+                    Value ch = file_getc_stream(ev, recv, mode.sval, "File#each_char", site);
+                    if (val_is_signal(ch)) { *out = ch; return 1; }
+                    if (ch.kind == VAL_NIL) break;
+                    val_array_push(&arr, ch);
+                }
+                *out = wrap_array_as_enumerator(ev, env, arr, site);
                 return 1;
             }
             while (1) {
@@ -6072,7 +6107,14 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         }
         if (strcmp(name, "each") == 0 || strcmp(name, "each_line") == 0) {
             if (!blk) {
-                *out = eval_raise_class(ev, site, "LocalJumpError", "File#each_line requires a block");
+                Value arr = val_array_new();
+                while (1) {
+                    Value line = file_gets_stream(ev, recv, mode.sval, "File#each_line", args, argc, site);
+                    if (val_is_signal(line)) { *out = line; return 1; }
+                    if (line.kind == VAL_NIL) break;
+                    val_array_push(&arr, line);
+                }
+                *out = wrap_array_as_enumerator(ev, env, arr, site);
                 return 1;
             }
             while (1) {

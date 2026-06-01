@@ -8,13 +8,14 @@ f.each_line("\n") { |l| print l.chomp + "!" }
 puts
 f.rewind
 puts f.each_line { }.class
-
-begin
-  f.each_line
-rescue => e
-  puts e.class
-  puts e.message
-end
+f.rewind
+line_enum = f.each_line
+puts line_enum.class
+p line_enum.to_a
+f.rewind
+line_enum = f.each_line("\n")
+puts line_enum.class
+p line_enum.to_a
 
 f.close
 File.delete(path)
