@@ -2533,6 +2533,21 @@ static int range_include_value(Eval *ev, Env *env, RubyRange *r, Value v, Node *
     return r->exclusive ? cmp_hi.ival < 0 : cmp_hi.ival <= 0;
 }
 
+static int range_count_arg(Eval *ev, Node *site, Value arg, int64_t *out, Value *err_out) {
+    if (arg.kind == VAL_INT) *out = arg.ival;
+    else if (arg.kind == VAL_FLOAT) *out = (int64_t)arg.fval;
+    else {
+        *err_out = eval_raise_class(ev, site, "TypeError", "no implicit conversion of %s into Integer",
+                                    value_class_name(ev, arg));
+        return 0;
+    }
+    if (*out < 0) {
+        *err_out = eval_raise_class(ev, site, "ArgumentError", "negative array size");
+        return 0;
+    }
+    return 1;
+}
+
 int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args, int argc,
                    Value *blk, Node *site, Value *out) {
     if (recv.kind != VAL_RANGE) return 0;
@@ -2558,7 +2573,8 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         if (argc > 0) {
             if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
                 { *out = eval_raise_class(ev, site, "TypeError", "Range#first(n) requires Integer range"); return 1; }
-            int64_t n = args[0].kind == VAL_INT ? args[0].ival : 0;
+            int64_t n;
+            if (!range_count_arg(ev, site, args[0], &n, out)) return 1;
             Value arr = val_array_new();
             int64_t hi = r->end_val.ival;
             for (int64_t i = r->begin_val.ival; i < r->begin_val.ival + n; i++) {
@@ -2586,10 +2602,14 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         if (argc > 0) {
             if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
                 { *out = eval_raise_class(ev, site, "TypeError", "Range#last(n) requires Integer range"); return 1; }
-            int64_t n = args[0].kind == VAL_INT ? args[0].ival : 0;
+            int64_t n;
+            if (!range_count_arg(ev, site, args[0], &n, out)) return 1;
+            if (n == 0) { *out = val_array_new(); return 1; }
             int64_t hi = r->exclusive ? r->end_val.ival - 1 : r->end_val.ival;
+            if (hi < r->begin_val.ival) { *out = val_array_new(); return 1; }
             Value arr = val_array_new();
             int64_t lo = hi - n + 1;
+            if (lo < r->begin_val.ival) lo = r->begin_val.ival;
             for (int64_t i = lo; i <= hi; i++) val_array_push(&arr, val_int(i));
             *out = arr; return 1;
         }
