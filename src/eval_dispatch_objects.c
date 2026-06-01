@@ -1322,6 +1322,7 @@ Value regexp_search_value(Eval *ev, Value regexp, Value string, int return_index
     status = regex_search(compiled, string.sval, strlen(string.sval), 0, &match);
     if (status == REGEX_MISMATCH) {
         global_set(ev->arena, &ev->globals, "~", val_nil());
+        global_set(ev->arena, &ev->globals, "&", val_nil());
         global_set(ev->arena, &ev->globals, "`", val_nil());
         global_set(ev->arena, &ev->globals, "'", val_nil());
         for (int i = 0; i < 9; i++)
@@ -1335,9 +1336,12 @@ Value regexp_search_value(Eval *ev, Value regexp, Value string, int return_index
     Value md = build_match_data(ev, regexp, string, match);
     global_set(ev->arena, &ev->globals, "~", md);
 
-    /* set $` (pre-match) and $' (post-match) */
+    /* set $& (full match), $` (pre-match), $' (post-match) */
     const char *str = string.sval;
     size_t slen = strlen(str);
+    global_set(ev->arena, &ev->globals, "&",
+               val_string_n(ev->arena, str + (size_t)match.beg,
+                            (size_t)(match.end - match.beg)));
     global_set(ev->arena, &ev->globals, "`",
                val_string_n(ev->arena, str, (size_t)match.beg));
     size_t post_start = (size_t)match.end;
