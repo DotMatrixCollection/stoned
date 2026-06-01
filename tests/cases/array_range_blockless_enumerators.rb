@@ -16,6 +16,8 @@ array_methods = [
 ]
 
 p array_methods.map { |m| a.dup.send(m).class }
+p array_methods.map { |m| a.respond_to?(m) }.uniq
+p array_methods.all? { |m| Array.instance_methods.include?(m) }
 p a.map.to_a
 p a.select.to_a
 p a.reject.to_a

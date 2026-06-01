@@ -594,7 +594,8 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     static const char *arr_methods[] = {
         "length", "size", "count", "empty?", "first", "last", "push", "append", "concat", "pop",
         "shift", "unshift", "prepend", "reverse", "reverse_each", "to_s", "to_a", "to_ary", "to_h", "inspect", "join", "include?",
-        "each", "each_with_index", "map", "collect", "select", "find_all", "filter", "reject",
+        "each", "each_with_index", "map", "collect", "map!", "collect!", "select", "find_all", "filter",
+        "select!", "filter!", "keep_if", "reject", "reject!", "delete_if",
         "reduce", "inject", "any?", "all?", "none?", "one?", "min", "max", "sum", "flatten",
         "flatten!", "uniq", "sort", "compact", "compact!", "zip", "cycle", "sample", "shuffle", "shuffle!", "grep", "grep_v", "partition", "flat_map", "collect_concat",
         "chunk", "chunk_while", "slice_when", "slice_before", "replace",
