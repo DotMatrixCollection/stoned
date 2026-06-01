@@ -145,6 +145,7 @@ struct RubyHash {
     struct Env *singleton_env;
     Value   default_value;
     Value   default_proc;
+    int     compare_by_identity;
     int     frozen;
 };
 

@@ -35,6 +35,23 @@ static Value hash_keys_or_values_array(RubyHash *h, int keys) {
     return arr;
 }
 
+static int hash_identity_key_equal(Value a, Value b) {
+    if (a.kind != b.kind) return 0;
+    switch (a.kind) {
+        case VAL_OBJECT: return a.obj == b.obj;
+        case VAL_BLOCK:  return a.block.block_node == b.block.block_node;
+        case VAL_STRING: return a.sval == b.sval;
+        case VAL_ARRAY:  return a.array == b.array;
+        case VAL_HASH:   return a.hash == b.hash;
+        case VAL_CLASS:  return a.klass == b.klass;
+        default:         return val_equal(a, b);
+    }
+}
+
+static int hash_key_equal_for_mode(RubyHash *h, Value a, Value b) {
+    return h->compare_by_identity ? hash_identity_key_equal(a, b) : val_equal(a, b);
+}
+
 static int hash_is_process_env(Eval *ev, RubyHash *h) {
     Value env_hash = val_nil();
     return env_get(ev->top_env, "ENV", &env_hash) &&
@@ -1720,6 +1737,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "merge") == 0) {
         Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
+        result.hash->compare_by_identity = h->compare_by_identity;
         for (size_t i = 0; i < h->len; i++) val_hash_set(result.hash, h->keys[i], h->vals[i]);
         for (int i = 0; i < argc; i++) {
             if (args[i].kind != VAL_HASH) { *out = eval_raise_class(ev, site, "TypeError", "Hash#merge requires Hash arguments"); return 1; }
@@ -1800,6 +1818,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     if (strcmp(name, "find_all") == 0 || strcmp(name, "filter") == 0 || strcmp(name, "select") == 0) {
         if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         Value result = val_hash_new(ev->arena);
+        result.hash->compare_by_identity = h->compare_by_identity;
         for (size_t i = 0; i < h->len; i++) {
             Value pair[2] = { h->keys[i], h->vals[i] };
             Value r = call_block(ev, env, *blk, pair, 2, site);
@@ -1927,6 +1946,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_pairs_array(h), site); return 1; }
         else {
             Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
+            result.hash->compare_by_identity = h->compare_by_identity;
             for (size_t i = 0; i < h->len; i++) {
                 Value bargs[2] = { h->keys[i], h->vals[i] };
                 Value r = call_block(ev, env, *blk, bargs, 2, site);
@@ -2114,6 +2134,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "dup") == 0) {
         Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
+        result.hash->compare_by_identity = h->compare_by_identity;
         for (size_t i = 0; i < h->len; i++) val_hash_set(result.hash, h->keys[i], h->vals[i]);
         *out = result;
         return 1;
@@ -2121,6 +2142,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     if (strcmp(name, "transform_values") == 0) {
         if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_keys_or_values_array(h, 0), site); return 1; }
         Value result = val_hash_new_with_defaults(ev->arena, h->default_value, h->default_proc);
+        result.hash->compare_by_identity = h->compare_by_identity;
         for (size_t i = 0; i < h->len; i++) {
             Value r = call_block(ev, env, *blk, &h->vals[i], 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
@@ -2143,6 +2165,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     if (strcmp(name, "transform_keys") == 0) {
         if (!blk) { *out = wrap_result_as_enumerator(ev, env, hash_keys_or_values_array(h, 1), site); return 1; }
         Value result = val_hash_new(ev->arena);
+        result.hash->compare_by_identity = h->compare_by_identity;
         for (size_t i = 0; i < h->len; i++) {
             Value r = call_block(ev, env, *blk, &h->keys[i], 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }
@@ -2268,6 +2291,15 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
         *out = recv; return 1;
     }
+    if (strcmp(name, "compare_by_identity") == 0) {
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
+        h->compare_by_identity = 1;
+        *out = recv; return 1;
+    }
+    if (strcmp(name, "compare_by_identity?") == 0) {
+        *out = val_bool(h->compare_by_identity);
+        return 1;
+    }
     if (strcmp(name, "fetch_values") == 0) {
         Value result = val_array_new();
         for (int i = 0; i < argc; i++) {
@@ -2287,6 +2319,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "compact") == 0) {
         Value result = val_hash_new(ev->arena);
+        result.hash->compare_by_identity = h->compare_by_identity;
         for (size_t i = 0; i < h->len; i++)
             if (h->vals[i].kind != VAL_NIL) val_hash_set(result.hash, h->keys[i], h->vals[i]);
         *out = result; return 1;
@@ -2318,6 +2351,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "slice") == 0) {
         Value result = val_hash_new(ev->arena);
+        result.hash->compare_by_identity = h->compare_by_identity;
         for (int i = 0; i < argc; i++) {
             Value v;
             if (val_hash_get(h, args[i], &v)) val_hash_set(result.hash, args[i], v);
@@ -2326,9 +2360,12 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
     }
     if (strcmp(name, "except") == 0) {
         Value result = val_hash_new(ev->arena);
+        result.hash->compare_by_identity = h->compare_by_identity;
         for (size_t i = 0; i < h->len; i++) {
             int excluded = 0;
-            for (int j = 0; j < argc; j++) if (val_equal(h->keys[i], args[j])) { excluded = 1; break; }
+            for (int j = 0; j < argc; j++) {
+                if (hash_key_equal_for_mode(h, h->keys[i], args[j])) { excluded = 1; break; }
+            }
             if (!excluded) val_hash_set(result.hash, h->keys[i], h->vals[i]);
         }
         *out = result; return 1;
@@ -2342,6 +2379,7 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         h->len = 0;
         h->default_value = other->default_value;
         h->default_proc = other->default_proc;
+        h->compare_by_identity = other->compare_by_identity;
         for (size_t i = 0; i < other->len; i++) {
             val_hash_set(h, other->keys[i], other->vals[i]);
             sync_process_env_pair(ev, h, other->keys[i], other->vals[i]);

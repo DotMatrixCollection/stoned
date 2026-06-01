@@ -121,6 +121,7 @@ Value val_hash_new_with_defaults(Arena *a, Value default_value, Value default_pr
     h->singleton_env = NULL;
     h->default_value = default_value;
     h->default_proc = default_proc;
+    h->compare_by_identity = 0;
     h->frozen = 0;
     return val_hash_val(h);
 }
@@ -129,9 +130,26 @@ Value val_hash_new(Arena *a) {
     return val_hash_new_with_defaults(a, val_nil(), val_nil());
 }
 
+static int val_identity_equal(Value a, Value b) {
+    if (a.kind != b.kind) return 0;
+    switch (a.kind) {
+        case VAL_OBJECT: return a.obj == b.obj;
+        case VAL_BLOCK:  return a.block.block_node == b.block.block_node;
+        case VAL_STRING: return a.sval == b.sval;
+        case VAL_ARRAY:  return a.array == b.array;
+        case VAL_HASH:   return a.hash == b.hash;
+        case VAL_CLASS:  return a.klass == b.klass;
+        default:         return val_equal(a, b);
+    }
+}
+
+static int val_hash_key_equal(RubyHash *h, Value stored, Value key) {
+    return h->compare_by_identity ? val_identity_equal(stored, key) : val_equal(stored, key);
+}
+
 void val_hash_set(RubyHash *h, Value key, Value val) {
     for (size_t i = 0; i < h->len; i++) {
-        if (val_equal(h->keys[i], key)) { h->vals[i] = val; return; }
+        if (val_hash_key_equal(h, h->keys[i], key)) { h->vals[i] = val; return; }
     }
     if (h->len >= h->cap) {
         h->cap  = h->cap == 0 ? 8 : h->cap * 2;
@@ -145,14 +163,14 @@ void val_hash_set(RubyHash *h, Value key, Value val) {
 
 int val_hash_get(RubyHash *h, Value key, Value *out) {
     for (size_t i = 0; i < h->len; i++) {
-        if (val_equal(h->keys[i], key)) { *out = h->vals[i]; return 1; }
+        if (val_hash_key_equal(h, h->keys[i], key)) { *out = h->vals[i]; return 1; }
     }
     return 0;
 }
 
 int val_hash_delete(RubyHash *h, Value key) {
     for (size_t i = 0; i < h->len; i++) {
-        if (val_equal(h->keys[i], key)) {
+        if (val_hash_key_equal(h, h->keys[i], key)) {
             memmove(h->keys + i, h->keys + i + 1, (h->len - i - 1) * sizeof(Value));
             memmove(h->vals + i, h->vals + i + 1, (h->len - i - 1) * sizeof(Value));
             h->len--;

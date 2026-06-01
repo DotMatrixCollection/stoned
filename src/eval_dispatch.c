@@ -611,6 +611,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "any?", "all?", "none?", "one?", "find", "detect", "find_index", "reverse_each", "grep", "grep_v", "partition",
         "min_by", "max_by", "sort_by", "sort", "flat_map", "collect_concat", "reduce", "inject", "store",
         "clear", "dup", "nil?", "freeze", "frozen?", "default", "default=", "default_proc", "default_proc=", "rehash",
+        "compare_by_identity", "compare_by_identity?",
         "compact", "compact!", "transform_values", "transform_keys",
         "transform_values!", "transform_keys!", "filter_map", "slice", "except",
         "invert", "key", "assoc", "rassoc", "values_at", "fetch_values",
@@ -2118,6 +2119,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         }
         if (recv.kind == VAL_HASH) {
             Value copy = val_hash_new_with_defaults(ev->arena, recv.hash->default_value, recv.hash->default_proc);
+            copy.hash->compare_by_identity = recv.hash->compare_by_identity;
             for (size_t i = 0; i < recv.hash->len; i++)
                 val_hash_set(copy.hash, recv.hash->keys[i], recv.hash->vals[i]);
             if (is_clone) {
@@ -2567,7 +2569,8 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                     "each_key", "each_value", "select", "reject", "map", "any?",
                     "all?", "none?", "delete", "has_key?", "key?", "has_value?",
                     "to_a", "to_h", "transform_values", "transform_keys",
-                    "invert", "slice", "except", NULL };
+                    "invert", "slice", "except", "compare_by_identity",
+                    "compare_by_identity?", NULL };
                 static const char *probe_sym[] = {
                     "to_s", "to_sym", "to_proc", "id2name", "inspect",
                     "upcase", "downcase", "length", "size", NULL };
