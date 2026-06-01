@@ -795,7 +795,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = result; return 1;
     }
     if (strcmp(name, "chunk_while") == 0 || strcmp(name, "slice_when") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) { *out = eval_raise_class(ev, site, "ArgumentError", "tried to create Proc object without a block"); return 1; }
         int invert = (strcmp(name, "slice_when") == 0);
         Value result = val_array_new();
         if (recv.array->len == 0) { *out = result; return 1; }
