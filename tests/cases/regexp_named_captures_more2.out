@@ -1,0 +1,3 @@
+["word", "num"]
+{"word" => "abc", "num" => "123"}
+"abc"
