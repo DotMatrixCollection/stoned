@@ -10,6 +10,11 @@ h = {a: 1}
 h.default = 7
 other = {b: 2}
 other.default_proc = proc { |hash, key| key.to_s }
+puts other.respond_to?(:default)
+puts other.respond_to?(:default=)
+puts other.respond_to?(:default_proc)
+puts other.respond_to?(:default_proc=)
+puts Hash.instance_methods.include?(:default_proc=)
 puts h.replace(other).equal?(h)
 puts h.inspect
 puts h[:missing]
