@@ -1,0 +1,5 @@
+m = /(\w+)-(\d+)/.match("xx abc-123 yy")
+p m.begin(0)
+p m.end(0)
+p m.begin(2)
+p m.end(2)

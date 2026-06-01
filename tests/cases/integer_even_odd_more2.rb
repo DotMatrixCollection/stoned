@@ -1,0 +1,3 @@
+p 4.even?
+p 5.odd?
+p 0.zero?
