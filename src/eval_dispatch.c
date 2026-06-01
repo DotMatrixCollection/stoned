@@ -610,7 +610,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "select!", "filter!", "keep_if", "reject", "reject!", "delete_if",
         "any?", "all?", "none?", "one?", "find", "detect", "find_index", "reverse_each", "grep", "grep_v", "partition",
         "min_by", "max_by", "sort_by", "sort", "flat_map", "collect_concat", "reduce", "inject", "store",
-        "clear", "dup", "nil?", "freeze", "frozen?", "default", "default=", "default_proc", "default_proc=",
+        "clear", "dup", "nil?", "freeze", "frozen?", "default", "default=", "default_proc", "default_proc=", "rehash",
         "compact", "compact!", "transform_values", "transform_keys",
         "transform_values!", "transform_keys!", "filter_map", "slice", "except",
         "invert", "key", "assoc", "rassoc", "values_at", "fetch_values",

@@ -2264,6 +2264,10 @@ int dispatch_hash(Eval *ev, Env *env, Value recv, const char *name, Value *args,
         else if (args[0].kind == VAL_NIL) { h->default_proc = val_nil(); }
         *out = args[0]; return 1;
     }
+    if (strcmp(name, "rehash") == 0) {
+        if (h->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Hash"); return 1; }
+        *out = recv; return 1;
+    }
     if (strcmp(name, "fetch_values") == 0) {
         Value result = val_array_new();
         for (int i = 0; i < argc; i++) {
