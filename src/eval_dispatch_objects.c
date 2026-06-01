@@ -4588,7 +4588,7 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             }
             if (strcmp(name, "resume") == 0) {
                 if (!f || !f->alive) {
-                    *out = eval_raise_class(ev, site, "FiberError", "dead fiber called");
+                    *out = eval_raise_class(ev, site, "FiberError", "attempt to resume a terminated fiber");
                     return 1;
                 }
                 f->resume_argc = argc;

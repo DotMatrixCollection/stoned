@@ -15,6 +15,7 @@ begin
   f.resume
 rescue FiberError => e
   puts e.class         # FiberError
+  puts e.message
 end
 
 # Fiber with no args
