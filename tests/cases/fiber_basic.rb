@@ -55,3 +55,15 @@ end
 p multi.resume(1, 2)
 p multi.resume(:r1, :r2)
 p multi.resume
+
+begin
+  Fiber.yield
+rescue FiberError => e
+  puts e.message
+end
+
+begin
+  Fiber.new
+rescue ArgumentError => e
+  puts e.message
+end

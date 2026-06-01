@@ -3445,7 +3445,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     /* Fiber.new { |x| ... } — creates a fiber coroutine */
     if (strcmp(recv.klass->name, "Fiber") == 0 && strcmp(name, "new") == 0) {
         if (!blk) {
-            *out = eval_raise_class(ev, site, "ArgumentError", "tried to create Fiber without a block");
+            *out = eval_raise_class(ev, site, "ArgumentError", "tried to create Proc object without a block");
             return 1;
         }
         RubyFiber *fiber = arena_alloc(ev->arena, sizeof(RubyFiber));
@@ -3483,7 +3483,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
     if (strcmp(recv.klass->name, "Fiber") == 0 && strcmp(name, "yield") == 0) {
         RubyFiber *f = ev->current_fiber;
         if (!f) {
-            *out = eval_raise_class(ev, site, "FiberError", "can't yield from main fiber");
+            *out = eval_raise_class(ev, site, "FiberError", "attempt to yield on a not resumed fiber");
             return 1;
         }
         f->result = fiber_pack_values(args, argc);

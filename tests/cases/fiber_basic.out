@@ -16,3 +16,5 @@ true
 [:incoming, [:r1, :r2]]
 :single
 nil
+attempt to yield on a not resumed fiber
+tried to create Proc object without a block
