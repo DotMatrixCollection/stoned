@@ -1485,6 +1485,8 @@ static const char *primitive_methods_for_class(const char *klass_name) {
         return "name,original_name,owner,receiver,unbind,call,[],===,bind_call,arity,parameters,super_method,to_proc,curry,source_location,inspect,to_s,clone,dup,hash,eql?";
     if (strcmp(klass_name, "UnboundMethod") == 0)
         return "name,original_name,owner,arity,parameters,super_method,bind_call,bind,source_location,inspect,to_s,clone,dup,hash,eql?";
+    if (strcmp(klass_name, "Fiber") == 0)
+        return "resume,alive?";
     return NULL;
 }
 
@@ -1682,7 +1684,6 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             *out = build_time_value(ev, (int64_t)t, 0);
             return 1;
         }
-        return 0;
     }
 
     if (strcmp(recv.klass->name, "Struct") == 0 && strcmp(name, "new") == 0) {

@@ -1,0 +1,8 @@
+puts Time.instance_methods(false).include?(:year)
+puts Time.instance_methods(false).include?(:strftime)
+puts Time.instance_methods.include?(:year)
+puts Regexp.instance_methods(false).include?(:source)
+puts Regexp.instance_methods(false).include?(:match)
+puts Fiber.instance_methods(false).include?(:resume)
+puts Fiber.instance_methods(false).include?(:alive?)
+puts Exception.instance_methods(false).include?(:message)
