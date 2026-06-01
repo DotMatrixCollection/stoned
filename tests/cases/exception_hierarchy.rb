@@ -1,18 +1,15 @@
-begin
-  nil.missing
-rescue NameError => e
-  puts e.class
-end
+p RuntimeError.ancestors.include?(StandardError)
+p ArgumentError.ancestors.include?(StandardError)
+p TypeError.ancestors.include?(StandardError)
+p StandardError.ancestors.include?(Exception)
+p NoMethodError.ancestors.include?(NameError)
+p NameError.ancestors.include?(StandardError)
 
 begin
-  raise StopIteration.new("done")
+  raise "test"
 rescue StandardError => e
-  puts e.class
-  puts e.message
-end
-
-begin
-  File.read(1)
-rescue StandardError => e
-  puts e.class
+  p e.class
+  p e.is_a?(StandardError)
+  p e.is_a?(Exception)
+  p e.is_a?(RuntimeError)
 end

@@ -1,0 +1,9 @@
+"hello"
+"HELLO"
+11
+["hello", "world"]
+[:hello, :world]
+":hello"
+true
+false
+[:a, :b, :c]

@@ -1,4 +1,10 @@
-NoMethodError
-StopIteration
-done
-TypeError
+true
+true
+true
+true
+true
+true
+RuntimeError
+true
+true
+true
