@@ -1,0 +1,5 @@
+p 10.gcd(6)
+p 10.lcm(6)
+p 2.pow(5)
+p 2.pow(5, 7)
+p (-7).divmod(3)

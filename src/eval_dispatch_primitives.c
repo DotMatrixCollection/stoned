@@ -1600,15 +1600,46 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = val_string(ev->arena, "");
         return 1;
     }
-    if (strcmp(name, "setbyte") == 0) { *out = recv; return 1; }
+    if (strcmp(name, "getbyte") == 0) {
+        if (argc < 1 || args[0].kind != VAL_INT) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "String#getbyte requires an index");
+            return 1;
+        }
+        int64_t idx = args[0].ival;
+        if (idx < 0) idx += (int64_t)recv.byte_len;
+        if (idx < 0 || (size_t)idx >= recv.byte_len) { *out = val_nil(); return 1; }
+        *out = val_int((int64_t)(unsigned char)s[idx]);
+        return 1;
+    }
+    if (strcmp(name, "setbyte") == 0) {
+        if (recv.frozen)
+            { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String"); return 1; }
+        if (argc < 2 || args[0].kind != VAL_INT || args[1].kind != VAL_INT) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "String#setbyte requires index and byte");
+            return 1;
+        }
+        int64_t idx = args[0].ival;
+        if (idx < 0) idx += (int64_t)recv.byte_len;
+        if (idx < 0 || (size_t)idx >= recv.byte_len) {
+            *out = eval_raise_class(ev, site, "IndexError", "index out of string");
+            return 1;
+        }
+        char *buf = arena_alloc(ev->arena, recv.byte_len + 1);
+        memcpy(buf, s, recv.byte_len);
+        buf[idx] = (char)(args[1].ival & 0xff);
+        buf[recv.byte_len] = '\0';
+        *out = val_string_n(ev->arena, buf, recv.byte_len);
+        out->string_encoding = recv.string_encoding;
+        return 1;
+    }
     if (strcmp(name, "each_byte") == 0) {
         if (!blk) {
             /* Return Enumerator wrapping byte array */
             Value arr = val_array_new();
-            for (size_t i = 0; s[i]; i++) val_array_push(&arr, val_int((int64_t)(unsigned char)s[i]));
+            for (size_t i = 0; i < recv.byte_len; i++) val_array_push(&arr, val_int((int64_t)(unsigned char)s[i]));
             *out = wrap_as_enumerator(ev, env, arr, site); return 1;
         }
-        for (size_t i = 0; s[i]; i++) {
+        for (size_t i = 0; i < recv.byte_len; i++) {
             Value byte = val_int((int64_t)(unsigned char)s[i]);
             Value r = call_block(ev, env, *blk, &byte, 1, site);
             if (ev->errored) { *out = val_nil(); return 1; }

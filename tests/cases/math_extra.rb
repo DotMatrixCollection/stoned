@@ -1,0 +1,6 @@
+p Math.exp(1).round(5)
+p Math.tan(0)
+p Math.asin(1).round(5)
+p Math.acos(1)
+p Math.atan(1).round(5)
+p Math.hypot(3, 4)

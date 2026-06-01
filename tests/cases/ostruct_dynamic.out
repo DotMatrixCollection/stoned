@@ -1,0 +1,5 @@
+Ada
+37
+true
+{name: "Ada", age: 37}
+#<OpenStruct name="Ada", age=37>

@@ -3511,7 +3511,8 @@ call_method:
          strcmp(node->call.method, "capitalize!") == 0 ||
          strcmp(node->call.method, "swapcase!") == 0 ||
          strcmp(node->call.method, "gsub!") == 0 ||
-         strcmp(node->call.method, "sub!") == 0) &&
+         strcmp(node->call.method, "sub!") == 0 ||
+         strcmp(node->call.method, "setbyte") == 0) &&
         node->call.recv) {
         Node *recv_node = node->call.recv;
         if (recv_node->kind == NODE_LVAR)
@@ -3522,6 +3523,8 @@ call_method:
                 val_object_set_ivar(ev->arena, self, recv_node->sval, result);
         } else if (recv_node->kind == NODE_GVAR)
             global_set(ev->arena, &ev->globals, recv_node->sval, result);
+        if (strcmp(node->call.method, "setbyte") == 0 && argc >= 2)
+            return args[1];
     }
 
     /* String#[]= binding update: recv is a string and result is the new string.
