@@ -587,7 +587,8 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "partition", "rpartition", "*", "+", "encoding",
         "encode", "force_encoding", "b", "freeze", "frozen?", "dup", "clone",
         "delete_prefix", "delete_suffix", "insert", "prepend", "concat", "format",
-        "unpack", "unpack1", "setbyte", "getbyte", "byteslice", "hash",
+        "unpack", "unpack1", "setbyte", "getbyte", "byteslice", "valid_encoding?",
+        "ascii_only?", "hash",
         NULL
     };
     static const char *arr_methods[] = {
