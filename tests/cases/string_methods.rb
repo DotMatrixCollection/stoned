@@ -28,6 +28,9 @@ puts "ff".hex
 puts "0xff".hex
 puts "0777".oct
 puts "abc".bytes.inspect
+puts "abc".respond_to?(:each_byte)
+puts String.instance_methods.include?(:each_byte)
+puts String.instance_methods.include?(:unicode_normalize)
 
 # <<
 a = "hello"

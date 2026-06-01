@@ -582,7 +582,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "replace", "clear", "inspect", "chomp", "chomp!", "chop", "chop!", "lstrip", "rstrip", "lstrip!",
         "rstrip!", "capitalize", "swapcase", "ljust", "rjust", "center", "ord", "hex", "oct",
         "bytes", "bytesize", "<<", "index", "rindex", "[]", "[]=", "slice", "slice!", "lines",
-        "each_line", "tr", "tr!", "count", "delete", "delete!", "squeeze", "squeeze!", "scan",
+        "each_line", "each_byte", "tr", "tr!", "count", "delete", "delete!", "squeeze", "squeeze!", "scan",
         "sub", "sub!", "gsub", "gsub!", "match", "match?", "=~", "casecmp", "casecmp?",
         "partition", "rpartition", "*", "+", "encoding",
         "encode", "force_encoding", "b", "freeze", "frozen?", "dup", "clone",
