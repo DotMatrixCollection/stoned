@@ -176,7 +176,7 @@ int builtin_method_arity(const char *mname) {
         "sort!","flatten","transpose","tally","keys","values","invert","each_pair",
         "class","superclass","name","ancestors","included_modules","instance_methods","public_methods",
         "private_methods","protected_methods","methods","respond_to_missing?",
-        "lambda?","arity","call","first","last","min","max","minmax",
+        "lambda?","arity","call","first","last","min","max","minmax","bsearch",
         "upcase!","downcase!","capitalize!","swapcase!","strip!","lstrip!","rstrip!",
         "chomp!","chop!","reverse!","squeeze!","unicode_normalize","ascii_only?",
         "valid_encoding?","force_encoding","b","hex","oct","dump","undump",
@@ -641,7 +641,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "begin", "first", "end", "last", "exclude_end?",
         "include?", "member?", "cover?", "===",
         "each", "reverse_each", "each_with_index", "to_a", "entries",
-        "size", "count", "length", "min", "max", "step",
+        "size", "count", "length", "min", "max", "bsearch", "step",
         "map", "collect", "select", "find_all", "filter", "reject", "find_index", "grep", "grep_v", "one?", "cycle", "partition", "flat_map", "collect_concat",
         "chunk", "chunk_while", "slice_when", "slice_before",
         "to_s", "inspect", NULL

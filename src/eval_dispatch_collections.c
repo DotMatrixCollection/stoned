@@ -2790,6 +2790,87 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
 
+    if (strcmp(name, "bsearch") == 0) {
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, recv, site); return 1; }
+        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#bsearch requires Integer range"); return 1; }
+        int64_t lo = r->begin_val.ival;
+        int64_t hi = r->exclusive ? r->end_val.ival - 1 : r->end_val.ival;
+        if (hi < lo) { *out = val_nil(); return 1; }
+
+        int64_t first_mid = lo + (hi - lo) / 2;
+        int have_first = 1;
+        Value first_arg = val_int(first_mid);
+        Value first = call_block(ev, env, *blk, &first_arg, 1, site);
+        if (ev->errored) { *out = val_nil(); return 1; }
+        if (flow_signal_out(first, out)) return 1;
+        int numeric_mode = (first.kind == VAL_INT || first.kind == VAL_FLOAT);
+        if (!(numeric_mode || first.kind == VAL_BOOL || first.kind == VAL_NIL)) {
+            *out = eval_raise_class(ev, site, "TypeError",
+                                    "wrong argument type %s (must be numeric, true, false or nil)",
+                                    value_class_name(ev, first));
+            return 1;
+        }
+
+        if (numeric_mode) {
+            while (lo <= hi) {
+                int64_t mid = lo + (hi - lo) / 2;
+                Value result;
+                if (have_first && mid == first_mid) {
+                    result = first;
+                    have_first = 0;
+                } else {
+                    Value arg = val_int(mid);
+                    result = call_block(ev, env, *blk, &arg, 1, site);
+                    if (ev->errored) { *out = val_nil(); return 1; }
+                    if (flow_signal_out(result, out)) return 1;
+                }
+                if (!(result.kind == VAL_INT || result.kind == VAL_FLOAT)) {
+                    *out = eval_raise_class(ev, site, "TypeError",
+                                            "wrong argument type %s (must be numeric)",
+                                            value_class_name(ev, result));
+                    return 1;
+                }
+                double cmp = result.kind == VAL_INT ? (double)result.ival : result.fval;
+                if (cmp == 0.0) { *out = val_int(mid); return 1; }
+                if (cmp > 0.0) lo = mid + 1;
+                else hi = mid - 1;
+            }
+            *out = val_nil(); return 1;
+        }
+
+        int64_t found = 0;
+        int has_found = 0;
+        while (lo <= hi) {
+            int64_t mid = lo + (hi - lo) / 2;
+            Value result;
+            if (have_first && mid == first_mid) {
+                result = first;
+                have_first = 0;
+            } else {
+                Value arg = val_int(mid);
+                result = call_block(ev, env, *blk, &arg, 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(result, out)) return 1;
+            }
+            if (!(result.kind == VAL_BOOL || result.kind == VAL_NIL)) {
+                *out = eval_raise_class(ev, site, "TypeError",
+                                        "wrong argument type %s (must be numeric, true, false or nil)",
+                                        value_class_name(ev, result));
+                return 1;
+            }
+            if (result.kind == VAL_BOOL && result.bval) {
+                found = mid;
+                has_found = 1;
+                hi = mid - 1;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        *out = has_found ? val_int(found) : val_nil();
+        return 1;
+    }
+
     if ((strcmp(name, "find") == 0 || strcmp(name, "detect") == 0) && blk) {
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
             { *out = val_nil(); return 1; }
