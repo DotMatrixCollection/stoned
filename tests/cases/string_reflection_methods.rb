@@ -6,7 +6,27 @@ methods = [
   :byteslice,
   :concat,
   :prepend,
-  :slice!
+  :slice!,
+  :upcase!,
+  :downcase!,
+  :strip!,
+  :reverse!,
+  :chomp!,
+  :chop!,
+  :lstrip!,
+  :rstrip!,
+  :tr!,
+  :delete!,
+  :squeeze!,
+  :sub!,
+  :gsub!,
+  :to_r,
+  :to_c,
+  :unpack,
+  :unpack1,
+  :setbyte,
+  :getbyte,
+  :hash
 ]
 
 p methods.map { |m| "abc".respond_to?(m) }
