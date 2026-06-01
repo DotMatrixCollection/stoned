@@ -183,6 +183,61 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = val_int(cnt); return 1;
     }
     if (strcmp(name, "empty?") == 0) { *out = val_bool(recv.array->len == 0); return 1; }
+    if (strcmp(name, "at") == 0) {
+        if (argc < 1 || args[0].kind != VAL_INT) { *out = val_nil(); return 1; }
+        int64_t idx = args[0].ival;
+        if (idx < 0) idx += (int64_t)recv.array->len;
+        *out = (idx >= 0 && (size_t)idx < recv.array->len) ? recv.array->elems[idx] : val_nil();
+        return 1;
+    }
+    if (strcmp(name, "fetch") == 0) {
+        if (argc < 1 || args[0].kind != VAL_INT) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
+            return 1;
+        }
+        int64_t idx = args[0].ival;
+        if (idx < 0) idx += (int64_t)recv.array->len;
+        if (idx >= 0 && (size_t)idx < recv.array->len) {
+            *out = recv.array->elems[idx];
+        } else if (blk) {
+            *out = call_block(ev, env, *blk, &args[0], 1, site);
+        } else if (argc >= 2) {
+            *out = args[1];
+        } else {
+            *out = eval_raise_class(ev, site, "IndexError", "index %lld outside of array bounds", (long long)args[0].ival);
+        }
+        return 1;
+    }
+    if (strcmp(name, "slice") == 0) {
+        if (argc < 1) { *out = val_nil(); return 1; }
+        int64_t alen = (int64_t)recv.array->len;
+        int64_t idx = 0, len = 1;
+        if (args[0].kind == VAL_RANGE) {
+            RubyRange *r = args[0].range;
+            idx = r->begin_val.kind == VAL_INT ? r->begin_val.ival : 0;
+            int64_t end = r->end_val.kind == VAL_INT ? r->end_val.ival : alen;
+            if (idx < 0) idx += alen;
+            if (end < 0) end += alen;
+            if (!r->exclusive) end++;
+            len = end - idx;
+        } else if (args[0].kind == VAL_INT) {
+            idx = args[0].ival;
+            if (idx < 0) idx += alen;
+            len = (argc >= 2 && args[1].kind == VAL_INT) ? args[1].ival : 1;
+        } else {
+            *out = val_nil(); return 1;
+        }
+        if (idx < 0 || idx > alen || len < 0) { *out = val_nil(); return 1; }
+        if (argc < 2 && args[0].kind == VAL_INT) {
+            *out = ((size_t)idx < recv.array->len) ? recv.array->elems[idx] : val_nil();
+            return 1;
+        }
+        if (idx + len > alen) len = alen - idx;
+        Value result = val_array_new();
+        for (int64_t i = idx; i < idx + len; i++) val_array_push(&result, recv.array->elems[i]);
+        *out = result;
+        return 1;
+    }
     if (strcmp(name, "first") == 0) {
         if (argc >= 1 && args[0].kind == VAL_INT) {
             size_t n = args[0].ival < 0 ? 0 : (size_t)args[0].ival;
