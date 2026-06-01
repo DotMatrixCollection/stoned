@@ -309,6 +309,20 @@ Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *site) {
         if (!*slot) *slot = env_new(ev->arena, NULL, 1);
         for (int i = 0; i < argc; i++)
             copy_module_methods(ev, *slot, args[i].klass, 0);
+        /* Also record extended modules in the singleton class so include?/ancestors work */
+        if (self.kind == VAL_OBJECT) {
+            Value sclass;
+            if (!val_object_get_ivar(self, "__sclass__", &sclass) || sclass.kind != VAL_CLASS) {
+                sclass = val_class(ev->arena, "#<Class:obj>", self.obj->klass);
+                val_object_set_ivar(ev->arena, self, "__sclass__", sclass);
+            }
+            for (int i = 0; i < argc; i++) {
+                RubyModuleInclusion *inc = arena_alloc(ev->arena, sizeof(RubyModuleInclusion));
+                inc->mod = args[i].klass;
+                inc->next = sclass.klass->included_modules;
+                sclass.klass->included_modules = inc;
+            }
+        }
     }
     /* Fire Module.extended(base) hook for each extended module.
        Use env_get_own to avoid walking into parent module envs. */
@@ -2238,7 +2252,17 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             val_object_set_ivar(ev->arena, proxy, "__singleton_of__", recv);
             return proxy;
         }
-        /* For plain objects, the singleton class is represented by the object's class */
+        /* For plain objects: return (or lazily create) a real singleton class
+           stored as __sclass__ ivar. This lets include?/ancestors work correctly
+           after extend. */
+        if (recv.kind == VAL_OBJECT) {
+            Value sclass;
+            if (!val_object_get_ivar(recv, "__sclass__", &sclass) || sclass.kind != VAL_CLASS) {
+                sclass = val_class(ev->arena, "#<Class:obj>", recv.obj->klass);
+                val_object_set_ivar(ev->arena, recv, "__sclass__", sclass);
+            }
+            return sclass;
+        }
         return val_class_of(ev, recv);
     }
     if (strcmp(name, "singleton_methods") == 0) {
