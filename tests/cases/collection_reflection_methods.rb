@@ -10,7 +10,10 @@ array_methods = [
   :insert,
   :flatten!,
   :compact!,
-  :to_h
+  :to_h,
+  :sample,
+  :shuffle,
+  :shuffle!
 ]
 
 hash_methods = [
@@ -31,6 +34,9 @@ p [1, 2, 3].intersection([2, 4])
 p [1, 2].union([2, 3])
 p [1, 2, 3].difference([2])
 p [[:a, 1], [:b, 2]].to_h
+p [1, 2, 3].sample.class
+p [1, 2, 3].shuffle.sort
+p [3, 1, 2].shuffle!.sort
 p({a: 1, b: nil}.compact)
 p({a: 1, b: 2}.fetch_values(:b, :a))
 p({a: 1}.to_hash)

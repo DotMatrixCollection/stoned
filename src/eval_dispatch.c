@@ -595,7 +595,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "shift", "unshift", "prepend", "reverse", "reverse_each", "to_s", "to_a", "to_ary", "to_h", "inspect", "join", "include?",
         "each", "each_with_index", "map", "collect", "select", "find_all", "filter", "reject",
         "reduce", "inject", "any?", "all?", "none?", "one?", "min", "max", "sum", "flatten",
-        "flatten!", "uniq", "sort", "compact", "compact!", "zip", "cycle", "grep", "grep_v", "partition", "flat_map", "collect_concat",
+        "flatten!", "uniq", "sort", "compact", "compact!", "zip", "cycle", "sample", "shuffle", "shuffle!", "grep", "grep_v", "partition", "flat_map", "collect_concat",
         "chunk", "chunk_while", "slice_when", "slice_before", "replace",
         "intersection", "union", "difference", "repeated_combination", "repeated_permutation",
         "rotate", "rotate!", "delete_at", "insert", NULL
