@@ -550,7 +550,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = acc; return 1;
     }
     if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
-        if (!blk) { *out = recv; return 1; } /* no-block: return self for chaining (.with_index etc.) */
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, recv, site); return 1; }
         Value result = val_array_new();
         for (size_t i = 0; i < recv.array->len; i++) {
             Value arg = recv.array->elems[i];
@@ -563,7 +563,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "select") == 0 || strcmp(name, "filter") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, recv, site); return 1; }
         Value result = val_array_new();
         for (size_t i = 0; i < recv.array->len; i++) {
             Value arg = recv.array->elems[i];
@@ -576,7 +576,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "reject") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, recv, site); return 1; }
         Value result = val_array_new();
         for (size_t i = 0; i < recv.array->len; i++) {
             Value arg = recv.array->elems[i];
@@ -1055,7 +1055,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = recv; return 1;
     }
     if (strcmp(name, "map!" ) == 0 || strcmp(name, "collect!") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Array#map! requires a block"); return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, recv, site); return 1; }
         if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         for (size_t i = 0; i < recv.array->len; i++) {
             Value r = call_block(ev, env, *blk, &recv.array->elems[i], 1, site);
@@ -1066,7 +1066,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         *out = recv; return 1;
     }
     if (strcmp(name, "select!") == 0 || strcmp(name, "filter!") == 0 || strcmp(name, "keep_if") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Array#select! requires a block"); return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, recv, site); return 1; }
         if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         size_t w = 0;
         size_t orig = recv.array->len;
@@ -1081,7 +1081,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "reject!") == 0 || strcmp(name, "delete_if") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Array#reject! requires a block"); return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, recv, site); return 1; }
         if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
         size_t w = 0;
         size_t orig = recv.array->len;
@@ -2696,7 +2696,12 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
     }
     if (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#map requires a block"); return 1; }
+        if (!blk) {
+            Value arr;
+            dispatch_range(ev, env, recv, "to_a", NULL, 0, NULL, site, &arr);
+            if (val_is_signal(arr)) { *out = arr; return 1; }
+            *out = wrap_result_as_enumerator(ev, env, arr, site); return 1;
+        }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range#map requires Integer range"); return 1; }
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
@@ -2712,7 +2717,12 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
 
     if (strcmp(name, "select") == 0 || strcmp(name, "filter") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#select requires a block"); return 1; }
+        if (!blk) {
+            Value arr;
+            dispatch_range(ev, env, recv, "to_a", NULL, 0, NULL, site, &arr);
+            if (val_is_signal(arr)) { *out = arr; return 1; }
+            *out = wrap_result_as_enumerator(ev, env, arr, site); return 1;
+        }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range#select requires Integer range"); return 1; }
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
@@ -2728,7 +2738,12 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
 
     if (strcmp(name, "reject") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#reject requires a block"); return 1; }
+        if (!blk) {
+            Value arr;
+            dispatch_range(ev, env, recv, "to_a", NULL, 0, NULL, site, &arr);
+            if (val_is_signal(arr)) { *out = arr; return 1; }
+            *out = wrap_result_as_enumerator(ev, env, arr, site); return 1;
+        }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range#reject requires Integer range"); return 1; }
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
@@ -2771,7 +2786,16 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
 
     if (strcmp(name, "any?") == 0 || strcmp(name, "all?") == 0 || strcmp(name, "none?") == 0) {
-        if (!blk) { *out = eval_raise_class(ev, site, "LocalJumpError", "Range#any? requires a block"); return 1; }
+        if (!blk) {
+            int empty = 0;
+            if (r->begin_val.kind == VAL_INT && r->end_val.kind == VAL_INT) {
+                int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+                empty = r->exclusive ? lo >= hi : lo > hi;
+            }
+            if (strcmp(name, "any?") == 0) { *out = val_bool(!empty); return 1; }
+            if (strcmp(name, "none?") == 0) { *out = val_bool(empty); return 1; }
+            *out = val_true(); return 1;
+        }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
             { *out = eval_raise_class(ev, site, "TypeError", "Range iteration requires Integer range"); return 1; }
         int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
