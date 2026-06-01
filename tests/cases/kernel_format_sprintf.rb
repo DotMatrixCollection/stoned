@@ -1,0 +1,5 @@
+p format("Hello, %s!", "world")
+p sprintf("%d + %d = %d", 1, 2, 3)
+p format("%.2f", 3.14159)
+p sprintf("%08.3f", 3.14)
+p format("%s has %d items", "list", 5)
