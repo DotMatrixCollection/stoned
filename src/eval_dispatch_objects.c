@@ -1450,7 +1450,7 @@ static const char *primitive_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Float") == 0)
         return "to_s,to_i,to_f,to_r,inspect,+,-,*,/,%,**,<,<=,>,>=,<=>,==,abs,divmod,floor,ceil,round,truncate,rationalize,nan?,infinite?,finite?,zero?,positive?,negative?,between?,clamp";
     if (strcmp(klass_name, "String") == 0)
-        return "to_s,to_i,to_f,to_sym,to_str,length,size,empty?,upcase,downcase,capitalize,swapcase,strip,lstrip,rstrip,chomp,chop,chars,bytes,lines,split,join,include?,start_with?,end_with?,index,rindex,[],[]=,slice,replace,reverse,center,ljust,rjust,count,delete,squeeze,tr,scan,sub,gsub,match,match?,=~,ord,hex,oct,succ,next,encode,encoding,freeze,frozen?,dup,clone,inspect,<<,+,*,each_line,each_char,each_byte,insert,delete_prefix,delete_suffix,b,unicode_normalize,force_encoding,valid_encoding?,ascii_only?,bytesize";
+        return "to_s,to_i,to_f,to_sym,to_str,length,size,empty?,upcase,downcase,capitalize,swapcase,strip,lstrip,rstrip,chomp,chop,chars,bytes,lines,split,join,include?,start_with?,end_with?,index,rindex,[],[]=,slice,replace,reverse,center,ljust,rjust,count,delete,squeeze,tr,scan,sub,gsub,match,match?,=~,casecmp,casecmp?,partition,rpartition,ord,hex,oct,succ,next,encode,encoding,freeze,frozen?,dup,clone,inspect,<<,+,*,each_line,each_char,each_byte,insert,delete_prefix,delete_suffix,b,unicode_normalize,force_encoding,valid_encoding?,ascii_only?,bytesize,byteslice";
     if (strcmp(klass_name, "Symbol") == 0)
         return "to_s,to_sym,to_proc,id2name,inspect,length,size,upcase,downcase,capitalize,match,match?,=~,[]";
     if (strcmp(klass_name, "Array") == 0)
