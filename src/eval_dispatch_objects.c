@@ -1460,7 +1460,7 @@ static const char *primitive_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Symbol") == 0)
         return "to_s,to_sym,to_proc,id2name,inspect,length,size,upcase,downcase,capitalize,match,match?,=~,[]";
     if (strcmp(klass_name, "Array") == 0)
-        return "length,size,count,empty?,first,last,push,pop,shift,unshift,append,prepend,concat,<<,+,-,&,|,*,flatten,compact,compact!,uniq,sort,sort_by,reverse,reverse_each,map,collect,map!,collect!,select,find_all,filter,select!,filter!,keep_if,reject,reject!,delete_if,grep,grep_v,partition,each,each_with_index,each_with_object,each_slice,each_cons,flat_map,collect_concat,inject,reduce,zip,product,combination,permutation,repeated_combination,repeated_permutation,transpose,assoc,rassoc,sample,shuffle,shuffle!,cycle,include?,index,find_index,rindex,to_a,to_ary,to_h,join,min,max,min_by,max_by,minmax,minmax_by,sum,any?,all?,none?,one?,count,tally,group_by,chunk,chunk_while,slice_when,slice_before,rotate,rotate!,take,take_while,drop,drop_while,flatten,flatten!,inspect,to_s,freeze,frozen?,dup,clone,replace,clear,delete,pack,[],intersection,union,difference,delete_at,insert,fill,at,fetch,slice,dig,values_at";
+        return "length,size,count,empty?,first,last,push,pop,shift,unshift,append,prepend,concat,<<,+,-,&,|,*,flatten,compact,compact!,uniq,sort,sort_by,reverse,reverse_each,map,collect,map!,collect!,select,find_all,filter,select!,filter!,keep_if,reject,reject!,delete_if,grep,grep_v,partition,each,each_with_index,each_with_object,each_slice,each_cons,flat_map,collect_concat,inject,reduce,zip,product,combination,permutation,repeated_combination,repeated_permutation,transpose,assoc,rassoc,sample,shuffle,shuffle!,cycle,include?,index,find_index,rindex,to_a,to_ary,to_h,join,min,max,min_by,max_by,minmax,minmax_by,sum,any?,all?,none?,one?,count,tally,group_by,chunk,chunk_while,slice_when,slice_before,rotate,rotate!,take,take_while,drop,drop_while,flatten,flatten!,inspect,to_s,freeze,frozen?,dup,clone,replace,clear,delete,pack,[],intersection,union,difference,delete_at,insert,fill,at,fetch,slice,dig,values_at,bsearch,bsearch_index";
     if (strcmp(klass_name, "Hash") == 0)
         return "keys,values,length,size,empty?,has_key?,has_value?,key?,value?,include?,member?,fetch,fetch_values,merge,merge!,update,delete,clear,store,key,assoc,rassoc,values_at,default,default=,default_proc,default_proc=,rehash,compare_by_identity,compare_by_identity?,each,reverse_each,each_pair,each_key,each_value,map,select,find_all,filter,select!,filter!,keep_if,reject,reject!,delete_if,grep,grep_v,partition,any?,all?,none?,one?,count,sum,flat_map,collect_concat,find,detect,find_index,cycle,min_by,max_by,sort_by,group_by,tally,chunk,chunk_while,slice_when,slice_before,each_with_object,transform_keys,transform_values,transform_keys!,transform_values!,to_a,to_h,to_hash,invert,compact,compact!,slice,except,inspect,to_s,freeze,frozen?,dup,clone,replace,[],[]=";
     if (strcmp(klass_name, "Range") == 0)
@@ -4125,6 +4125,35 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 stack[sp++] = m->mod;
         }
         *out = val_bool(found); return 1;
+    }
+
+    if (strcmp(name, "included_modules") == 0) {
+        /* included_modules returns only include'd modules (not prepended, not classes).
+           Traverse included_modules + superclass chain, collecting unique modules. */
+        Value arr = val_array_new();
+        RubyClass *seen[256]; int nseen = 0;
+        RubyClass *stack[256]; int sp = 0;
+        RubyClass *k = recv.klass;
+        while (k && sp < 250) {
+            for (RubyModuleInclusion *m = k->included_modules; m; m = m->next) {
+                if (m->mod && sp < 250) stack[sp++] = m->mod;
+            }
+            k = k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL;
+        }
+        for (int i = 0; i < sp; i++) {
+            RubyClass *mod = stack[i];
+            if (!mod || !mod->is_module) continue;
+            int already = 0;
+            for (int j = 0; j < nseen; j++) if (seen[j] == mod) { already = 1; break; }
+            if (already) continue;
+            seen[nseen++] = mod;
+            Value mv; mv.kind = VAL_CLASS; mv.klass = mod;
+            val_array_push(&arr, mv);
+            /* Also include modules that this module itself includes */
+            for (RubyModuleInclusion *m2 = mod->included_modules; m2 && sp < 250; m2 = m2->next)
+                stack[sp++] = m2->mod;
+        }
+        *out = arr; return 1;
     }
 
     if (strcmp(name, "instance_methods") == 0 ||

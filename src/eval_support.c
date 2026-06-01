@@ -148,7 +148,7 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
             continue;
         }
 
-        /* Named reference with type: %<key>type — look up key, then format with type */
+        /* Named reference with type: %<key>[flags][width][.prec]type */
         if (fmt[i] == '<') {
             const char *kstart = fmt + i + 1;
             const char *kend = strchr(kstart, '>');
@@ -168,12 +168,29 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
                 if (!val_hash_get(hash_arg.hash, sym_key, &val))
                     val_hash_get(hash_arg.hash, str_key, &val);
             }
-            i = (size_t)(kend - fmt) + 1; /* now at type char */
-            /* Now parse the type specifier and format the value */
+            /* Collect flags/width/precision/type after '>' into a mini format string */
+            size_t j = (size_t)(kend - fmt) + 1;
+            char mini_fmt[68] = "%";
+            size_t mlen = 1;
+            while (fmt[j] == '-' || fmt[j] == '+' || fmt[j] == '0' ||
+                   fmt[j] == ' ' || fmt[j] == '#') {
+                if (mlen < sizeof(mini_fmt) - 2) mini_fmt[mlen++] = fmt[j];
+                j++;
+            }
+            while (isdigit((unsigned char)fmt[j]) && mlen < sizeof(mini_fmt) - 2)
+                mini_fmt[mlen++] = fmt[j++];
+            if (fmt[j] == '.') {
+                if (mlen < sizeof(mini_fmt) - 2) mini_fmt[mlen++] = fmt[j++];
+                while (isdigit((unsigned char)fmt[j]) && mlen < sizeof(mini_fmt) - 2)
+                    mini_fmt[mlen++] = fmt[j++];
+            }
+            if (fmt[j] == '\0') {
+                free(buf); return eval_raise_class(ev, site, "ArgumentError", "malformed named reference: missing type");
+            }
+            if (mlen < sizeof(mini_fmt) - 1) mini_fmt[mlen++] = fmt[j];
+            mini_fmt[mlen] = '\0';
+            i = j; /* outer for-loop will i++ past the type char */
             Value fake_args[1] = { val };
-            /* Build a mini format string from the type char */
-            char mini_fmt[4] = { '%', fmt[i], '\0', '\0' };
-            /* i stays at type char position; outer for-loop will do i++ */
             Value mini_result = eval_format_string(ev, env, mini_fmt, fake_args, 1, site);
             if (val_is_signal(mini_result)) { free(buf); return mini_result; }
             const char *sv = mini_result.kind == VAL_STRING ? mini_result.sval : val_to_s(ev->arena, val);
@@ -1335,6 +1352,22 @@ void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc) {
     int positional_argc = argc;
     Value kwargs = extract_kwargs(ev, params, args, &positional_argc);
 
+    /* Count post-splat required params so the splat doesn't consume them */
+    int post_splat_required = 0;
+    {
+        int seen_splat = 0;
+        for (NodeList *pl = params; pl; pl = pl->next) {
+            Node *p = pl->node;
+            if (!p) continue;
+            if (p->kind == NODE_PARAM && p->param.splat) { seen_splat = 1; continue; }
+            if (!seen_splat) continue;
+            if (p->kind == NODE_PARAM && (p->param.block_param || p->param.keyword_param ||
+                                          p->param.keyword_splat || p->param.default_val)) continue;
+            if (p->kind == NODE_PARAM) post_splat_required++;
+            else if (p->kind == NODE_ARRAY) post_splat_required++;
+        }
+    }
+
     /* Bind positional params */
     int argi = 0;
     for (NodeList *pl = params; pl; pl = pl->next) {
@@ -1348,9 +1381,11 @@ void bind_params(Eval *ev, Env *env, NodeList *params, Value *args, int argc) {
         if (p->kind == NODE_PARAM && (p->param.keyword_param || p->param.keyword_splat)) continue;
         if (p->kind == NODE_PARAM && p->param.splat) {
             Value rest = val_array_new();
-            for (int j = argi; j < positional_argc; j++) val_array_push(&rest, args[j]);
+            int splat_end = positional_argc - post_splat_required;
+            if (splat_end < argi) splat_end = argi;
+            for (int j = argi; j < splat_end; j++) val_array_push(&rest, args[j]);
             bind_pattern(ev, env, p, rest);
-            argi = positional_argc;
+            argi = splat_end;
             continue;
         }
         Value pval = argi < positional_argc ? args[argi]

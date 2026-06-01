@@ -1,7 +1,7 @@
 Animal
 Object
-
-[Fish, Swimmer, Animal, Object]
+BasicObject
+[Fish, Swimmer, Animal, Object, BasicObject]
 [:fins, :scale]
 true
 true

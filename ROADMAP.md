@@ -199,6 +199,7 @@ Recent Stage 5 progress already landed:
 - Custom `inspect`/`to_s` dispatch: `p`, `puts`, `print` now call Ruby methods on VAL_OBJECT, with recursive array/hash dispatch in inspect
 - `p` inspect bug: `val_inspect` in value.c had raw memcpy without escape handling
 - Array bang mutators: `map!`/`collect!`, `select!`/`filter!`/`keep_if`, `reject!`/`delete_if`, `sort!`, `uniq!`, `compact!`, `flatten!` (all return `nil` when no change was made, per MRI)
+- `Array#bsearch` / `Array#bsearch_index` added for boolean find-minimum and numeric find-any modes; blockless calls return an `Enumerator`, and invalid block return types raise `TypeError`
 - Hash: `slice(*keys)`, `except(*keys)`, `invert`, `to_a`, `key(v)`/`index(v)`, `assoc(k)`, `rassoc(v)`; `any?`/`none?` without block check emptiness
 - String: `delete_prefix`, `delete_suffix`; `start_with?` and `end_with?` upgraded to accept multiple arguments (any-match)
 - `freeze`/`frozen?` extended to strings (`frozen` bit on Value), arrays, and hashes (`frozen` field on RubyArray/RubyHash); integers/floats/symbols/nil/bool remain always-frozen

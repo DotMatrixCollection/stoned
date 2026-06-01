@@ -1166,6 +1166,78 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         }
         *out = recv; return 1;
     }
+    if (strcmp(name, "bsearch") == 0 || strcmp(name, "bsearch_index") == 0) {
+        int want_index = (strcmp(name, "bsearch_index") == 0);
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, recv, site); return 1; }
+        size_t n = recv.array->len;
+        if (n == 0) { *out = val_nil(); return 1; }
+
+        size_t lo = 0, hi = n;
+        size_t first_mid = lo + (hi - lo) / 2;
+        int have_first = 1;
+        Value first = call_block(ev, env, *blk, &recv.array->elems[first_mid], 1, site);
+        if (ev->errored) { *out = val_nil(); return 1; }
+        if (flow_signal_out(first, out)) return 1;
+        int numeric_mode = (first.kind == VAL_INT || first.kind == VAL_FLOAT);
+        if (!(numeric_mode || first.kind == VAL_BOOL || first.kind == VAL_NIL)) {
+            *out = eval_raise_class(ev, site, "TypeError",
+                                    "wrong argument type %s (must be numeric, true, false or nil)",
+                                    value_class_name(ev, first));
+            return 1;
+        }
+
+        if (numeric_mode) {
+            while (lo < hi) {
+                size_t mid = lo + (hi - lo) / 2;
+                Value r;
+                if (have_first && mid == first_mid) {
+                    r = first;
+                    have_first = 0;
+                } else {
+                    r = call_block(ev, env, *blk, &recv.array->elems[mid], 1, site);
+                    if (ev->errored) { *out = val_nil(); return 1; }
+                    if (flow_signal_out(r, out)) return 1;
+                }
+                if (!(r.kind == VAL_INT || r.kind == VAL_FLOAT)) {
+                    *out = eval_raise_class(ev, site, "TypeError",
+                                            "wrong argument type %s (must be numeric)",
+                                            value_class_name(ev, r));
+                    return 1;
+                }
+                double cmp = r.kind == VAL_INT ? (double)r.ival : r.fval;
+                if (cmp == 0.0) { *out = want_index ? val_int((int64_t)mid) : recv.array->elems[mid]; return 1; }
+                if (cmp > 0.0) lo = mid + 1;
+                else hi = mid;
+            }
+            *out = val_nil();
+            return 1;
+        }
+
+        /* find-minimum mode: block returns true for the target range */
+        while (lo < hi) {
+            size_t mid = lo + (hi - lo) / 2;
+            Value r;
+            if (have_first && mid == first_mid) {
+                r = first;
+                have_first = 0;
+            } else {
+                r = call_block(ev, env, *blk, &recv.array->elems[mid], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            if (!(r.kind == VAL_BOOL || r.kind == VAL_NIL)) {
+                *out = eval_raise_class(ev, site, "TypeError",
+                                        "wrong argument type %s (must be numeric, true, false or nil)",
+                                        value_class_name(ev, r));
+                return 1;
+            }
+            if (r.kind == VAL_BOOL && r.bval) hi = mid;
+            else lo = mid + 1;
+        }
+        if (lo >= n) { *out = val_nil(); return 1; }
+        *out = want_index ? val_int((int64_t)lo) : recv.array->elems[lo];
+        return 1;
+    }
     if (strcmp(name, "map!" ) == 0 || strcmp(name, "collect!") == 0) {
         if (!blk) { *out = wrap_result_as_enumerator(ev, env, recv, site); return 1; }
         if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }

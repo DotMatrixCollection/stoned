@@ -1,0 +1,3 @@
+hello from Base
+undefined method 'greet' for an instance of Child2
+["added:alpha", "added:beta", "removed:alpha", "undefined:beta"]

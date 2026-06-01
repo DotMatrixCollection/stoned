@@ -2007,7 +2007,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
             {"Exception", "Object"},   {"StandardError","Exception"},
             {"RuntimeError","StandardError"}, {"TypeError","StandardError"},
             {"ArgumentError","StandardError"},{"NameError","StandardError"},
-            {"NoMethodError","NameError"},    {"StopIteration","StandardError"},
+            {"NoMethodError","NameError"},    {"StopIteration","IndexError"},
             {"RangeError","StandardError"},   {"FloatDomainError","RangeError"},
             {"IOError","StandardError"},
             {"ZeroDivisionError","StandardError"},
@@ -2018,7 +2018,9 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
             {"SystemExit","Exception"},        {"IndexError","StandardError"},
             {"KeyError","IndexError"},
             {"SignalException","Exception"},  {"Interrupt","SignalException"},
-            {"BasicObject","Object"},
+            {"Object","BasicObject"},
+            {"Module","Object"},
+            {"Class","Module"},
             {"FiberError","StandardError"},   {"Fiber","Object"},
             {"NoMatchingPatternError","StandardError"},
             {NULL, NULL}
@@ -2216,7 +2218,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
     }
 
     Value exception, standard_error, runtime_error, argument_error, type_error, name_error, no_method_error, regexp_error;
-    Value zero_division_error, local_jump_error, key_error, load_error, stop_iteration, eof_error, system_stack_error, io_error, encoding_error, frozen_error, system_call_error;
+    Value zero_division_error, local_jump_error, key_error, load_error, stop_iteration, eof_error, system_stack_error, io_error, encoding_error, frozen_error, system_call_error, index_error;
     if (env_get(ev->top_env, "Exception", &exception) && exception.kind == VAL_CLASS &&
         env_get(ev->top_env, "StandardError", &standard_error) && standard_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "RuntimeError", &runtime_error) && runtime_error.kind == VAL_CLASS &&
@@ -2227,6 +2229,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         env_get(ev->top_env, "RegexpError", &regexp_error) && regexp_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "ZeroDivisionError", &zero_division_error) && zero_division_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "LocalJumpError", &local_jump_error) && local_jump_error.kind == VAL_CLASS &&
+        env_get(ev->top_env, "IndexError", &index_error) && index_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "KeyError", &key_error) && key_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "LoadError", &load_error) && load_error.kind == VAL_CLASS &&
         env_get(ev->top_env, "StopIteration", &stop_iteration) && stop_iteration.kind == VAL_CLASS &&
@@ -2245,9 +2248,10 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         regexp_error.klass->superclass = standard_error;
         zero_division_error.klass->superclass = standard_error;
         local_jump_error.klass->superclass = standard_error;
-        key_error.klass->superclass = standard_error;
+        index_error.klass->superclass = standard_error;
+        key_error.klass->superclass = index_error;
         load_error.klass->superclass = standard_error;
-        stop_iteration.klass->superclass = standard_error;
+        stop_iteration.klass->superclass = index_error;
         eof_error.klass->superclass = standard_error;
         system_stack_error.klass->superclass = standard_error;
         io_error.klass->superclass = standard_error;
@@ -2951,7 +2955,7 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "  class Yielder\n"
         "    def initialize; @values = []; end\n"
         "    def <<(v); @values << v; self; end\n"
-        "    def yield(*args); args.each { |v| @values << v }; self; end\n"
+        "    def yield(*args); @values << (args.length == 1 ? args[0] : args); self; end\n"
         "    def to_a; @values.dup; end\n"
         "  end\n"
         "  def initialize(arr = nil, &blk)\n"
@@ -3008,28 +3012,61 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "      @src = src\n"
         "      @ops = blk ? [[:select_map, blk]] : []\n"
         "    end\n"
-        "    def select(&blk); lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:select, blk]]); lazy; end\n"
-        "    def filter(&blk); select(&blk); end\n"
-        "    def map(&blk);    lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:map, blk]]); lazy; end\n"
-        "    def reject(&blk); lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:reject, blk]]); lazy; end\n"
-        "    def take(n);      lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:take, n]]); lazy; end\n"
+        "    def select(&blk);     lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:select, blk]]); lazy; end\n"
+        "    def filter(&blk);     select(&blk); end\n"
+        "    def map(&blk);        lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:map, blk]]); lazy; end\n"
+        "    def reject(&blk);     lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:reject, blk]]); lazy; end\n"
+        "    def take(n);          lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:take, n]]); lazy; end\n"
+        "    def take_while(&blk); lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:take_while, blk]]); lazy; end\n"
+        "    def drop(n);          lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:drop, n]]); lazy; end\n"
+        "    def drop_while(&blk); lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:drop_while, blk]]); lazy; end\n"
+        "    def flat_map(&blk);   lazy = Lazy.new(@src); lazy.instance_variable_set(:@ops, @ops + [[:flat_map, blk]]); lazy; end\n"
+        "    def collect_concat(&blk); flat_map(&blk); end\n"
         "    def _collect(cap)\n"
         "      result = []\n"
         "      take_limit = nil\n"
         "      @ops.each { |op, arg| take_limit = arg if op == :take }\n"
         "      limit = [cap, take_limit].compact.min\n"
+        "      drop_counts = {}\n"
+        "      drop_while_done = {}\n"
+        "      @ops.each_with_index { |(op, _), i| drop_counts[i] = 0 if op == :drop }\n"
+        "      @ops.each_with_index { |(op, _), i| drop_while_done[i] = false if op == :drop_while }\n"
+        "      stop = false\n"
         "      @src.each do |x|\n"
-        "        val = x\n"
+        "        break if stop\n"
+        "        vals = [x]\n"
         "        skip = false\n"
-        "        @ops.each do |op, arg|\n"
+        "        @ops.each_with_index do |(op, arg), idx|\n"
+        "          break if skip || stop\n"
         "          case op\n"
-        "          when :select then skip = true unless arg.call(val)\n"
-        "          when :reject then skip = true if arg.call(val)\n"
-        "          when :map then val = arg.call(val) unless skip\n"
+        "          when :select     then vals.select! { |v| arg.call(v) }; skip = vals.empty?\n"
+        "          when :reject     then vals.reject! { |v| arg.call(v) }; skip = vals.empty?\n"
+        "          when :map        then vals = vals.map { |v| arg.call(v) }\n"
+        "          when :flat_map   then vals = vals.flat_map { |v| r = arg.call(v); r.respond_to?(:to_a) ? r.to_a : [r] }\n"
+        "          when :take_while then\n"
+        "            new_vals = []\n"
+        "            vals.each { |v| if arg.call(v) then new_vals << v else stop = true; break end }\n"
+        "            vals = new_vals; skip = vals.empty?\n"
+        "          when :drop\n"
+        "            new_vals = []\n"
+        "            vals.each { |v| if drop_counts[idx] < arg then drop_counts[idx] += 1 else new_vals << v end }\n"
+        "            vals = new_vals; skip = vals.empty?\n"
+        "          when :drop_while\n"
+        "            new_vals = []\n"
+        "            vals.each { |v|\n"
+        "              if !drop_while_done[idx] && arg.call(v)\n"
+        "                next\n"
+        "              else\n"
+        "                drop_while_done[idx] = true\n"
+        "                new_vals << v\n"
+        "              end\n"
+        "            }\n"
+        "            vals = new_vals; skip = vals.empty?\n"
         "          end\n"
-        "          break if skip\n"
         "        end\n"
-        "        result << val unless skip\n"
+        "        unless skip\n"
+        "          vals.each { |v| result << v; break if limit && result.size >= limit }\n"
+        "        end\n"
         "        break if limit && result.size >= limit\n"
         "      end\n"
         "      result\n"
@@ -3038,8 +3075,15 @@ void eval_init(Eval *ev, Arena *arena, FILE *out, const char *current_file, cons
         "      result = _collect(n || 1)\n"
         "      n.nil? ? result.first : result\n"
         "    end\n"
+        "    def each(&blk)\n"
+        "      if blk; to_a.each(&blk)\n"
+        "      else; self\n"
+        "      end\n"
+        "    end\n"
         "    def to_a; _collect(nil); end\n"
         "    def force; to_a; end\n"
+        "    def lazy; self; end\n"
+        "    include Enumerable\n"
         "  end\n"
         "end\n"
         "class Array\n"

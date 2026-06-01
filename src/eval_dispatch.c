@@ -174,7 +174,7 @@ int builtin_method_arity(const char *mname) {
         "positive?","negative?","nonzero?","floor","ceil","round","truncate","integer?",
         "infinite?","finite?","nan?","chr","compact","compact!","uniq","uniq!","sort",
         "sort!","flatten","transpose","tally","keys","values","invert","each_pair",
-        "class","superclass","name","ancestors","instance_methods","public_methods",
+        "class","superclass","name","ancestors","included_modules","instance_methods","public_methods",
         "private_methods","protected_methods","methods","respond_to_missing?",
         "lambda?","arity","call","first","last","min","max","minmax",
         "upcase!","downcase!","capitalize!","swapcase!","strip!","lstrip!","rstrip!",
