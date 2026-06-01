@@ -9,13 +9,17 @@ puts p.respond_to?(:lambda?)
 p p.respond_to?(:parameters)
 p p.respond_to?(:to_proc)
 p p.respond_to?(:source_location)
+p p.respond_to?(:binding)
 p Proc.instance_methods.include?(:call)
 p Proc.instance_methods.include?(:parameters)
 p Proc.instance_methods.include?(:source_location)
+p Proc.instance_methods.include?(:binding)
 p p.to_proc.equal?(p)
 loc = p.source_location
 p loc[0].end_with?("callable_reflection.rb")
 p loc[1] > 0
+captured = 7
+p proc { captured }.binding.local_variable_get(:captured)
 puts l.lambda?
 puts l.respond_to?(:call)
 puts l.respond_to?(:nope)

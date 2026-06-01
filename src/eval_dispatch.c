@@ -616,7 +616,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         NULL
     };
     static const char *proc_methods[] = {
-        "call", "[]", "lambda?", "arity", "parameters", "to_proc", "source_location", "to_s", "inspect", NULL
+        "call", "[]", "lambda?", "arity", "parameters", "to_proc", "source_location", "binding", "to_s", "inspect", NULL
     };
     static const char *range_methods[] = {
         "begin", "first", "end", "last", "exclude_end?",
@@ -2672,6 +2672,16 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             val_array_push(&loc, recv.block.def_file ? val_string(ev->arena, recv.block.def_file) : val_nil());
             val_array_push(&loc, recv.block.block_node ? val_int((long)recv.block.block_node->span.line) : val_nil());
             return loc;
+        }
+        if (strcmp(name, "binding") == 0) {
+            Value binding_class;
+            if (!env_get(ev->top_env, "Binding", &binding_class) || binding_class.kind != VAL_CLASS)
+                return eval_raise_class(ev, site, "NameError", "uninitialized constant Binding");
+            Value obj = val_object(ev->arena, binding_class);
+            obj.obj->native = alloc_native_binding(ev->arena, recv.block.closure,
+                                                   recv.block.def_file ? recv.block.def_file : ev->current_file,
+                                                   recv.block.block_node ? (int)recv.block.block_node->span.line : 1);
+            return obj;
         }
         if (strcmp(name, "parameters") == 0) {
             /* Return parameter info from the block's params */

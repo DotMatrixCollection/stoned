@@ -1464,7 +1464,7 @@ static const char *primitive_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Binding") == 0)
         return "eval,local_variable_get,local_variable_set,local_variables,source_location,dup,clone";
     if (strcmp(klass_name, "Proc") == 0)
-        return "call,[],lambda?,arity,parameters,to_proc,curry,source_location,to_s,inspect";
+        return "call,[],lambda?,arity,parameters,to_proc,curry,source_location,binding,to_s,inspect";
     if (strcmp(klass_name, "IO") == 0)
         return "puts,print,write,<<,flush,sync,sync=,fileno,to_i,to_int,isatty,tty?,winsize,external_encoding,internal_encoding,wait_readable,ungetc,tell,pos,seek,rewind,eof?,gets,readline,readlines,read,getc,readchar,getbyte,readbyte,each_byte,each_char,each_line,close,closed?,path,raw,raw!,cooked,cooked!";
     if (strcmp(klass_name, "Time") == 0)
