@@ -17,5 +17,8 @@ puts f.closed?
 puts f.read
 puts f.close
 puts f.closed?
+puts File.respond_to?(:delete)
+puts File.respond_to?(:unlink)
+puts File.methods.include?(:delete)
 puts File.delete(path)
 puts File.exist?(path)

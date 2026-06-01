@@ -1516,7 +1516,7 @@ const char *primitive_class_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Kernel") == 0)
         return "const_get,instance_method,load,require,require_relative,system,warn";
     if (strcmp(klass_name, "File") == 0)
-        return "open,read,write,binread,foreach,readlines,exist?,exists?";
+        return "open,read,write,binread,foreach,readlines,delete,unlink,exist?,exists?,basename,dirname,extname,join,split,expand_path,absolute_path,realpath,directory?,file?,readable?,writable?,executable?,size,zero?,mtime";
     if (strcmp(klass_name, "IO") == 0)
         return "open,read,write,pipe,popen,console_size,binread,foreach,readlines";
     if (strcmp(klass_name, "Process") == 0)

@@ -11,6 +11,10 @@ File.write(empty, "")
 puts File.size(empty)    # 0
 puts File.zero?(empty)   # true
 
+puts File.respond_to?(:size)
+puts File.respond_to?(:zero?)
+puts File.methods.include?(:size)
+
 puts IO.read(path)       # hello world\n (already has newline)
 
 lines = []

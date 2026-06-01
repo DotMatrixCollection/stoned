@@ -16,6 +16,13 @@ puts File.readable?(file)
 puts File.writable?(file)
 puts File.executable?(file)
 
+puts File.respond_to?(:directory?)
+puts File.respond_to?(:file?)
+puts File.respond_to?(:readable?)
+puts File.respond_to?(:writable?)
+puts File.respond_to?(:executable?)
+puts File.methods.include?(:mtime)
+
 t1 = File.mtime(file)
 t2 = File.mtime(file)
 
