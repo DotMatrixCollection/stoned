@@ -1409,6 +1409,20 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
     if (strcmp(name, "split") == 0) {
         int64_t limit = (argc >= 2 && args[1].kind == VAL_INT) ? args[1].ival : 0;
         if (argc >= 1 && value_is_regexp(args[0])) {
+            /* Empty regexp // behaves like split("") — split at every character boundary */
+            Value rsrc; const char *rsrc_s = "";
+            if (val_object_get_ivar(args[0], "source", &rsrc) && rsrc.kind == VAL_STRING)
+                rsrc_s = rsrc.sval;
+            if (rsrc_s[0] == '\0') {
+                Value arr2 = val_array_new();
+                size_t chars = utf8_char_count(s, recv.byte_len);
+                for (size_t ci = 0; ci < chars; ci++) {
+                    const char *ptr = NULL; size_t width = 0;
+                    utf8_char_at(s, recv.byte_len, ci, &ptr, &width, NULL);
+                    val_array_push(&arr2, val_string_n(ev->arena, ptr, width));
+                }
+                *out = arr2; return 1;
+            }
             Regex *compiled = args[0].obj->native;
             if (!compiled) {
                 Value src; RegexError rerr = {0};

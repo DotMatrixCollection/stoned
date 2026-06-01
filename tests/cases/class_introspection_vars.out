@@ -1,0 +1,6 @@
+[:@x]
+[:bar, :initialize]
+[:secret]
+true
+42
+[:@@class_var]
