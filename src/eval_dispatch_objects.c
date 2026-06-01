@@ -1446,9 +1446,9 @@ static int singleton_class_method_lookup(Eval *ev, Env *env, Value recv, const c
 static const char *primitive_methods_for_class(const char *klass_name) {
     /* Returns a comma-sep list of primitive methods; used for instance_methods reflection */
     if (strcmp(klass_name, "Integer") == 0 || strcmp(klass_name, "Numeric") == 0)
-        return "to_s,to_i,to_f,to_r,to_c,inspect,+,-,*,/,%,**,<,<=,>,>=,<=>,==,!=,abs,divmod,gcd,lcm,pow,digits,chr,succ,pred,next,times,upto,downto,step,zero?,nonzero?,positive?,negative?,odd?,even?,integer?,between?,clamp,floor,ceil,round,truncate,fdiv,remainder,gcd,lcm,bit_length,size,[]";
+        return "to_s,to_i,to_int,to_f,to_r,to_c,inspect,+,-,-@,*,/,%,**,<,<=,>,>=,<=>,==,!=,abs,abs2,divmod,gcd,lcm,pow,digits,chr,succ,pred,next,times,upto,downto,step,zero?,nonzero?,positive?,negative?,odd?,even?,integer?,between?,clamp,floor,ceil,round,truncate,fdiv,remainder,gcd,lcm,bit_length,size,[],<<,>>,&,|,^,~";
     if (strcmp(klass_name, "Float") == 0)
-        return "to_s,to_i,to_f,to_r,inspect,+,-,*,/,%,**,<,<=,>,>=,<=>,==,abs,divmod,floor,ceil,round,truncate,rationalize,nan?,infinite?,finite?,zero?,positive?,negative?,between?,clamp";
+        return "to_s,to_i,to_f,to_r,inspect,+,-,*,/,%,**,<,<=,>,>=,<=>,==,abs,abs2,divmod,floor,ceil,round,truncate,rationalize,nan?,infinite?,finite?,zero?,nonzero?,positive?,negative?,integer?,between?,clamp,step";
     if (strcmp(klass_name, "String") == 0)
         return "to_s,to_i,to_f,to_sym,to_str,length,size,empty?,upcase,downcase,capitalize,swapcase,strip,lstrip,rstrip,chomp,chop,chars,bytes,lines,split,join,include?,start_with?,end_with?,index,rindex,[],[]=,slice,slice!,replace,reverse,center,ljust,rjust,count,delete,squeeze,tr,scan,sub,gsub,match,match?,=~,casecmp,casecmp?,partition,rpartition,ord,hex,oct,succ,next,encode,encoding,freeze,frozen?,dup,clone,inspect,<<,+,*,concat,each_line,each_char,each_byte,insert,prepend,delete_prefix,delete_suffix,b,unicode_normalize,force_encoding,valid_encoding?,ascii_only?,bytesize,byteslice";
     if (strcmp(klass_name, "Symbol") == 0)
