@@ -767,7 +767,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "chunk") == 0) {
-        if (!blk) { *out = recv; return 1; }
+        if (!blk) { *out = wrap_result_as_enumerator(ev, env, val_array_new(), site); return 1; }
         Value result = val_array_new();
         if (recv.array->len == 0) { *out = result; return 1; }
         Value prev_key = val_nil();
@@ -2400,7 +2400,13 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         if (r->begin_val.kind == VAL_STRING && (r->end_val.kind == VAL_STRING || r->end_val.kind == VAL_NIL)) {
             const char *cur = r->begin_val.sval ? r->begin_val.sval : "";
             const char *end_s = r->end_val.kind == VAL_STRING && r->end_val.sval ? r->end_val.sval : NULL;
-            if (!blk) { *out = recv; return 1; }
+            if (!blk) {
+                Value arr;
+                dispatch_range(ev, env, recv, "to_a", NULL, 0, NULL, site, &arr);
+                if (val_is_signal(arr)) { *out = arr; return 1; }
+                *out = wrap_result_as_enumerator(ev, env, arr, site);
+                return 1;
+            }
             /* Simple ASCII string succession for now */
             char next_buf[16]; strncpy(next_buf, cur, 15); next_buf[15] = '\0';
             for (int iters = 0; iters < 1000; iters++) {
