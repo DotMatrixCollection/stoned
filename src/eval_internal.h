@@ -150,6 +150,7 @@ void collect_all_instance_methods(RubyClass *klass, Value *arr, int vis_mask,
                                   RubyClass **visited, int *nv);
 int primitive_class_responds_to_name(const char *klass_name, const char *name);
 const char *primitive_class_methods_for_class(const char *klass_name);
+const char *primitive_instance_methods_for_class(const char *klass_name);
 int primitive_class_method_responds_to_name(const char *klass_name, const char *name);
 Value make_bound_method_proc(Eval *ev, Value receiver, const char *method_name, int forced_arity);
 int value_is_regexp(Value v);

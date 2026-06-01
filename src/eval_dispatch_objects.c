@@ -1488,6 +1488,10 @@ static const char *primitive_methods_for_class(const char *klass_name) {
     return NULL;
 }
 
+const char *primitive_instance_methods_for_class(const char *klass_name) {
+    return primitive_methods_for_class(klass_name);
+}
+
 int primitive_class_responds_to_name(const char *klass_name, const char *name) {
     const char *prim_list = primitive_methods_for_class(klass_name);
     if (!prim_list || !name)

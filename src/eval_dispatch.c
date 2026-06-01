@@ -2514,6 +2514,24 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                 } else {
                     collect_own_instance_methods(k->class_env, &arr, vis_mask);
                 }
+                if (include_super && (vis_mask & 1)) {
+                    const char *plist = primitive_instance_methods_for_class(k->name);
+                    if (plist) {
+                        for (const char *p = plist; *p; ) {
+                            const char *end = strchr(p, ',');
+                            size_t len = end ? (size_t)(end - p) : strlen(p);
+                            if (len < 128) {
+                                char *mname = arena_alloc(ev->arena, len + 1);
+                                memcpy(mname, p, len);
+                                mname[len] = '\0';
+                                if (!sym_in_array(&arr, mname))
+                                    val_array_push(&arr, val_symbol(mname));
+                            }
+                            if (!end) break;
+                            p = end + 1;
+                        }
+                    }
+                }
             }
         }
         /* Add hardcoded built-in public methods (from Object/BasicObject) when inheriting */
