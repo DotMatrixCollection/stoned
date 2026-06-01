@@ -1,4 +1,6 @@
 p [1, 2, 3, 4].values_at(0, 2, -1)
+puts [1, 2].respond_to?(:values_at)
+puts Array.instance_methods.include?(:values_at)
 p({a: 1, b: 2, c: 3}.values_at(:a, :c, :z))
 p "hello".insert(2, "XY")
 p "hello".insert(-1, "!")
