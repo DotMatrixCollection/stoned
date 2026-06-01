@@ -2515,8 +2515,9 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                     collect_own_instance_methods(k->class_env, &arr, vis_mask);
                 }
                 if (include_super && (vis_mask & 1)) {
-                    const char *plist = primitive_instance_methods_for_class(k->name);
-                    if (plist) {
+                    for (RubyClass *pk = k; pk; pk = pk->superclass.kind == VAL_CLASS ? pk->superclass.klass : NULL) {
+                        const char *plist = primitive_instance_methods_for_class(pk->name);
+                        if (!plist) continue;
                         for (const char *p = plist; *p; ) {
                             const char *end = strchr(p, ',');
                             size_t len = end ? (size_t)(end - p) : strlen(p);
