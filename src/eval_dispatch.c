@@ -1503,13 +1503,13 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
         return eval_raise_class(ev, site, class_name, "%s", msg);
     }
     if (strcmp(name, "proc") == 0) {
-        if (!blk) return eval_raise_class(ev, site, "ArgumentError", "proc requires a block");
+        if (!blk) return eval_raise_class(ev, site, "ArgumentError", "tried to create Proc object without a block");
         Value p = val_proc(blk->block.block_node, blk->block.closure);
         p.block.def_file = ev->current_file;
         return p;
     }
     if (strcmp(name, "lambda") == 0) {
-        if (!blk) return eval_raise_class(ev, site, "ArgumentError", "lambda requires a block");
+        if (!blk) return eval_raise_class(ev, site, "ArgumentError", "tried to create Proc object without a block");
         Value l = val_lambda(blk->block.block_node, blk->block.closure);
         l.block.def_file = ev->current_file;
         return l;

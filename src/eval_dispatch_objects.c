@@ -3501,7 +3501,7 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
 
     if (strcmp(recv.klass->name, "Proc") == 0 && strcmp(name, "new") == 0) {
         if (!blk) {
-            *out = eval_raise_class(ev, site, "ArgumentError", "Proc.new requires a block");
+            *out = eval_raise_class(ev, site, "ArgumentError", "tried to create Proc object without a block");
         } else {
             *out = val_proc(blk->block.block_node, blk->block.closure);
         }
