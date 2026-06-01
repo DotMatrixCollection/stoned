@@ -9,3 +9,5 @@ NoMatchingPatternError
 else
 pinned
 error
+Alice
+{age: 30, city: "Paris"}

@@ -695,9 +695,20 @@ static int match_hash_pattern(Eval *ev, Env *env, Env *binding_env, Value val, N
         /* No **rest: hash must not have extra keys (or we don't enforce — Ruby allows extra by default) */
     }
     if (pat->pattern_collection.has_rest && pat->pattern_collection.rest_name) {
-        /* Bind remaining keys */
         Value rest = val_hash_new(ev->arena);
-        /* TODO: collect unmatched keys */
+        for (size_t hi = 0; hi < h.hash->len; hi++) {
+            int matched = 0;
+            for (NodeList *l = pat->pattern_collection.elements; l && l->next; l = l->next->next) {
+                Node *key_node = l->node;
+                if (!key_node) continue;
+                if (val_equal(h.hash->keys[hi], val_symbol(key_node->sval))) {
+                    matched = 1;
+                    break;
+                }
+            }
+            if (!matched)
+                val_hash_set(rest.hash, h.hash->keys[hi], h.hash->vals[hi]);
+        }
         env_define(ev->arena, binding_env, pat->pattern_collection.rest_name, rest);
     }
     return 1;

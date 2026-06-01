@@ -56,3 +56,9 @@ case :error
 in :ok | :error => s
   puts s
 end
+
+case {name: "Alice", age: 30, city: "Paris"}
+in {name: String => person, **rest}
+  puts person
+  puts rest.inspect
+end
