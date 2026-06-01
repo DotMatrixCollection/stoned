@@ -395,6 +395,46 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
         recv.array->len += (size_t)ins_count;
         *out = recv; return 1;
     }
+    if (strcmp(name, "fill") == 0) {
+        if (recv.array->frozen) { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen Array"); return 1; }
+        Value fill_value = argc > 0 ? args[0] : val_nil();
+        int arg_offset = blk ? 0 : 1;
+        if (!blk && argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        int64_t alen = (int64_t)recv.array->len;
+        int64_t start = 0;
+        int64_t len = alen;
+        if (argc > arg_offset) {
+            if (args[arg_offset].kind == VAL_RANGE) {
+                RubyRange *r = args[arg_offset].range;
+                start = r->begin_val.kind == VAL_INT ? r->begin_val.ival : 0;
+                int64_t end = r->end_val.kind == VAL_INT ? r->end_val.ival : alen;
+                if (start < 0) start += alen;
+                if (end < 0) end += alen;
+                if (!r->exclusive) end++;
+                len = end - start;
+            } else if (args[arg_offset].kind == VAL_INT) {
+                start = args[arg_offset].ival;
+                if (start < 0) start += alen;
+                len = (argc > arg_offset + 1 && args[arg_offset + 1].kind == VAL_INT)
+                    ? args[arg_offset + 1].ival : alen - start;
+            }
+        }
+        if (start < 0) start = 0;
+        if (len < 0) { *out = recv; return 1; }
+        int64_t end = start + len;
+        while ((int64_t)recv.array->len < end) val_array_push(&recv, val_nil());
+        for (int64_t i = start; i < end; i++) {
+            if (blk) {
+                Value idx_arg = val_int(i);
+                Value r = call_block(ev, env, *blk, &idx_arg, 1, site);
+                if (val_is_signal(r)) { *out = r; return 1; }
+                recv.array->elems[i] = r;
+            } else {
+                recv.array->elems[i] = fill_value;
+            }
+        }
+        *out = recv; return 1;
+    }
     if (strcmp(name, "dig") == 0) {
         if (argc < 1 || args[0].kind != VAL_INT) { *out = val_nil(); return 1; }
         int64_t idx = args[0].ival;

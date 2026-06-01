@@ -600,7 +600,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "flatten!", "uniq", "sort", "compact", "compact!", "zip", "cycle", "sample", "shuffle", "shuffle!", "grep", "grep_v", "partition", "flat_map", "collect_concat",
         "chunk", "chunk_while", "slice_when", "slice_before", "replace",
         "intersection", "union", "difference", "repeated_combination", "repeated_permutation",
-        "rotate", "rotate!", "clear", "delete", "delete_at", "insert", "at", "fetch", "slice", "dig", "values_at", NULL
+        "rotate", "rotate!", "clear", "delete", "delete_at", "insert", "fill", "at", "fetch", "slice", "dig", "values_at", NULL
     };
     static const char *hash_methods[] = {
         "[]", "[]=", "fetch", "has_key?", "key?", "include?", "member?", "has_value?",
