@@ -21,6 +21,8 @@ entry_methods = [
 ]
 
 p entry_methods.map { |m| h.dup.send(m).class }
+p entry_methods.map { |m| h.respond_to?(m) }.uniq
+p entry_methods.all? { |m| Hash.instance_methods.include?(m) }
 p h.map.to_a
 p h.reject.to_a
 p h.group_by.to_a
