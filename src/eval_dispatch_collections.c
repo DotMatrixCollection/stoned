@@ -3,6 +3,7 @@
 #include "eval_internal.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -2792,8 +2793,88 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
 
     if (strcmp(name, "bsearch") == 0) {
         if (!blk) { *out = wrap_result_as_enumerator(ev, env, recv, site); return 1; }
-        if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT)
-            { *out = eval_raise_class(ev, site, "TypeError", "Range#bsearch requires Integer range"); return 1; }
+        int numeric_range = (r->begin_val.kind == VAL_INT || r->begin_val.kind == VAL_FLOAT) &&
+                            (r->end_val.kind == VAL_INT || r->end_val.kind == VAL_FLOAT);
+        if (!numeric_range)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#bsearch requires numeric range"); return 1; }
+        if (r->begin_val.kind == VAL_FLOAT || r->end_val.kind == VAL_FLOAT) {
+            double lo = r->begin_val.kind == VAL_INT ? (double)r->begin_val.ival : r->begin_val.fval;
+            double hi = r->end_val.kind == VAL_INT ? (double)r->end_val.ival : r->end_val.fval;
+            if (r->exclusive) hi = nextafter(hi, lo);
+            if (hi < lo || isnan(lo) || isnan(hi)) { *out = val_nil(); return 1; }
+
+            double first_mid = lo + (hi - lo) / 2.0;
+            int have_first = 1;
+            Value first_arg = val_float(first_mid);
+            Value first = call_block(ev, env, *blk, &first_arg, 1, site);
+            if (ev->errored) { *out = val_nil(); return 1; }
+            if (flow_signal_out(first, out)) return 1;
+            int numeric_mode = (first.kind == VAL_INT || first.kind == VAL_FLOAT);
+            if (!(numeric_mode || first.kind == VAL_BOOL || first.kind == VAL_NIL)) {
+                *out = eval_raise_class(ev, site, "TypeError",
+                                        "wrong argument type %s (must be numeric, true, false or nil)",
+                                        value_class_name(ev, first));
+                return 1;
+            }
+
+            if (numeric_mode) {
+                for (int iter = 0; iter < 100 && lo <= hi; iter++) {
+                    double mid = lo + (hi - lo) / 2.0;
+                    Value result;
+                    if (have_first && mid == first_mid) {
+                        result = first;
+                        have_first = 0;
+                    } else {
+                        Value arg = val_float(mid);
+                        result = call_block(ev, env, *blk, &arg, 1, site);
+                        if (ev->errored) { *out = val_nil(); return 1; }
+                        if (flow_signal_out(result, out)) return 1;
+                    }
+                    if (!(result.kind == VAL_INT || result.kind == VAL_FLOAT)) {
+                        *out = eval_raise_class(ev, site, "TypeError",
+                                                "wrong argument type %s (must be numeric)",
+                                                value_class_name(ev, result));
+                        return 1;
+                    }
+                    double cmp = result.kind == VAL_INT ? (double)result.ival : result.fval;
+                    if (cmp == 0.0) { *out = val_float(mid); return 1; }
+                    if (cmp > 0.0) lo = nextafter(mid, hi);
+                    else hi = nextafter(mid, lo);
+                }
+                *out = val_nil(); return 1;
+            }
+
+            double found = 0.0;
+            int has_found = 0;
+            for (int iter = 0; iter < 100 && lo <= hi; iter++) {
+                double mid = lo + (hi - lo) / 2.0;
+                Value result;
+                if (have_first && mid == first_mid) {
+                    result = first;
+                    have_first = 0;
+                } else {
+                    Value arg = val_float(mid);
+                    result = call_block(ev, env, *blk, &arg, 1, site);
+                    if (ev->errored) { *out = val_nil(); return 1; }
+                    if (flow_signal_out(result, out)) return 1;
+                }
+                if (!(result.kind == VAL_BOOL || result.kind == VAL_NIL)) {
+                    *out = eval_raise_class(ev, site, "TypeError",
+                                            "wrong argument type %s (must be numeric, true, false or nil)",
+                                            value_class_name(ev, result));
+                    return 1;
+                }
+                if (result.kind == VAL_BOOL && result.bval) {
+                    found = mid;
+                    has_found = 1;
+                    hi = nextafter(mid, lo);
+                } else {
+                    lo = nextafter(mid, hi);
+                }
+            }
+            *out = has_found ? val_float(found) : val_nil();
+            return 1;
+        }
         int64_t lo = r->begin_val.ival;
         int64_t hi = r->exclusive ? r->end_val.ival - 1 : r->end_val.ival;
         if (hi < lo) { *out = val_nil(); return 1; }
