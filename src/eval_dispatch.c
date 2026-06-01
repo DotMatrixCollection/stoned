@@ -592,7 +592,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     };
     static const char *arr_methods[] = {
         "length", "size", "count", "empty?", "first", "last", "push", "append", "pop",
-        "shift", "unshift", "prepend", "reverse", "reverse_each", "to_s", "to_a", "to_ary", "inspect", "join", "include?",
+        "shift", "unshift", "prepend", "reverse", "reverse_each", "to_s", "to_a", "to_ary", "to_h", "inspect", "join", "include?",
         "each", "each_with_index", "map", "collect", "select", "find_all", "filter", "reject",
         "reduce", "inject", "any?", "all?", "none?", "one?", "min", "max", "sum", "flatten",
         "flatten!", "uniq", "sort", "compact", "compact!", "zip", "cycle", "grep", "grep_v", "partition", "flat_map", "collect_concat",
@@ -603,7 +603,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     static const char *hash_methods[] = {
         "[]", "[]=", "fetch", "has_key?", "key?", "include?", "member?", "has_value?",
         "value?", "delete", "keys", "values", "length", "size", "count", "empty?",
-        "to_s", "inspect", "to_a", "to_h", "merge", "merge!", "update", "each", "each_pair",
+        "to_s", "inspect", "to_a", "to_h", "to_hash", "merge", "merge!", "update", "each", "each_pair",
         "each_key", "each_value", "each_with_object", "map", "collect", "select", "find_all", "filter",
         "reject", "any?", "all?", "none?", "one?", "find", "detect", "find_index", "reverse_each", "grep", "grep_v", "partition",
         "min_by", "max_by", "sort_by", "sort", "flat_map", "collect_concat", "reduce", "inject", "store",

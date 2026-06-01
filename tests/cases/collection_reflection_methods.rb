@@ -9,7 +9,8 @@ array_methods = [
   :delete_at,
   :insert,
   :flatten!,
-  :compact!
+  :compact!,
+  :to_h
 ]
 
 hash_methods = [
@@ -17,7 +18,8 @@ hash_methods = [
   :compact!,
   :fetch_values,
   :slice,
-  :except
+  :except,
+  :to_hash
 ]
 
 p array_methods.map { |m| [].respond_to?(m) }
@@ -28,5 +30,7 @@ p hash_methods.all? { |m| Hash.instance_methods.include?(m) }
 p [1, 2, 3].intersection([2, 4])
 p [1, 2].union([2, 3])
 p [1, 2, 3].difference([2])
+p [[:a, 1], [:b, 2]].to_h
 p({a: 1, b: nil}.compact)
 p({a: 1, b: 2}.fetch_values(:b, :a))
+p({a: 1}.to_hash)
