@@ -1,7 +1,11 @@
-[true, true, true, true, true]
+[true, true, true, true, true, true, true, true]
 true
 0
 true
 ["abc", ":", "def"]
 ["abc:def", ":", "ghi"]
 "bc"
+"ab"
+"zab"
+"a"
+"zb"
