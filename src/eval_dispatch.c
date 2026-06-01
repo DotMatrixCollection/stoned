@@ -595,8 +595,10 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "shift", "unshift", "prepend", "reverse", "reverse_each", "to_s", "to_a", "to_ary", "inspect", "join", "include?",
         "each", "each_with_index", "map", "collect", "select", "find_all", "filter", "reject",
         "reduce", "inject", "any?", "all?", "none?", "one?", "min", "max", "sum", "flatten",
-        "uniq", "sort", "compact", "zip", "cycle", "grep", "grep_v", "partition", "flat_map", "collect_concat",
-        "chunk", "chunk_while", "slice_when", "slice_before", "replace", NULL
+        "flatten!", "uniq", "sort", "compact", "compact!", "zip", "cycle", "grep", "grep_v", "partition", "flat_map", "collect_concat",
+        "chunk", "chunk_while", "slice_when", "slice_before", "replace",
+        "intersection", "union", "difference", "repeated_combination", "repeated_permutation",
+        "rotate", "rotate!", "delete_at", "insert", NULL
     };
     static const char *hash_methods[] = {
         "[]", "[]=", "fetch", "has_key?", "key?", "include?", "member?", "has_value?",
@@ -605,7 +607,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "each_key", "each_value", "each_with_object", "map", "collect", "select", "find_all", "filter",
         "reject", "any?", "all?", "none?", "one?", "find", "detect", "find_index", "reverse_each", "grep", "grep_v", "partition",
         "min_by", "max_by", "sort_by", "sort", "flat_map", "collect_concat", "reduce", "inject", "store",
-        "clear", "dup", "nil?", "freeze", "frozen?", "transform_values", "transform_keys",
+        "clear", "dup", "nil?", "freeze", "frozen?", "compact", "compact!", "transform_values", "transform_keys",
         "transform_values!", "transform_keys!", "filter_map", "slice", "except",
         "invert", "key", "assoc", "rassoc", "values_at", "fetch_values",
         "group_by", "tally", "flat_map", "zip", "each_with_index", "min", "max",
