@@ -1,0 +1,2 @@
+[:begin, :no_error, :else, :ensure]
+[:begin, :rescue, :ensure]
