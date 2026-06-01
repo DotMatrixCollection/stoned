@@ -1445,6 +1445,8 @@ static int singleton_class_method_lookup(Eval *ev, Env *env, Value recv, const c
 
 static const char *primitive_methods_for_class(const char *klass_name) {
     /* Returns a comma-sep list of primitive methods; used for instance_methods reflection */
+    if (strcmp(klass_name, "Object") == 0)
+        return "__id__,__send__,class,clone,dup,eql?,equal?,freeze,frozen?,hash,instance_of?,is_a?,itself,kind_of?,method,nil?,object_id,public_send,respond_to?,send,tap,then,yield_self,==,!=";
     if (strcmp(klass_name, "Integer") == 0 || strcmp(klass_name, "Numeric") == 0)
         return "to_s,to_i,to_int,to_f,to_r,to_c,inspect,+,-,-@,*,/,%,**,<,<=,>,>=,<=>,==,!=,abs,abs2,divmod,gcd,lcm,pow,digits,chr,succ,pred,next,times,upto,downto,step,zero?,nonzero?,positive?,negative?,odd?,even?,integer?,between?,clamp,floor,ceil,round,truncate,fdiv,remainder,gcd,lcm,bit_length,size,[],<<,>>,&,|,^,~";
     if (strcmp(klass_name, "Float") == 0)
@@ -4133,23 +4135,25 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
         } else {
             collect_own_instance_methods(recv.klass->class_env, &arr, vis_mask);
         }
-        /* Add primitive methods for known builtin classes */
+        /* Add primitive methods for known builtin classes and inherited Object primitives. */
         if ((vis_mask & 1) && strcmp(name, "private_instance_methods") != 0) {
-            const char *prim_list = primitive_methods_for_class(recv.klass->name);
-            if (prim_list) {
-                const char *p = prim_list;
-                while (*p) {
-                    const char *end = strchr(p, ','); size_t len = end ? (size_t)(end-p) : strlen(p);
-                    if (len < 128) {
-                        char *mname = arena_alloc(ev->arena, len + 1);
-                        memcpy(mname, p, len); mname[len] = '\0';
-                        int dup = 0;
-                        for (size_t ai = 0; ai < arr.array->len; ai++)
-                            if (arr.array->elems[ai].kind == VAL_SYMBOL && strcmp(arr.array->elems[ai].sval, mname) == 0) { dup = 1; break; }
-                        if (!dup) val_array_push(&arr, val_symbol(mname));
+            for (RubyClass *k = recv.klass; k; k = include_super && k->superclass.kind == VAL_CLASS ? k->superclass.klass : NULL) {
+                const char *prim_list = primitive_methods_for_class(k->name);
+                if (prim_list) {
+                    const char *p = prim_list;
+                    while (*p) {
+                        const char *end = strchr(p, ','); size_t len = end ? (size_t)(end-p) : strlen(p);
+                        if (len < 128) {
+                            char *mname = arena_alloc(ev->arena, len + 1);
+                            memcpy(mname, p, len); mname[len] = '\0';
+                            int dup = 0;
+                            for (size_t ai = 0; ai < arr.array->len; ai++)
+                                if (arr.array->elems[ai].kind == VAL_SYMBOL && strcmp(arr.array->elems[ai].sval, mname) == 0) { dup = 1; break; }
+                            if (!dup) val_array_push(&arr, val_symbol(mname));
+                        }
+                        if (!end) break;
+                        p = end + 1;
                     }
-                    if (!end) break;
-                    p = end + 1;
                 }
             }
         }
