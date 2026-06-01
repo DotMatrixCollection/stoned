@@ -22,7 +22,13 @@ hash_methods = [
   :fetch_values,
   :slice,
   :except,
-  :to_hash
+  :to_hash,
+  :clear,
+  :store,
+  :key,
+  :assoc,
+  :rassoc,
+  :values_at
 ]
 
 p array_methods.map { |m| [].respond_to?(m) }
