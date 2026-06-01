@@ -1,0 +1,3 @@
+"hello, Alice!"
+"goodbye, Bob!"
+[:say_goodbye, :say_hello]
