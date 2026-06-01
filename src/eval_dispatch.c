@@ -2641,9 +2641,14 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
         if (argc < 1) return eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments");
         const char *mname = (args[0].kind == VAL_SYMBOL || args[0].kind == VAL_STRING) ? args[0].sval : NULL;
         if (!mname) return eval_raise_class(ev, site, "TypeError", "expected Symbol or String");
-        /* val_responds_to now includes kernel functions — no longer raises for them */
-        if (!val_responds_to(ev, recv, mname, 1))
-            return eval_raise_class(ev, site, "NameError", "undefined method '%s' for class '%s'", mname, prim_class_name(recv));
+        /* val_responds_to now includes kernel functions — no longer raises for them.
+           Also check respond_to_missing? for method_missing-delegated methods. */
+        if (!val_responds_to(ev, recv, mname, 1)) {
+            Value rtm = dispatch_respond_to_missing(ev, env, recv, mname, 1, site);
+            if (val_is_signal(rtm)) return rtm;
+            if (!val_truthy(rtm))
+                return eval_raise_class(ev, site, "NameError", "undefined method '%s' for class '%s'", mname, prim_class_name(recv));
+        }
         Value method_val = val_nil();
         Value owner_val = val_nil();
         if (singleton_env) {
