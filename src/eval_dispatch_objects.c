@@ -1450,7 +1450,7 @@ static const char *primitive_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "NilClass") == 0)
         return "nil?,to_s,to_str,to_a,to_h,to_i,to_f,to_r,to_c,inspect,!,freeze,frozen?,dup,hash,object_id,==,!=";
     if (strcmp(klass_name, "TrueClass") == 0 || strcmp(klass_name, "FalseClass") == 0)
-        return "to_s,inspect,!,nil?";
+        return "to_s,inspect,!,nil?,&,|,^";
     if (strcmp(klass_name, "Integer") == 0 || strcmp(klass_name, "Numeric") == 0)
         return "to_s,to_i,to_int,to_f,to_r,to_c,inspect,+,-,-@,*,/,%,**,<,<=,>,>=,<=>,==,!=,abs,abs2,divmod,gcd,lcm,pow,digits,chr,succ,pred,next,times,upto,downto,step,zero?,nonzero?,positive?,negative?,odd?,even?,integer?,between?,clamp,floor,ceil,round,truncate,fdiv,remainder,gcd,lcm,bit_length,size,[],<<,>>,&,|,^,~";
     if (strcmp(klass_name, "Float") == 0)

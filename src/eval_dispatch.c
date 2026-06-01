@@ -638,7 +638,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         NULL
     };
     static const char *bool_methods[] = {
-        "to_s", "inspect", "!", "nil?", NULL
+        "to_s", "inspect", "!", "nil?", "&", "|", "^", NULL
     };
 
     const char **methods = NULL;
