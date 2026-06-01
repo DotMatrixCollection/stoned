@@ -616,7 +616,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         NULL
     };
     static const char *proc_methods[] = {
-        "call", "[]", "lambda?", "arity", "parameters", "to_proc", "to_s", "inspect", NULL
+        "call", "[]", "lambda?", "arity", "parameters", "to_proc", "source_location", "to_s", "inspect", NULL
     };
     static const char *range_methods[] = {
         "begin", "first", "end", "last", "exclude_end?",
@@ -2667,6 +2667,12 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             return recv;
         if (strcmp(name, "to_s") == 0 || strcmp(name, "inspect") == 0)
             return val_string(ev->arena, recv.block.is_lambda ? "#<Proc:lambda>" : "#<Proc>");
+        if (strcmp(name, "source_location") == 0) {
+            Value loc = val_array_new();
+            val_array_push(&loc, recv.block.def_file ? val_string(ev->arena, recv.block.def_file) : val_nil());
+            val_array_push(&loc, recv.block.block_node ? val_int((long)recv.block.block_node->span.line) : val_nil());
+            return loc;
+        }
         if (strcmp(name, "parameters") == 0) {
             /* Return parameter info from the block's params */
             Value arr = val_array_new();

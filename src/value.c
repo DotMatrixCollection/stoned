@@ -187,6 +187,7 @@ Value val_proc(struct Node *blk, struct Env *closure) {
     v.block.closure    = closure;
     v.block.is_lambda  = 0;
     v.block.is_proc_object = 1;
+    v.block.def_file   = NULL;
     return v;
 }
 
@@ -196,6 +197,7 @@ Value val_lambda(struct Node *blk, struct Env *closure) {
     v.block.closure    = closure;
     v.block.is_lambda  = 1;
     v.block.is_proc_object = 1;
+    v.block.def_file   = NULL;
     return v;
 }
 
