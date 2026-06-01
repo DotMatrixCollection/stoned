@@ -1,0 +1,11 @@
+p "a".succ
+p "z".succ
+p "az".succ
+p "zz".succ
+p "Az".succ
+p "Zz".succ
+p "a9".succ
+p "9".succ
+p "99".succ
+p "Hello".succ
+p "abc".next

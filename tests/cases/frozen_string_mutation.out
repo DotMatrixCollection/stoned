@@ -1,0 +1,5 @@
+true
+"replace raised FrozenError"
+"upcase! raised FrozenError"
+"setindex raised FrozenError"
+"hello"

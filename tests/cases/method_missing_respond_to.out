@@ -1,0 +1,5 @@
+"found name=Alice"
+"found age=30"
+true
+false
+"undefined method 'something_else' for DynProxy"

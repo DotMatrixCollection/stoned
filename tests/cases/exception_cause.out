@@ -1,0 +1,4 @@
+RuntimeError
+"wrapped error"
+ArgumentError
+"original error"

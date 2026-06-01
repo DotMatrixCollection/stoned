@@ -1320,6 +1320,8 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = val_false(); return 1;
     }
     if (strcmp(name, "insert") == 0) {
+        if (recv.frozen)
+            { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String"); return 1; }
         if (argc < 2 || args[0].kind != VAL_INT || args[1].kind != VAL_STRING)
             { *out = eval_raise_class(ev, site, "ArgumentError", "String#insert requires index and string"); return 1; }
         size_t slen = strlen(s);
@@ -1337,6 +1339,8 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         *out = val_string(ev->arena, buf); return 1;
     }
     if (strcmp(name, "prepend") == 0) {
+        if (recv.frozen)
+            { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String"); return 1; }
         /* In-place prepend: str.prepend("prefix") */
         if (argc < 1) { *out = recv; return 1; }
         size_t slen = strlen(s);
@@ -1592,11 +1596,18 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         return 1;
     }
     if (strcmp(name, "replace") == 0) {
+        if (recv.frozen)
+            { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String"); return 1; }
         if (argc < 1) *out = eval_raise_class(ev, site, "ArgumentError", "String#replace requires an argument");
-        else *out = val_string(ev->arena, val_to_s(ev->arena, args[0]));
+        else if (args[0].kind == VAL_STRING)
+            *out = val_string_n(ev->arena, args[0].sval, args[0].byte_len);
+        else
+            *out = val_string(ev->arena, val_to_s(ev->arena, args[0]));
         return 1;
     }
     if (strcmp(name, "clear") == 0) {
+        if (recv.frozen)
+            { *out = eval_raise_class(ev, site, "FrozenError", "can't modify frozen String"); return 1; }
         *out = val_string(ev->arena, "");
         return 1;
     }
