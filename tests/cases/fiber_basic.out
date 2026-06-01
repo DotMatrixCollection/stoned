@@ -10,3 +10,8 @@ false
 true
 Fiber
 true
+[:start, 1, 2]
+[:y1, :y2]
+[:incoming, [:r1, :r2]]
+:single
+nil

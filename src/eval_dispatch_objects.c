@@ -35,22 +35,31 @@ typedef struct RubyFiber {
     char      *stack;       /* fiber's stack (FIBER_STACK_SIZE bytes) — malloc'd */
     int        alive;       /* 1 = can be resumed, 0 = dead */
     Value      result;      /* value passed between resume and yield */
+    Value     *resume_args; /* argument list passed by the next resume */
+    int        resume_argc;
     Value      block;       /* the block to execute */
     Eval      *ev;          /* interpreter back-pointer */
     Env       *env;         /* environment at creation time */
     Value      self_obj;    /* the Fiber VAL_OBJECT (for Fiber.current) */
 } RubyFiber;
 
+static Value fiber_pack_values(Value *args, int argc) {
+    if (argc <= 0) return val_nil();
+    if (argc == 1) return args[0];
+    Value arr = val_array_new();
+    for (int i = 0; i < argc; i++) val_array_push(&arr, args[i]);
+    return arr;
+}
+
 /* fiber_entry is called as the start function of a new ucontext.
  * makecontext passes the RubyFiber pointer split into two uint32_t halves
  * because makecontext arguments are int-sized. */
 static void fiber_entry(uint32_t hi, uint32_t lo) {
     RubyFiber *f = (RubyFiber *)(((uintptr_t)hi << 32) | (uintptr_t)lo);
-    Value arg = f->result;
-    /* Call the block with the first resume argument */
+    /* Call the block with the first resume's full argument list. */
     Value result = call_block(f->ev, f->env, f->block,
-                              arg.kind != VAL_NIL ? &arg : NULL,
-                              arg.kind != VAL_NIL ? 1 : 0, NULL);
+                              f->resume_args,
+                              f->resume_argc, NULL);
     f->alive = 0;
     f->result = result; /* may be a signal (exception) — propagated by resume */
     swapcontext(&f->fiber_ctx, &f->caller_ctx);
@@ -3477,10 +3486,10 @@ int dispatch_class(Eval *ev, Env *env, Value recv, const char *name, Value *args
             *out = eval_raise_class(ev, site, "FiberError", "can't yield from main fiber");
             return 1;
         }
-        f->result = argc > 0 ? args[0] : val_nil();
+        f->result = fiber_pack_values(args, argc);
         swapcontext(&f->fiber_ctx, &f->caller_ctx);
         /* resumed — f->result now holds the value passed to the next resume */
-        *out = f->result;
+        *out = fiber_pack_values(f->resume_args, f->resume_argc);
         return 1;
     }
 
@@ -4582,9 +4591,13 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     *out = eval_raise_class(ev, site, "FiberError", "dead fiber called");
                     return 1;
                 }
-                /* Pass first argument to fiber; multiple args are not wrapped here
-                 * (MRI would wrap them in an array — TODO if needed) */
-                f->result = argc > 0 ? args[0] : val_nil();
+                f->resume_argc = argc;
+                if (argc > 0) {
+                    f->resume_args = arena_alloc(ev->arena, sizeof(Value) * (size_t)argc);
+                    for (int i = 0; i < argc; i++) f->resume_args[i] = args[i];
+                } else {
+                    f->resume_args = NULL;
+                }
 
                 /* Track currently running fiber */
                 RubyFiber *prev = ev->current_fiber;

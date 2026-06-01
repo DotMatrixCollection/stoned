@@ -42,3 +42,15 @@ puts inner.resume   # Fiber
 
 # FiberError is subclass of StandardError
 puts FiberError.ancestors.include?(StandardError)  # true
+
+# Multiple resume/yield values follow MRI packing rules
+multi = Fiber.new do |a, b|
+  p [:start, a, b]
+  incoming = Fiber.yield(:y1, :y2)
+  p [:incoming, incoming]
+  Fiber.yield(:single)
+end
+
+p multi.resume(1, 2)
+p multi.resume(:r1, :r2)
+p multi.resume
