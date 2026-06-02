@@ -1,0 +1,10 @@
+"Gadget"
+"Doohickey"
+["Gadget", "Thingamajig", "Widget", "Doohickey"]
+["Gadget", "Doohickey"]
+["Doohickey", "Widget", "Thingamajig", "Gadget"]
+"Doohickey"
+"Gadget"
+true
+false
+"Widget"
