@@ -1,0 +1,7 @@
+p 1234.round(-1)
+p 1234.round(-2)
+p 1234.round(-3)
+p 1550.round(-2)
+p 1234.ceil(-2)
+p 1234.floor(-2)
+p 1234.truncate(-2)
