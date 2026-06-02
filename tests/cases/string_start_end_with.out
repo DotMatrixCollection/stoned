@@ -1,0 +1,17 @@
+true
+false
+true
+true
+false
+true
+true
+false
+false
+true
+true
+true
+true
+["app.rb", "test.rb"]
+["app.rb", "main.py", "readme.md"]
+["https://example.com", "http://foo.com"]
+2
