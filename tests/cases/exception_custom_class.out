@@ -1,0 +1,13 @@
+DatabaseError
+"database failure"
+true
+true
+"timeout"
+408
+true
+"caught: DatabaseError"
+"caught: NetworkError"
+"ok"
+true
+true
+AppError
