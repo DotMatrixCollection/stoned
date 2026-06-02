@@ -1,0 +1,5 @@
+puts "rb".ljust(5, ".")
+puts "rb".rjust(5, ".")
+puts "rb".center(6, "-")
+puts "ruby".ljust(2, ".")
+puts "ruby".center(5)
