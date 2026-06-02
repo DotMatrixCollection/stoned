@@ -1,0 +1,8 @@
+"wrapper error"
+"root error"
+RuntimeError
+"level 3"
+"level 2"
+"level 1"
+ArgumentError
+true
