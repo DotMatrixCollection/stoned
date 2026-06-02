@@ -1,0 +1,5 @@
+["one\n", "two\n", "three\n"]
+["one", "two", "three"]
+["a,", "b,", "c"]
+2
+true
