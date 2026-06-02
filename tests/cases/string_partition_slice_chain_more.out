@@ -1,0 +1,5 @@
+["path", "/", "to/file.rb"]
+["path/to", "/", "file.rb"]
+"path"
+"file.rb"
+"path::to::file.rb"
