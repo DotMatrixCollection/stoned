@@ -1,0 +1,5 @@
+p sprintf("%c", 65)
+p sprintf("%c", 97)
+p sprintf("%c", 48)
+p sprintf("%3c", 65)
+p 65.chr == sprintf("%c", 65)
