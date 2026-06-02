@@ -1,0 +1,4 @@
+{name: "alice", score: "42"}
+{"name" => "ALICE", "score" => "42"}
+{"debug" => false, "verbose" => true, "timeout" => 30}
+[:verbose, :timeout]
