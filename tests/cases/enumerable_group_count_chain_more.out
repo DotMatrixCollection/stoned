@@ -1,0 +1,3 @@
+{"a" => ["ant", "ape"], "b" => ["bat", "bear"], "c" => ["cat"]}
+{3 => 4, 4 => 1}
+["ANT", "APE", "BAT", "BEAR", "CAT"]
