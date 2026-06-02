@@ -1,0 +1,6 @@
+p sprintf("%e", 12345.6789)
+p sprintf("%E", 0.001234)
+p sprintf("%.2e", 12345.6789)
+p sprintf("%g", 12345.6789)
+p sprintf("%g", 0.00012345)
+p sprintf("%G", 123456789.0)
