@@ -1,0 +1,7 @@
+[1, nil, nil]
+[1, 2, 3]
+[1, [2, 3]]
+[1, 7, []]
+[1, 2, [3, 4]]
+ArgumentError
+"wrong number of arguments"
