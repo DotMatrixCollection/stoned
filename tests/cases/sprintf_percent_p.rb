@@ -1,0 +1,6 @@
+p sprintf("%p", "hello")
+p sprintf("%p", 42)
+p sprintf("%p", [1, 2, 3])
+p sprintf("%p", {a: 1})
+p sprintf("%p", nil)
+p sprintf("%p", :sym)
