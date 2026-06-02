@@ -1,0 +1,3 @@
+[["fig", 3], ["kiwi", 4], ["pear", 4], ["apple", 5]]
+[[["pear", 4], ["kiwi", 4]], [["fig", 3], ["apple", 5]]]
+[[0, "pear"], [1, "fig"], [2, "apple"], [3, "kiwi"]]
