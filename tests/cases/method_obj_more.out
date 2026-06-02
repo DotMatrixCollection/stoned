@@ -1,0 +1,17 @@
+"Hello, World!"
+1
+Greeter
+true
+:hello
+UnboundMethod
+Greeter
+1
+:hello
+"Hello, Ruby!"
+["Hello, Alice!", "Hello, Bob!"]
+"Hello, Proc!"
+true
+Method
+via method object
+-1
+-1
