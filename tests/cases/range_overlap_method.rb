@@ -1,0 +1,6 @@
+p (1..5).overlap?(3..7)
+p (1..5).overlap?(6..10)
+p (1..5).overlap?(5..10)
+p (1...5).overlap?(5..10)
+p (1..5).overlap?(-1..0)
+p (1..5).overlap?(1..1)
