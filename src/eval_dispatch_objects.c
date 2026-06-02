@@ -1470,7 +1470,7 @@ static const char *primitive_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "Range") == 0)
         return "begin,first,end,last,exclude_end?,include?,member?,cover?,===,each,reverse_each,each_with_index,to_a,entries,size,count,length,min,max,bsearch,step,map,collect,select,find_all,filter,reject,find_index,grep,grep_v,one?,cycle,partition,flat_map,collect_concat,chunk,chunk_while,slice_when,slice_before,to_s,inspect";
     if (strcmp(klass_name, "Struct") == 0)
-        return "to_a,values,deconstruct,to_h,deconstruct_keys,members,length,size,each,each_pair,values_at,[],[]=,inspect,to_s,==";
+        return "to_a,values,deconstruct,to_h,deconstruct_keys,members,length,size,each,each_pair,values_at,[],[]=,inspect,to_s,==,eql?,hash";
     if (strcmp(klass_name, "Binding") == 0)
         return "eval,local_variable_get,local_variable_set,local_variables,source_location,dup,clone";
     if (strcmp(klass_name, "Proc") == 0)
@@ -4481,6 +4481,28 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     if (!val_equal(v1, v2)) { *out = val_false(); return 1; }
                 }
                 *out = val_true(); return 1;
+            }
+            if (strcmp(name, "eql?") == 0) {
+                if (argc < 1 || args[0].kind != VAL_OBJECT) { *out = val_false(); return 1; }
+                if (args[0].obj->klass.klass != recv.obj->klass.klass) { *out = val_false(); return 1; }
+                for (size_t i = 0; i < sm.array->len; i++) {
+                    if (sm.array->elems[i].kind != VAL_STRING) continue;
+                    Value v1 = val_nil(), v2 = val_nil();
+                    val_object_get_ivar(recv, sm.array->elems[i].sval, &v1);
+                    val_object_get_ivar(args[0], sm.array->elems[i].sval, &v2);
+                    if (!val_equal(v1, v2)) { *out = val_false(); return 1; }
+                }
+                *out = val_true(); return 1;
+            }
+            if (strcmp(name, "hash") == 0) {
+                uint64_t h = (uint64_t)(uintptr_t)recv.obj->klass.klass;
+                for (size_t i = 0; i < sm.array->len; i++) {
+                    if (sm.array->elems[i].kind != VAL_STRING) continue;
+                    Value v = val_nil();
+                    val_object_get_ivar(recv, sm.array->elems[i].sval, &v);
+                    h = h * 31 + method_value_identity_hash(v);
+                }
+                *out = val_int((int64_t)(h & INT64_MAX)); return 1;
             }
             if (strcmp(name, "each") == 0) {
                 if (!blk) {

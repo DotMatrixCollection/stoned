@@ -1,4 +1,4 @@
 -2
-[[:req, :a], [:opt, :b], [:rest, :rest]]
+[[:opt, :a], [:opt, :b], [:rest, :rest]]
 -2
 [[:req, :a], [:opt, :b], [:rest, :rest], [:block, :blk]]

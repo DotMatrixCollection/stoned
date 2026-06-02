@@ -2739,8 +2739,10 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             return obj;
         }
         if (strcmp(name, "parameters") == 0) {
-            /* Return parameter info from the block's params */
+            /* Return parameter info from the block's params.
+               Non-lambda procs report positional required params as :opt (MRI behavior). */
             Value arr = val_array_new();
+            int is_lambda = recv.block.is_lambda;
             NodeList *params = recv.block.block_node ? recv.block.block_node->block.params : NULL;
             for (NodeList *pl = params; pl; pl = pl->next) {
                 if (!pl->node || pl->node->kind != NODE_PARAM) continue;
@@ -2748,8 +2750,10 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                 const char *ptype = pl->node->param.splat ? "rest" :
                                     pl->node->param.block_param ? "block" :
                                     pl->node->param.keyword_splat ? "keyrest" :
+                                    pl->node->param.keyword_param && !pl->node->param.default_val ? "keyreq" :
                                     pl->node->param.keyword_param ? "key" :
-                                    pl->node->param.default_val ? "opt" : "req";
+                                    pl->node->param.default_val ? "opt" :
+                                    is_lambda ? "req" : "opt";
                 val_array_push(&pair, val_symbol(ptype));
                 if (pl->node->param.name)
                     val_array_push(&pair, val_symbol(pl->node->param.name));

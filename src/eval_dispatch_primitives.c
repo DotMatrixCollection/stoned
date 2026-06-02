@@ -914,6 +914,17 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "clamp") == 0) {
+        if (argc == 1 && args[0].kind == VAL_RANGE) {
+            RubyRange *r = args[0].range;
+            double lo = r->begin_val.kind == VAL_INT ? (double)r->begin_val.ival :
+                        r->begin_val.kind == VAL_FLOAT ? r->begin_val.fval :
+                        r->begin_val.kind == VAL_NIL ? -1.0/0.0 : -1.0/0.0;
+            double hi = r->end_val.kind == VAL_INT ? (double)r->end_val.ival :
+                        r->end_val.kind == VAL_FLOAT ? r->end_val.fval :
+                        r->end_val.kind == VAL_NIL ? 1.0/0.0 : 1.0/0.0;
+            *out = val_float(f < lo ? lo : f > hi ? hi : f);
+            return 1;
+        }
         if (argc < 2) { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
         int has_lo = args[0].kind != VAL_NIL;
         int has_hi = args[1].kind != VAL_NIL;

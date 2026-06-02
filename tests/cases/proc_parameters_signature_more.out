@@ -1,6 +1,6 @@
 -2
 -2
-[[:req, :a], [:opt, :b], [:rest, :rest]]
+[[:opt, :a], [:opt, :b], [:rest, :rest]]
 [[:req, :a], [:opt, :b], [:rest, :rest]]
 [10, 1, []]
 [10, 20, [30]]
