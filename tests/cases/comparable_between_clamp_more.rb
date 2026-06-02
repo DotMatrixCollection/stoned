@@ -1,0 +1,6 @@
+p 5.between?(1, 10)
+p 0.between?(1, 10)
+p 5.clamp(1, 10)
+p 0.clamp(1, 10)
+p 15.clamp(1, 10)
+p "b".between?("a", "c")
