@@ -1,0 +1,4 @@
+{host: "localhost", port: 9292, debug: true}
+{host: "localhost", port: "port:3000->9292", debug: true}
+{"port" => 9292, "debug" => true}
+{port: 9292, debug: "yes"}
