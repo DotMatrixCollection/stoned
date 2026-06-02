@@ -1,0 +1,7 @@
+p 0b1111.allbits?(0b1010)
+p 0b1010.allbits?(0b1111)
+p 0b1010.anybits?(0b0101)
+p 0b1010.anybits?(0b1100)
+p 0b1010.nobits?(0b0101)
+p 0b1111.nobits?(0b0000)
+p 0.nobits?(0b1111)
