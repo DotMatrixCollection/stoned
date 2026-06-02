@@ -1,0 +1,6 @@
+p [1, 2, 3].intersect?([3, 4, 5])
+p [1, 2, 3].intersect?([4, 5, 6])
+p [].intersect?([1, 2])
+p [1].intersect?([])
+p [:a, :b].intersect?([:b, :c])
+p ["x", "y"].intersect?(["z"])
