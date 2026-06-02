@@ -1,0 +1,7 @@
+:my_method
+:another
+nil
+:original
+:aliased
+[:method_with_block, :method_with_block, :method_with_block]
+:dynamic_name
