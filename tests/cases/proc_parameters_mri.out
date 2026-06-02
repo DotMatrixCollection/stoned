@@ -1,0 +1,10 @@
+false
+[[:opt, :a], [:opt, :b]]
+true
+[[:req, :a], [:req, :b]]
+true
+[[:req, :a], [:req, :b]]
+[[:opt, :a], [:keyreq, :b], [:key, :c]]
+[[:opt, :a], [:rest, :rest], [:block, :blk]]
+[]
+[]
