@@ -1,0 +1,13 @@
+"original"
+"copy"
+[1, 2, 3]
+[1, 2, 3, 4]
+true
+false
+"hello world"
+true
+FrozenError
+true
+true
+FrozenError
+[1, 2, 3]
