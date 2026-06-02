@@ -1,0 +1,6 @@
+p Integer("42")
+p Integer("0xFF", 16)
+p Float("3.14")
+p String(42)
+p Array(nil)
+p Array([1, 2])
