@@ -1,0 +1,11 @@
+[:apple, :cherry, :date]
+3
+2
+20
+:banana
+:cherry
+true
+true
+true
+[[:x, 1], [:x, 2], [:y, 3], [:y, 4], [:z, 5]]
+{apple: 5, cherry: 12, date: 3}
