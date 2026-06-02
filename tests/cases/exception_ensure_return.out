@@ -1,0 +1,5 @@
+["try", "end", "ensure"]
+["before", "rescued:oops", "ensure"]
+["ensure ran", "outer rescue"]
+["try", "else", "ensure"]
+["rescue", "ensure"]
