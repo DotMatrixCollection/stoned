@@ -1,0 +1,6 @@
+p 7.fdiv(2)
+p 7.div(2)
+p(-7.div(2))
+p 10.fdiv(4)
+p 10.div(4)
+p(-10).div(3)
