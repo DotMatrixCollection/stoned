@@ -1,0 +1,6 @@
+p Integer.sqrt(0)
+p Integer.sqrt(1)
+p Integer.sqrt(9)
+p Integer.sqrt(10)
+p Integer.sqrt(100)
+p Integer.sqrt(99)
