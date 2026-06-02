@@ -1,0 +1,5 @@
+[:dave, 71]
+[:bob, 92]
+[[:dave, 71], [:bob, 92]]
+[:dave, :carol, :alice, :bob]
+2
