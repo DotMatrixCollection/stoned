@@ -1,0 +1,6 @@
+p "hello world".start_with?("hello")
+p "hello world".end_with?("world")
+p "hello world".include?("lo w")
+p "hello".center(11)
+p "hello".center(11, "-")
+p "hello".ljust(10, ".")
