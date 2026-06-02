@@ -1,0 +1,4 @@
+{"hello" => 3, "world" => 2, "ruby" => 1}
+[["hello", 3], ["world", 2]]
+"hello"
+["hello", "ruby", "world"]
