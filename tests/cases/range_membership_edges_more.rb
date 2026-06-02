@@ -1,0 +1,5 @@
+p (1..5).include?(5)
+p (1...5).include?(5)
+p (1..5).cover?(3.5)
+p ("aa".."az").include?("am")
+p ("aa"..."az").include?("az")
