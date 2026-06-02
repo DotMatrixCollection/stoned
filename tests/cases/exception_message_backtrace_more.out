@@ -1,0 +1,5 @@
+"boom"
+true
+RuntimeError
+"other"
+["one.rb:1", "two.rb:2"]
