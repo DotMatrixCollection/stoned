@@ -26,11 +26,13 @@ p ("a".."z").cover?("m")
 p ("a".."z").cover?("A")
 p ("a"..."z").include?("z")
 p ("a"..."z").include?("y")
+p ("a"..."z").cover?("z")
+p ("a"..."z").cover?("y")
 
 # Range cover? with another range (Ruby 2.6+)
 big = (1..100)
-p big.cover?(20..50)
 p big.cover?(50..101)
+p big.cover?(20..50)
 
 # each on range
 sum = 0

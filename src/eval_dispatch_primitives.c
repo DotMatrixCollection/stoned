@@ -195,6 +195,45 @@ static int coerce_value_to_double(Eval *ev, Env *env, Value v, Node *site, doubl
     return 0;
 }
 
+static int numeric_step_args(Eval *ev, Node *site, Value *args, int argc,
+                             Value *limit_out, Value *step_out,
+                             const char *klass_name, Value *out) {
+    if (argc == 1 && args[0].kind == VAL_HASH) {
+        Value limit = val_nil();
+        Value step = val_int(1);
+        if (!val_hash_get(args[0].hash, val_symbol("to"), &limit) &&
+            !val_hash_get(args[0].hash, val_string(ev->arena, "to"), &limit)) {
+            *out = eval_raise_class(ev, site, "ArgumentError", "%s#step requires a limit", klass_name);
+            return 0;
+        }
+        if (!val_hash_get(args[0].hash, val_symbol("by"), &step))
+            val_hash_get(args[0].hash, val_string(ev->arena, "by"), &step);
+        *limit_out = limit;
+        *step_out = step;
+        return 1;
+    }
+
+    if (argc < 1) {
+        *out = eval_raise_class(ev, site, "ArgumentError", "%s#step requires a limit", klass_name);
+        return 0;
+    }
+    *limit_out = args[0];
+    *step_out = argc >= 2 ? args[1] : val_int(1);
+    return 1;
+}
+
+static int numeric_value_to_double(Value v, double *out) {
+    if (v.kind == VAL_INT) {
+        *out = (double)v.ival;
+        return 1;
+    }
+    if (v.kind == VAL_FLOAT) {
+        *out = v.fval;
+        return 1;
+    }
+    return 0;
+}
+
 static Value float_rationalize(Eval *ev, Env *env, double f, double eps, Node *site) {
     if (isnan(f) || isinf(f))
         return raise_float_domain_error(ev, site, f, 1);
@@ -451,6 +490,18 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     if (strcmp(name, "nonzero?") == 0) { *out = n == 0 ? val_nil() : recv; return 1; }
     if (strcmp(name, "positive?") == 0){ *out = val_bool(n > 0); return 1; }
     if (strcmp(name, "negative?") == 0){ *out = val_bool(n < 0); return 1; }
+    if (strcmp(name, "allbits?") == 0 || strcmp(name, "anybits?") == 0 || strcmp(name, "nobits?") == 0) {
+        if (argc < 1 || args[0].kind != VAL_INT) {
+            *out = eval_raise_class(ev, site, "TypeError", "Integer#%s requires an Integer", name);
+            return 1;
+        }
+        int64_t mask = args[0].ival;
+        int64_t masked = n & mask;
+        if (strcmp(name, "allbits?") == 0) *out = val_bool(masked == mask);
+        else if (strcmp(name, "anybits?") == 0) *out = val_bool(masked != 0);
+        else *out = val_bool(masked == 0);
+        return 1;
+    }
     if (strcmp(name, "integer?") == 0) { *out = val_true(); return 1; }
     if (strcmp(name, "ceil") == 0 || strcmp(name, "floor") == 0 ||
         strcmp(name, "round") == 0 || strcmp(name, "truncate") == 0) {
@@ -730,12 +781,19 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
         return 1;
     }
     if (strcmp(name, "step") == 0) {
-        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Integer#step requires a limit"); return 1; }
-        int limit_is_float = (args[0].kind == VAL_FLOAT);
-        int step_is_float  = (argc >= 2 && args[1].kind == VAL_FLOAT);
+        Value limit_arg = val_nil();
+        Value step_arg = val_int(1);
+        if (!numeric_step_args(ev, site, args, argc, &limit_arg, &step_arg, "Integer", out))
+            return 1;
+        int limit_is_float = (limit_arg.kind == VAL_FLOAT);
+        int step_is_float  = (step_arg.kind == VAL_FLOAT);
         int use_float = limit_is_float || step_is_float;
-        double limit = limit_is_float ? args[0].fval : (double)args[0].ival;
-        double step  = argc >= 2 ? (step_is_float ? args[1].fval : (double)args[1].ival) : 1.0;
+        double limit = 0.0;
+        double step = 1.0;
+        if (!numeric_value_to_double(limit_arg, &limit) || !numeric_value_to_double(step_arg, &step)) {
+            *out = eval_raise_class(ev, site, "TypeError", "Integer#step requires numeric arguments");
+            return 1;
+        }
         if (step == 0.0) { *out = eval_raise_class(ev, site, "ArgumentError", "step cannot be 0"); return 1; }
         if (!blk) {
             Value arr = val_array_new();
@@ -934,9 +992,16 @@ int dispatch_float(Eval *ev, Env *env, Value recv, const char *name, Value *args
         return 1;
     }
     if (strcmp(name, "step") == 0) {
-        if (argc < 1) { *out = eval_raise_class(ev, site, "ArgumentError", "Float#step requires a limit"); return 1; }
-        double limit = args[0].kind == VAL_INT ? (double)args[0].ival : args[0].fval;
-        double step  = argc >= 2 ? (args[1].kind == VAL_INT ? (double)args[1].ival : args[1].fval) : 1.0;
+        Value limit_arg = val_nil();
+        Value step_arg = val_int(1);
+        if (!numeric_step_args(ev, site, args, argc, &limit_arg, &step_arg, "Float", out))
+            return 1;
+        double limit = 0.0;
+        double step = 1.0;
+        if (!numeric_value_to_double(limit_arg, &limit) || !numeric_value_to_double(step_arg, &step)) {
+            *out = eval_raise_class(ev, site, "TypeError", "Float#step requires numeric arguments");
+            return 1;
+        }
         if (step == 0.0) { *out = eval_raise_class(ev, site, "ArgumentError", "step cannot be 0"); return 1; }
         if (!blk) {
             Value arr = val_array_new();
@@ -1691,11 +1756,13 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         Value arr = val_array_new();
         Value current = recv;
         const char *end_s = args[0].sval;
+        int exclusive = argc >= 2 && val_truthy(args[1]);
         /* Iterate using succ until we reach or pass the end string */
         for (int max_iter = 0; max_iter < 100000; max_iter++) {
             const char *cur_s = current.sval;
             /* Stop if current > end (lexicographic) */
             if (strcmp(cur_s, end_s) > 0) break;
+            if (exclusive && strcmp(cur_s, end_s) == 0) break;
             if (blk) {
                 Value r = call_block(ev, env, *blk, &current, 1, site);
                 if (ev->errored) { *out = val_nil(); return 1; }
@@ -1938,6 +2005,36 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
             i += seq;
         }
         *out = arr;
+        return 1;
+    }
+    if (strcmp(name, "each_codepoint") == 0) {
+        Value arr = val_array_new();
+        size_t slen = recv.byte_len;
+        for (size_t i = 0; i < slen; ) {
+            unsigned char c = (unsigned char)s[i];
+            uint32_t cp = 0;
+            size_t seq;
+            if (c < 0x80)       { cp = c; seq = 1; }
+            else if (c < 0xC0)  { cp = c; seq = 1; }
+            else if (c < 0xE0)  { cp = (c & 0x1F); seq = 2; }
+            else if (c < 0xF0)  { cp = (c & 0x0F); seq = 3; }
+            else                { cp = (c & 0x07); seq = 4; }
+            for (size_t j = 1; j < seq && i + j < slen; j++)
+                cp = (cp << 6) | ((unsigned char)s[i + j] & 0x3F);
+            val_array_push(&arr, val_int((int64_t)cp));
+            i += seq;
+        }
+        if (!blk) {
+            *out = wrap_as_enumerator(ev, env, arr, site);
+        } else {
+            for (size_t i = 0; i < arr.array->len; i++) {
+                Value cp = arr.array->elems[i];
+                Value r = call_block(ev, env, *blk, &cp, 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv;
+        }
         return 1;
     }
     if (strcmp(name, "unpack") == 0 || strcmp(name, "unpack1") == 0) {

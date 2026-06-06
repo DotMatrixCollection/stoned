@@ -2,7 +2,7 @@
 out = `echo hello`
 p out.chomp
 
-out2 = %x{echo world}
+out2 = `echo world`
 p out2.chomp
 
 # $? holds exit status after backtick

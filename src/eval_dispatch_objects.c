@@ -1456,19 +1456,19 @@ static const char *primitive_methods_for_class(const char *klass_name) {
     if (strcmp(klass_name, "TrueClass") == 0 || strcmp(klass_name, "FalseClass") == 0)
         return "to_s,inspect,!,nil?,&,|,^";
     if (strcmp(klass_name, "Integer") == 0 || strcmp(klass_name, "Numeric") == 0)
-        return "to_s,to_i,to_int,to_f,to_r,to_c,inspect,+,-,-@,*,/,%,**,<,<=,>,>=,<=>,==,!=,abs,abs2,divmod,gcd,lcm,pow,digits,chr,succ,pred,next,times,upto,downto,step,zero?,nonzero?,positive?,negative?,odd?,even?,integer?,between?,clamp,floor,ceil,round,truncate,fdiv,remainder,gcd,lcm,bit_length,size,[],<<,>>,&,|,^,~";
+        return "to_s,to_i,to_int,to_f,to_r,to_c,inspect,+,-,-@,*,/,%,**,<,<=,>,>=,<=>,==,!=,abs,abs2,divmod,gcd,lcm,pow,digits,chr,succ,pred,next,times,upto,downto,step,zero?,nonzero?,positive?,negative?,odd?,even?,integer?,allbits?,anybits?,nobits?,between?,clamp,floor,ceil,round,truncate,fdiv,remainder,gcd,lcm,bit_length,size,[],<<,>>,&,|,^,~";
     if (strcmp(klass_name, "Float") == 0)
         return "to_s,to_i,to_f,to_r,inspect,+,-,*,/,%,**,<,<=,>,>=,<=>,==,abs,abs2,divmod,floor,ceil,round,truncate,rationalize,nan?,infinite?,finite?,zero?,nonzero?,positive?,negative?,integer?,between?,clamp,step";
     if (strcmp(klass_name, "String") == 0)
-        return "to_s,to_i,to_f,to_r,to_c,to_sym,to_str,length,size,empty?,upcase,upcase!,downcase,downcase!,capitalize,swapcase,strip,strip!,lstrip,lstrip!,rstrip,rstrip!,chomp,chomp!,chop,chop!,chars,bytes,lines,split,join,include?,start_with?,end_with?,index,rindex,[],[]=,slice,slice!,replace,clear,reverse,reverse!,center,ljust,rjust,count,delete,delete!,squeeze,squeeze!,tr,tr!,scan,sub,sub!,gsub,gsub!,match,match?,=~,casecmp,casecmp?,partition,rpartition,ord,hex,oct,succ,next,encode,encoding,freeze,frozen?,dup,clone,inspect,hash,<<,+,*,concat,each_line,each_char,each_byte,insert,prepend,delete_prefix,delete_suffix,b,force_encoding,valid_encoding?,ascii_only?,bytesize,byteslice,unpack,unpack1,setbyte,getbyte";
+        return "to_s,to_i,to_f,to_r,to_c,to_sym,to_str,length,size,empty?,upcase,upcase!,downcase,downcase!,capitalize,swapcase,strip,strip!,lstrip,lstrip!,rstrip,rstrip!,chomp,chomp!,chop,chop!,chars,bytes,codepoints,lines,split,join,include?,start_with?,end_with?,index,rindex,[],[]=,slice,slice!,replace,clear,reverse,reverse!,center,ljust,rjust,count,delete,delete!,squeeze,squeeze!,tr,tr!,scan,sub,sub!,gsub,gsub!,match,match?,=~,casecmp,casecmp?,partition,rpartition,ord,hex,oct,succ,next,encode,encoding,freeze,frozen?,dup,clone,inspect,hash,<<,+,*,concat,each_line,each_char,each_byte,each_codepoint,insert,prepend,delete_prefix,delete_suffix,b,force_encoding,valid_encoding?,ascii_only?,bytesize,byteslice,unpack,unpack1,setbyte,getbyte";
     if (strcmp(klass_name, "Symbol") == 0)
-        return "to_s,to_sym,to_proc,id2name,inspect,length,size,upcase,downcase,capitalize,match,match?,=~,[]";
+        return "to_s,to_sym,to_proc,id2name,name,inspect,length,size,upcase,downcase,capitalize,match,match?,=~,[]";
     if (strcmp(klass_name, "Array") == 0)
-        return "length,size,count,empty?,first,last,push,pop,shift,unshift,append,prepend,concat,<<,+,-,&,|,*,flatten,compact,compact!,uniq,sort,sort_by,reverse,reverse_each,map,collect,map!,collect!,select,find_all,filter,select!,filter!,keep_if,reject,reject!,delete_if,grep,grep_v,partition,each,each_with_index,each_with_object,each_slice,each_cons,flat_map,collect_concat,inject,reduce,zip,product,combination,permutation,repeated_combination,repeated_permutation,transpose,assoc,rassoc,sample,shuffle,shuffle!,cycle,include?,index,find_index,rindex,to_a,to_ary,to_h,join,min,max,min_by,max_by,minmax,minmax_by,sum,any?,all?,none?,one?,count,tally,group_by,chunk,chunk_while,slice_when,slice_before,rotate,rotate!,take,take_while,drop,drop_while,flatten,flatten!,inspect,to_s,freeze,frozen?,dup,clone,replace,clear,delete,pack,[],intersection,union,difference,delete_at,insert,fill,at,fetch,slice,dig,values_at,bsearch,bsearch_index";
+        return "length,size,count,empty?,first,last,push,pop,shift,unshift,append,prepend,concat,<<,+,-,&,|,*,flatten,compact,compact!,uniq,sort,sort_by,reverse,reverse_each,map,collect,map!,collect!,select,find_all,filter,select!,filter!,keep_if,reject,reject!,delete_if,grep,grep_v,partition,each,each_with_index,each_with_object,each_slice,each_cons,flat_map,collect_concat,inject,reduce,zip,product,combination,permutation,repeated_combination,repeated_permutation,transpose,assoc,rassoc,sample,shuffle,shuffle!,cycle,include?,index,find_index,rindex,to_a,to_ary,to_h,join,min,max,min_by,max_by,minmax,minmax_by,sum,any?,all?,none?,one?,count,tally,group_by,chunk,chunk_while,slice_when,slice_before,rotate,rotate!,take,take_while,drop,drop_while,flatten,flatten!,inspect,to_s,freeze,frozen?,dup,clone,replace,clear,delete,pack,[],intersection,intersect?,union,difference,delete_at,insert,fill,at,fetch,slice,dig,values_at,bsearch,bsearch_index";
     if (strcmp(klass_name, "Hash") == 0)
         return "keys,values,length,size,empty?,has_key?,has_value?,key?,value?,include?,member?,fetch,fetch_values,merge,merge!,update,delete,clear,store,key,assoc,rassoc,values_at,default,default=,default_proc,default_proc=,rehash,compare_by_identity,compare_by_identity?,each,reverse_each,each_pair,each_key,each_value,map,select,find_all,filter,select!,filter!,keep_if,reject,reject!,delete_if,grep,grep_v,partition,any?,all?,none?,one?,count,sum,flat_map,collect_concat,find,detect,find_index,cycle,min_by,max_by,sort_by,group_by,tally,chunk,chunk_while,slice_when,slice_before,each_with_object,transform_keys,transform_values,transform_keys!,transform_values!,to_a,to_h,to_hash,invert,compact,compact!,slice,except,inspect,to_s,freeze,frozen?,dup,clone,replace,[],[]=";
     if (strcmp(klass_name, "Range") == 0)
-        return "begin,first,end,last,exclude_end?,include?,member?,cover?,===,each,reverse_each,each_with_index,to_a,entries,size,count,length,min,max,bsearch,step,map,collect,select,find_all,filter,reject,find_index,grep,grep_v,one?,cycle,partition,flat_map,collect_concat,chunk,chunk_while,slice_when,slice_before,to_s,inspect";
+        return "begin,first,end,last,exclude_end?,include?,member?,cover?,overlap?,===,each,reverse_each,each_with_index,to_a,entries,size,count,length,min,max,bsearch,step,map,collect,select,find_all,filter,reject,find_index,grep,grep_v,one?,cycle,partition,flat_map,collect_concat,chunk,chunk_while,slice_when,slice_before,to_s,inspect";
     if (strcmp(klass_name, "Struct") == 0)
         return "to_a,values,deconstruct,to_h,deconstruct_keys,members,length,size,each,each_pair,values_at,[],[]=,inspect,to_s,==,eql?,hash";
     if (strcmp(klass_name, "Binding") == 0)
@@ -4937,6 +4937,33 @@ int dispatch_object(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                     return 1;
                 }
                 *out = regexp_search_value(ev, recv, args[0], 1, site);
+                return 1;
+            }
+            if (strcmp(name, "named_captures") == 0 || strcmp(name, "names") == 0) {
+                Value source;
+                Value names;
+                if (!val_object_get_ivar(recv, "source", &source) || source.kind != VAL_STRING)
+                    source = val_string(ev->arena, "");
+                names = extract_named_groups(ev->arena, source.sval, 1024);
+                if (strcmp(name, "names") == 0) {
+                    Value arr = val_array_new();
+                    for (size_t ni = 0; ni < names.array->len; ni++) {
+                        Value nm = names.array->elems[ni];
+                        if (nm.kind == VAL_STRING)
+                            val_array_push(&arr, nm);
+                    }
+                    *out = arr;
+                    return 1;
+                }
+                Value h = val_hash_new(ev->arena);
+                for (size_t ni = 0; ni < names.array->len; ni++) {
+                    Value nm = names.array->elems[ni];
+                    if (nm.kind != VAL_STRING) continue;
+                    Value indexes = val_array_new();
+                    val_array_push(&indexes, val_int((int64_t)ni + 1));
+                    val_hash_set(h.hash, nm, indexes);
+                }
+                *out = h;
                 return 1;
             }
             if (strcmp(name, "===") == 0) {

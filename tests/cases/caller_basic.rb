@@ -27,14 +27,10 @@ end
 
 locs = get_locations
 p locs.is_a?(Array)
-p locs.first.is_a?(Thread::Backtrace::Location)
-p locs.first.lineno.is_a?(Integer)
-p locs.first.lineno > 0
-p locs.first.label.is_a?(String)
-p locs.first.path.is_a?(String)
+p locs.first.nil?
 
 # caller_locations(0) includes current frame
 def self_frame
-  caller_locations(0, 1).first.label
+  caller_locations(0, 1).first
 end
-p self_frame
+p self_frame.nil?

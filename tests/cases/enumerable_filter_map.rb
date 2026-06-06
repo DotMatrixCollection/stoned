@@ -1,6 +1,6 @@
 # Enumerable#filter_map combines select and map in one pass
 p [1, 2, 3, 4, 5, 6].filter_map { |n| n * 2 if n.odd? }
-p ["a", "", "b", nil, "c", false].filter_map { |s| s&.upcase unless s.to_s.empty? }
+p ["a", "", "b", nil, "c", false].filter_map { |s| s.upcase if s && !s.to_s.empty? }
 p (1..10).filter_map { |n| n ** 2 if n % 3 == 0 }
 
 # filter_map with string processing

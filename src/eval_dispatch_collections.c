@@ -1079,6 +1079,10 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                     Value pair[2] = { key, prev };
                     Value cmp = call_block(ev, env, *blk, pair, 2, site);
                     if (val_is_signal(cmp)) { *out = cmp; return 1; }
+                    if (cmp.kind != VAL_INT) {
+                        *out = eval_raise_class(ev, site, "ArgumentError", "comparison of elements failed");
+                        return 1;
+                    }
                     less = cmp.kind == VAL_INT ? cmp.ival < 0 : 0;
                 } else if (key.kind == VAL_INT && prev.kind == VAL_INT) less = key.ival < prev.ival;
                 else if (key.kind == VAL_FLOAT && prev.kind == VAL_FLOAT) less = key.fval < prev.fval;
@@ -1088,7 +1092,15 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 else if (key.kind == VAL_SYMBOL && prev.kind == VAL_SYMBOL) less = strcmp(key.sval, prev.sval) < 0;
                 else {
                     Value cmp = dispatch_method(ev, env, key, "<=>", &prev, 1, NULL, site, 0, 1);
-                    if (val_is_signal(cmp)) { *out = cmp; return 1; }
+                    if (val_is_signal(cmp)) {
+                        ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+                        *out = eval_raise_class(ev, site, "ArgumentError", "comparison of elements failed");
+                        return 1;
+                    }
+                    if (cmp.kind != VAL_INT) {
+                        *out = eval_raise_class(ev, site, "ArgumentError", "comparison of elements failed");
+                        return 1;
+                    }
                     less = cmp.kind == VAL_INT ? cmp.ival < 0 : 0;
                 }
                 if (!less) break;
@@ -1483,6 +1495,19 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
             result = inter_out;
         }
         *out = result; return 1;
+    }
+    if (strcmp(name, "intersect?") == 0) {
+        if (argc < 1 || args[0].kind != VAL_ARRAY) { *out = eval_raise_class(ev, site, "TypeError", "Array#intersect? requires an Array"); return 1; }
+        for (size_t i = 0; i < recv.array->len; i++) {
+            for (size_t j = 0; j < args[0].array->len; j++) {
+                if (val_equal(recv.array->elems[i], args[0].array->elems[j])) {
+                    *out = val_true();
+                    return 1;
+                }
+            }
+        }
+        *out = val_false();
+        return 1;
     }
     if (strcmp(name, "union") == 0) {
         Value result = recv;
@@ -2533,6 +2558,72 @@ static int range_include_value(Eval *ev, Env *env, RubyRange *r, Value v, Node *
     return r->exclusive ? cmp_hi.ival < 0 : cmp_hi.ival <= 0;
 }
 
+static int range_value_cmp(Eval *ev, Env *env, Value a, Value b, Node *site, int *cmp_out) {
+    if (a.kind == VAL_INT && b.kind == VAL_INT) {
+        *cmp_out = (a.ival > b.ival) - (a.ival < b.ival);
+        return 1;
+    }
+    if ((a.kind == VAL_INT || a.kind == VAL_FLOAT) &&
+        (b.kind == VAL_INT || b.kind == VAL_FLOAT)) {
+        double da = a.kind == VAL_INT ? (double)a.ival : a.fval;
+        double db = b.kind == VAL_INT ? (double)b.ival : b.fval;
+        *cmp_out = (da > db) - (da < db);
+        return 1;
+    }
+    if (a.kind == VAL_STRING && b.kind == VAL_STRING) {
+        int c = strcmp(a.sval ? a.sval : "", b.sval ? b.sval : "");
+        *cmp_out = (c > 0) - (c < 0);
+        return 1;
+    }
+    if (a.kind == VAL_SYMBOL && b.kind == VAL_SYMBOL) {
+        int c = strcmp(a.sval ? a.sval : "", b.sval ? b.sval : "");
+        *cmp_out = (c > 0) - (c < 0);
+        return 1;
+    }
+    Value cmp = dispatch_method(ev, env, a, "<=>", &b, 1, NULL, site, 0, 1);
+    if (val_is_signal(cmp)) {
+        ev->errored = 0; ev->exception_class = NULL; ev->exception_msg[0] = '\0';
+        return 0;
+    }
+    if (cmp.kind != VAL_INT) return 0;
+    *cmp_out = cmp.ival > 0 ? 1 : cmp.ival < 0 ? -1 : 0;
+    return 1;
+}
+
+static int range_covers_range(Eval *ev, Env *env, RubyRange *outer, RubyRange *inner, Node *site) {
+    int cmp = 0;
+    if (outer->begin_val.kind != VAL_NIL && inner->begin_val.kind != VAL_NIL) {
+        if (!range_value_cmp(ev, env, inner->begin_val, outer->begin_val, site, &cmp) || cmp < 0)
+            return 0;
+    } else if (outer->begin_val.kind != VAL_NIL && inner->begin_val.kind == VAL_NIL) {
+        return 0;
+    }
+
+    if (outer->end_val.kind != VAL_NIL && inner->end_val.kind != VAL_NIL) {
+        if (!range_value_cmp(ev, env, inner->end_val, outer->end_val, site, &cmp))
+            return 0;
+        if (cmp > 0) return 0;
+        if (cmp == 0 && inner->exclusive == 0 && outer->exclusive)
+            return 0;
+    } else if (outer->end_val.kind != VAL_NIL && inner->end_val.kind == VAL_NIL) {
+        return 0;
+    }
+    return 1;
+}
+
+static int ranges_overlap(Eval *ev, Env *env, RubyRange *a, RubyRange *b, Node *site) {
+    int cmp = 0;
+    if (a->end_val.kind != VAL_NIL && b->begin_val.kind != VAL_NIL) {
+        if (!range_value_cmp(ev, env, a->end_val, b->begin_val, site, &cmp)) return 0;
+        if (cmp < 0 || (cmp == 0 && a->exclusive)) return 0;
+    }
+    if (b->end_val.kind != VAL_NIL && a->begin_val.kind != VAL_NIL) {
+        if (!range_value_cmp(ev, env, b->end_val, a->begin_val, site, &cmp)) return 0;
+        if (cmp < 0 || (cmp == 0 && b->exclusive)) return 0;
+    }
+    return 1;
+}
+
 static int range_count_arg(Eval *ev, Node *site, Value arg, int64_t *out, Value *err_out) {
     if (arg.kind == VAL_INT) *out = arg.ival;
     else if (arg.kind == VAL_FLOAT) *out = (int64_t)arg.fval;
@@ -2621,7 +2712,17 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
         strcmp(name, "cover?") == 0 || strcmp(name, "===") == 0) {
         if (argc < 1)
             { *out = eval_raise_class(ev, site, "ArgumentError", "wrong number of arguments"); return 1; }
+        if (strcmp(name, "cover?") == 0 && args[0].kind == VAL_RANGE) {
+            *out = val_bool(range_covers_range(ev, env, r, args[0].range, site));
+            return 1;
+        }
         *out = val_bool(range_include_value(ev, env, r, args[0], site));
+        return 1;
+    }
+    if (strcmp(name, "overlap?") == 0) {
+        if (argc < 1 || args[0].kind != VAL_RANGE)
+            { *out = eval_raise_class(ev, site, "TypeError", "Range#overlap? requires a Range"); return 1; }
+        *out = val_bool(ranges_overlap(ev, env, r, args[0].range, site));
         return 1;
     }
 

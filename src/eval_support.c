@@ -200,9 +200,22 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
             continue;
         }
 
-        /* Collect flags, width, precision, type into a single format spec */
+        /* Collect positional reference, flags, width, precision, type into a single format spec */
         char spec[64] = "%";
         size_t slen = 1;
+        int value_arg_index = -1;
+        if (isdigit((unsigned char)fmt[i])) {
+            size_t j = i;
+            int pos = 0;
+            while (isdigit((unsigned char)fmt[j])) {
+                pos = pos * 10 + (fmt[j] - '0');
+                j++;
+            }
+            if (fmt[j] == '$') {
+                value_arg_index = pos - 1;
+                i = j + 1;
+            }
+        }
         /* flags */
         while (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == '0' ||
                fmt[i] == ' ' || fmt[i] == '#') {
@@ -212,12 +225,14 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
         /* width */
         if (fmt[i] == '*') {
             /* dynamic width from args */
-            if (argi < argc && args[argi].kind == VAL_INT) {
-                int wv = (int)args[argi++].ival;
-                int wlen = snprintf(spec + slen, sizeof(spec) - slen, "%d", wv < 0 ? -wv : wv);
-                slen += wlen > 0 ? (size_t)wlen : 0;
-                if (wv < 0 && slen < sizeof(spec) - 1) { memmove(spec+2, spec+1, slen-1); spec[1]='-'; slen++; }
+            if (argi >= argc || args[argi].kind != VAL_INT) {
+                free(buf);
+                return eval_raise_class(ev, site, "ArgumentError", "too few arguments for format string");
             }
+            int wv = (int)args[argi++].ival;
+            int wlen = snprintf(spec + slen, sizeof(spec) - slen, "%d", wv < 0 ? -wv : wv);
+            slen += wlen > 0 ? (size_t)wlen : 0;
+            if (wv < 0 && slen < sizeof(spec) - 1) { memmove(spec+2, spec+1, slen-1); spec[1]='-'; slen++; }
             i++;
         } else {
             while (isdigit((unsigned char)fmt[i]) && slen < sizeof(spec) - 1) {
@@ -228,13 +243,26 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
         if (fmt[i] == '.') {
             if (slen < sizeof(spec) - 1) spec[slen++] = '.';
             i++;
-            while (isdigit((unsigned char)fmt[i]) && slen < sizeof(spec) - 1) {
-                spec[slen++] = fmt[i++];
+            if (fmt[i] == '*') {
+                if (argi >= argc || args[argi].kind != VAL_INT) {
+                    free(buf);
+                    return eval_raise_class(ev, site, "ArgumentError", "too few arguments for format string");
+                }
+                int pv = (int)args[argi++].ival;
+                if (pv < 0) pv = 0;
+                int plen = snprintf(spec + slen, sizeof(spec) - slen, "%d", pv);
+                slen += plen > 0 ? (size_t)plen : 0;
+                i++;
+            } else {
+                while (isdigit((unsigned char)fmt[i]) && slen < sizeof(spec) - 1) {
+                    spec[slen++] = fmt[i++];
+                }
             }
         }
         spec[slen] = '\0';
 
-        if (argi >= argc) {
+        if ((value_arg_index >= 0 && value_arg_index >= argc) ||
+            (value_arg_index < 0 && argi >= argc)) {
             free(buf);
             return eval_raise_class(ev, site, "ArgumentError", "too few arguments for format string");
         }
@@ -242,7 +270,7 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
         char tmp[4096];
         const char *piece = tmp;
         size_t piece_len = 0;
-        Value v = args[argi++];
+        Value v = value_arg_index >= 0 ? args[value_arg_index] : args[argi++];
 
         char full_spec[68];
         int nlen;
@@ -346,8 +374,11 @@ Value eval_format_string(Eval *ev, Env *env __attribute__((unused)), const char 
                 break;
             }
             case 'c': {
-                tmp[0] = (char)(v.kind == VAL_INT ? (v.ival & 0xFF) : 0);
-                tmp[1] = '\0'; piece_len = 1; break;
+                char ch = (char)(v.kind == VAL_INT ? (v.ival & 0xFF) : 0);
+                snprintf(full_spec, sizeof(full_spec), "%sc", spec);
+                nlen = snprintf(tmp, sizeof(tmp), full_spec, ch);
+                piece_len = nlen < 0 ? 0 : (size_t)nlen;
+                break;
             }
             default:
                 free(buf);
@@ -2571,6 +2602,27 @@ Value eval_require(Eval *ev, Env *env, const char *path, Node *site) {
 "  end\n"
 "end\n";
         return eval_ruby_string(ev, etc_shim, "etc_shim", site);
+    }
+    if (strcmp(path, "weakref") == 0 || strcmp(path, "weakref.rb") == 0) {
+        static const char *weakref_shim =
+"class WeakRef\n"
+"  def initialize(obj)\n"
+"    @__weakref_obj = obj\n"
+"  end\n"
+"  def __getobj__\n"
+"    @__weakref_obj\n"
+"  end\n"
+"  def weakref_alive?\n"
+"    true\n"
+"  end\n"
+"  def method_missing(name, *args, &block)\n"
+"    @__weakref_obj.__send__(name, *args, &block)\n"
+"  end\n"
+"  def respond_to_missing?(name, include_private = false)\n"
+"    @__weakref_obj.respond_to?(name, include_private)\n"
+"  end\n"
+"end\n";
+        return eval_ruby_string(ev, weakref_shim, "weakref_shim", site);
     }
     if (strcmp(path, "socket") == 0 || strcmp(path, "socket.rb") == 0)
         return val_true();

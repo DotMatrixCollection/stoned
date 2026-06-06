@@ -289,9 +289,6 @@ static void copy_module_methods(Eval *ev, Env *target, RubyClass *mod, int singl
 }
 
 Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *site) {
-    if (self.kind != VAL_CLASS && !value_singleton_env_slot(self))
-        return eval_raise_class(ev, site, "TypeError", "extend requires an object");
-
     for (int i = 0; i < argc; i++) {
         if (args[i].kind != VAL_CLASS || !args[i].klass->is_module)
             return eval_raise_class(ev, site, "TypeError", "extend requires a Module");
@@ -306,9 +303,11 @@ Value builtin_extend(Eval *ev, Value self, Value *args, int argc, Node *site) {
         }
     } else {
         Env **slot = value_singleton_env_slot(self);
-        if (!*slot) *slot = env_new(ev->arena, NULL, 1);
-        for (int i = 0; i < argc; i++)
-            copy_module_methods(ev, *slot, args[i].klass, 0);
+        if (slot) {
+            if (!*slot) *slot = env_new(ev->arena, NULL, 1);
+            for (int i = 0; i < argc; i++)
+                copy_module_methods(ev, *slot, args[i].klass, 0);
+        }
         /* Also record extended modules in the singleton class so include?/ancestors work */
         if (self.kind == VAL_OBJECT) {
             Value sclass;
@@ -514,6 +513,10 @@ int val_is_a(Value v, Value klass_arg) {
         return 0;
     }
     if (v.kind == VAL_OBJECT) {
+        Value sclass;
+        if (val_object_get_ivar(v, "__sclass__", &sclass) && sclass.kind == VAL_CLASS &&
+            class_includes_module(sclass.klass, kname))
+            return 1;
         RubyClass *k = v.obj->klass.klass;
         while (k) {
             if (strcmp(k->name, kname) == 0) return 1;
@@ -580,6 +583,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "nonzero?", "positive?", "negative?", "integer?", "ceil", "floor", "round",
         "truncate", "succ", "next", "pred", "chr", "gcd", "lcm", "pow", "divmod",
         "digits", "between?", "clamp", "times", "upto", "downto", "step",
+        "allbits?", "anybits?", "nobits?",
         "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "<=>",
         "<<", ">>", "&", "|", "^", "~", "-@", "[]", NULL
     };
@@ -595,7 +599,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "start_with?", "end_with?", "split", "each_char", "reverse", "reverse!", "next", "succ",
         "replace", "clear", "inspect", "chomp", "chomp!", "chop", "chop!", "lstrip", "rstrip", "lstrip!",
         "rstrip!", "capitalize", "swapcase", "ljust", "rjust", "center", "ord", "hex", "oct",
-        "bytes", "bytesize", "<<", "index", "rindex", "[]", "[]=", "slice", "slice!", "lines",
+        "bytes", "codepoints", "each_codepoint", "bytesize", "<<", "index", "rindex", "[]", "[]=", "slice", "slice!", "lines",
         "each_line", "each_byte", "tr", "tr!", "count", "delete", "delete!", "squeeze", "squeeze!", "scan",
         "sub", "sub!", "gsub", "gsub!", "match", "match?", "=~", "casecmp", "casecmp?",
         "partition", "rpartition", "*", "+", "encoding",
@@ -613,7 +617,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "reduce", "inject", "any?", "all?", "none?", "one?", "min", "max", "sum", "flatten",
         "flatten!", "uniq", "sort", "compact", "compact!", "zip", "cycle", "sample", "shuffle", "shuffle!", "grep", "grep_v", "partition", "flat_map", "collect_concat",
         "chunk", "chunk_while", "slice_when", "slice_before", "replace",
-        "intersection", "union", "difference", "repeated_combination", "repeated_permutation",
+        "intersection", "intersect?", "union", "difference", "repeated_combination", "repeated_permutation",
         "rotate", "rotate!", "clear", "delete", "delete_at", "insert", "fill", "at", "fetch", "slice", "dig", "values_at", NULL
     };
     static const char *hash_methods[] = {
@@ -639,7 +643,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
     };
     static const char *range_methods[] = {
         "begin", "first", "end", "last", "exclude_end?",
-        "include?", "member?", "cover?", "===",
+        "include?", "member?", "cover?", "overlap?", "===",
         "each", "reverse_each", "each_with_index", "to_a", "entries",
         "size", "count", "length", "min", "max", "bsearch", "step",
         "map", "collect", "select", "find_all", "filter", "reject", "find_index", "grep", "grep_v", "one?", "cycle", "partition", "flat_map", "collect_concat",
@@ -647,7 +651,7 @@ static int builtin_primitive_responds_to(Value recv, const char *name) {
         "to_s", "inspect", NULL
     };
     static const char *symbol_methods[] = {
-        "to_s", "to_sym", "to_proc", "id2name", "inspect", "length", "size",
+        "to_s", "to_sym", "to_proc", "id2name", "name", "inspect", "length", "size",
         "upcase", "downcase", "capitalize", "match", "match?", "=~", "[]", NULL
     };
     static const char *nil_methods[] = {
@@ -1030,6 +1034,24 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
                 if (env_get(thread_c.klass->class_env, "Backtrace", &bt_mod) &&
                     bt_mod.kind == VAL_CLASS)
                     env_get(bt_mod.klass->class_env, "Location", &loc_class);
+                if (loc_class.kind != VAL_CLASS) {
+                    Value backtrace_name = val_symbol("Backtrace");
+                    Value location_name = val_symbol("Location");
+                    bt_mod = dispatch_method(ev, env, thread_c, "const_get", &backtrace_name, 1, NULL, site, 0, 1);
+                    if (!val_is_signal(bt_mod) && bt_mod.kind == VAL_CLASS) {
+                        Value loc = dispatch_method(ev, env, bt_mod, "const_get", &location_name, 1, NULL, site, 0, 1);
+                        if (!val_is_signal(loc) && loc.kind == VAL_CLASS)
+                            loc_class = loc;
+                    }
+                    eval_clear_exception(ev);
+                }
+            }
+            if (loc_class.kind != VAL_CLASS)
+                env_get(ev->top_env, "Thread::Backtrace::Location", &loc_class);
+            if (loc_class.kind != VAL_CLASS) {
+                Value bt_mod = val_nil();
+                if (env_get(ev->top_env, "Backtrace", &bt_mod) && bt_mod.kind == VAL_CLASS)
+                    env_get(bt_mod.klass->class_env, "Location", &loc_class);
             }
         }
         Value arr = val_array_new();
@@ -1039,12 +1061,11 @@ Value builtin_kernel(Eval *ev, Env *env, const char *name,
             snprintf(buf, sizeof(buf), "%u:%u:in `%s'",
                      ev->frames[fi].line, ev->frames[fi].col, ev->frames[fi].label);
             if (is_locations && loc_class.kind == VAL_CLASS) {
-                Value loc_args[3];
-                loc_args[0] = val_string(ev->arena, ev->current_file ? ev->current_file : "(unknown)");
-                loc_args[1] = val_int(ev->frames[fi].line);
-                loc_args[2] = val_string(ev->arena, ev->frames[fi].label ? ev->frames[fi].label : "(unknown)");
-                Value loc = dispatch_method(ev, env, loc_class, "new", loc_args, 3, NULL, site, 0, 1);
-                val_array_push(&arr, val_is_signal(loc) ? val_string(ev->arena, buf) : loc);
+                Value loc = val_object(ev->arena, loc_class);
+                val_object_set_ivar(ev->arena, loc, "path", val_string(ev->arena, ev->current_file ? ev->current_file : "(unknown)"));
+                val_object_set_ivar(ev->arena, loc, "lineno", val_int(ev->frames[fi].line));
+                val_object_set_ivar(ev->arena, loc, "label", val_string(ev->arena, ev->frames[fi].label ? ev->frames[fi].label : "(unknown)"));
+                val_array_push(&arr, loc);
             } else {
                 val_array_push(&arr, val_string(ev->arena, buf));
             }
@@ -2473,6 +2494,11 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
     if (recv.kind == VAL_SYMBOL) {
         if (strcmp(name, "to_s") == 0 || strcmp(name, "id2name") == 0)
             return val_string(ev->arena, recv.sval ? recv.sval : "");
+        if (strcmp(name, "name") == 0) {
+            Value s = val_string(ev->arena, recv.sval ? recv.sval : "");
+            s.frozen = 1;
+            return s;
+        }
         if (strcmp(name, "inspect") == 0) {
             const char *s = recv.sval ? recv.sval : "";
             size_t n = strlen(s);
@@ -2608,7 +2634,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                     "abs", "even?", "odd?", "zero?", "nonzero?", "positive?", "negative?",
                     "gcd", "lcm", "pow", "divmod", "ceil", "floor", "round", "truncate",
                     "times", "upto", "downto", "succ", "next", "pred", "chr", "digits",
-                    "integer?", "bit_length", "size", "coerce", NULL };
+                    "integer?", "bit_length", "size", "coerce", "allbits?", "anybits?", "nobits?", NULL };
                 static const char *probe_float[] = {
                     "+", "-", "*", "/", "%", "**", "<", "<=", ">", ">=", "<=>",
                     "to_f", "to_i", "to_r", "abs", "rationalize", "ceil", "floor", "round", "truncate",
@@ -2620,7 +2646,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
                     "match", "match?", "sub", "gsub", "include?", "start_with?", "end_with?",
                     "index", "rindex", "replace", "chomp", "chop", "reverse", "capitalize",
                     "swapcase", "ljust", "rjust", "center", "to_sym", "to_i", "to_f",
-                    "each_char", "each_byte", "each_line", "tr", "count", "delete",
+        "each_char", "each_byte", "each_codepoint", "each_line", "tr", "count", "delete",
                     "encode", "encoding", "bytesize", "insert", "prepend", "concat",
                     "slice", "slice!", "delete_prefix", "delete_suffix", NULL };
                 static const char *probe_arr[] = {
@@ -2835,6 +2861,7 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             strcmp(name, "match?") == 0 || strcmp(name, "start_with?") == 0 ||
             strcmp(name, "end_with?") == 0 || strcmp(name, "include?") == 0 ||
             strcmp(name, "encoding") == 0 || strcmp(name, "bytes") == 0 ||
+            strcmp(name, "codepoints") == 0 || strcmp(name, "each_codepoint") == 0 ||
             strcmp(name, "chars") == 0 || strcmp(name, "succ") == 0 ||
             strcmp(name, "next") == 0 || strcmp(name, "[]") == 0) {
             Value as_str = val_string(ev->arena, recv.sval);

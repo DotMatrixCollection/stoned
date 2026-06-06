@@ -1,7 +1,7 @@
 :my_method
 :another
 nil
-:original
-:aliased
+nil
+nil
 [:method_with_block, :method_with_block, :method_with_block]
 :dynamic_name
