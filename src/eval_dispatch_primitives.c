@@ -560,8 +560,24 @@ int dispatch_integer(Eval *ev, Env *env, Value recv, const char *name, Value *ar
     }
     if (strcmp(name, "ord") == 0) { *out = recv; return 1; }
     if (strcmp(name, "[]") == 0) {
-        /* Bit indexing: n[i] returns the ith bit of n (LSB = 0) */
-        if (argc < 1 || args[0].kind != VAL_INT) { *out = val_int(0); return 1; }
+        if (argc < 1) { *out = val_int(0); return 1; }
+        if (args[0].kind == VAL_RANGE) {
+            /* Bit range: n[lo..hi] extracts bits lo..hi as an integer */
+            RubyRange *rng = args[0].range;
+            if (rng->begin_val.kind != VAL_INT || rng->end_val.kind != VAL_INT)
+                { *out = val_int(0); return 1; }
+            int64_t lo = rng->begin_val.ival, hi = rng->end_val.ival;
+            if (rng->exclusive) hi--;
+            if (lo < 0) lo = 0;
+            if (hi < lo) { *out = val_int(0); return 1; }
+            int64_t len = hi - lo + 1;
+            if (len > 62) len = 62;
+            int64_t mask = (int64_t)(((uint64_t)1 << len) - 1);
+            *out = val_int((n >> lo) & mask);
+            return 1;
+        }
+        /* Single bit indexing: n[i] returns the ith bit (LSB = 0) */
+        if (args[0].kind != VAL_INT) { *out = val_int(0); return 1; }
         int64_t idx = args[0].ival;
         if (idx < 0) { *out = val_int(0); return 1; }
         *out = val_int((n >> idx) & 1);
@@ -1984,6 +2000,14 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
         size_t slen = recv.byte_len;
         for (size_t i = 0; i < slen; i++)
             val_array_push(&arr, val_int((int64_t)(unsigned char)s[i]));
+        if (blk) {
+            for (size_t i = 0; i < arr.array->len; i++) {
+                Value r = call_block(ev, env, *blk, &arr.array->elems[i], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv; return 1;
+        }
         *out = arr;
         return 1;
     }
@@ -2003,6 +2027,14 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 cp = (cp << 6) | ((unsigned char)s[i + j] & 0x3F);
             val_array_push(&arr, val_int((int64_t)cp));
             i += seq;
+        }
+        if (blk) {
+            for (size_t i = 0; i < arr.array->len; i++) {
+                Value r = call_block(ev, env, *blk, &arr.array->elems[i], 1, site);
+                if (ev->errored) { *out = val_nil(); return 1; }
+                if (flow_signal_out(r, out)) return 1;
+            }
+            *out = recv; return 1;
         }
         *out = arr;
         return 1;
@@ -2358,7 +2390,7 @@ int dispatch_string(Eval *ev, Env *env, Value recv, const char *name, Value *arg
                 val_array_push(&arr, line);
             }
         }
-        if (strcmp(name, "lines") == 0) { *out = arr; return 1; }
+        if (strcmp(name, "lines") == 0 && !blk) { *out = arr; return 1; }
         if (!blk) { *out = wrap_as_enumerator(ev, env, arr, site); return 1; }
         for (size_t i = 0; i < arr.array->len; i++) {
             Value r = call_block(ev, env, *blk, &arr.array->elems[i], 1, site);
