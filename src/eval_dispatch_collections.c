@@ -1678,7 +1678,7 @@ int dispatch_array(Eval *ev, Env *env, Value recv, const char *name, Value *args
                 if (ev->errored) { *out = val_nil(); return 1; }
                 if (flow_signal_out(r, out)) return 1;
             }
-            *out = recv;
+            *out = val_nil();
         } else {
             *out = result;
         }
@@ -2876,9 +2876,20 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
 
     if (strcmp(name, "size") == 0 || strcmp(name, "count") == 0 || strcmp(name, "length") == 0) {
-        if (argc > 0 && strcmp(name, "count") == 0) {
-            /* count with block — fall through to Enumerable */
-            return 0;
+        if (strcmp(name, "count") == 0) {
+            if (blk) return 0; /* block form — fall through to Enumerable */
+            if (argc > 0) {
+                /* value-match form: count occurrences of args[0] in range */
+                if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT) return 0;
+                int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+                int64_t cnt = 0;
+                Value target = args[0];
+                for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
+                    Value elem = val_int(i);
+                    if (val_equal(elem, target)) cnt++;
+                }
+                *out = val_int(cnt); return 1;
+            }
         }
         if (r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT) {
             /* String range: count by iterating */
@@ -2900,11 +2911,36 @@ int dispatch_range(Eval *ev, Env *env, Value recv, const char *name, Value *args
     }
 
     if (strcmp(name, "min") == 0) {
-        if (blk) return 0; /* min with block — fall through to Enumerable */
+        if (blk) return 0; /* block form — fall through to Enumerable */
+        if (argc > 0) {
+            if (args[0].kind != VAL_INT || r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT) return 0;
+            int64_t n_take = args[0].ival;
+            if (n_take < 0) { *out = eval_raise_class(ev, site, "ArgumentError", "negative size"); return 1; }
+            int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+            Value result = val_array_new();
+            for (int64_t i = lo; r->exclusive ? i < hi : i <= hi; i++) {
+                if ((int64_t)result.array->len >= n_take) break;
+                val_array_push(&result, val_int(i));
+            }
+            *out = result; return 1;
+        }
         *out = r->begin_val; return 1;
     }
     if (strcmp(name, "max") == 0) {
-        if (blk) return 0; /* max with block — fall through to Enumerable */
+        if (blk) return 0; /* block form — fall through to Enumerable */
+        if (argc > 0) {
+            if (args[0].kind != VAL_INT || r->begin_val.kind != VAL_INT || r->end_val.kind != VAL_INT) return 0;
+            int64_t n_take = args[0].ival;
+            if (n_take < 0) { *out = eval_raise_class(ev, site, "ArgumentError", "negative size"); return 1; }
+            int64_t lo = r->begin_val.ival, hi = r->end_val.ival;
+            int64_t actual_hi = r->exclusive ? hi - 1 : hi;
+            Value result = val_array_new();
+            for (int64_t i = actual_hi; i >= lo; i--) {
+                if ((int64_t)result.array->len >= n_take) break;
+                val_array_push(&result, val_int(i));
+            }
+            *out = result; return 1;
+        }
         if (r->exclusive && r->begin_val.kind == VAL_INT && r->end_val.kind == VAL_INT)
             *out = val_int(r->end_val.ival - 1);
         else
