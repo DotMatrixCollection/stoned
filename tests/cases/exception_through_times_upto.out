@@ -1,0 +1,3 @@
+["ok:0", "ens:0", "ens:1", "caught: iter 1"]
+[1, 2, "rescued: up:3"]
+"stopped at 2"

@@ -22,6 +22,7 @@ find /tmp -maxdepth 1 -name 'stoned_*' -exec rm -rf {} + 2>/dev/null
 total=0
 passed=0
 failed=0
+selected_cases=()
 
 read_expected_status() {
     local status_file=$1
@@ -131,11 +132,73 @@ run_case() {
     fi
 }
 
-while IFS= read -r path; do
-    file=${path##*/}
+add_case() {
+    local stem=$1
+    local existing
+
+    for existing in "${selected_cases[@]}"; do
+        if [ "$existing" = "$stem" ]; then
+            return
+        fi
+    done
+
+    selected_cases+=("$stem")
+}
+
+select_all_cases() {
+    local path file stem
+
+    while IFS= read -r path; do
+        file=${path##*/}
+        stem=${file%.*}
+        add_case "$stem"
+    done < <(find "$CASES_DIR" -maxdepth 1 \( -name '*.rb' -o -name '*.stdin' \) | sort)
+}
+
+select_matching_cases() {
+    local filter=$1
+    local matched=0
+    local path file stem pattern
+
+    file=${filter##*/}
     stem=${file%.*}
+
+    if [ -f "$CASES_DIR/$stem.rb" ] || [ -f "$CASES_DIR/$stem.stdin" ]; then
+        add_case "$stem"
+        return 0
+    fi
+
+    pattern=$filter
+    if [[ "$pattern" != *[\*\?]* ]]; then
+        pattern="*$pattern*"
+    fi
+
+    while IFS= read -r path; do
+        file=${path##*/}
+        stem=${file%.*}
+        if [[ "$stem" == $pattern ]]; then
+            add_case "$stem"
+            matched=1
+        fi
+    done < <(find "$CASES_DIR" -maxdepth 1 \( -name '*.rb' -o -name '*.stdin' \) | sort)
+
+    if [ "$matched" -eq 0 ]; then
+        echo "no test cases matched filter: $filter" >&2
+        return 1
+    fi
+}
+
+if [ "$#" -eq 0 ]; then
+    select_all_cases
+else
+    for filter in "$@"; do
+        select_matching_cases "$filter" || exit 1
+    done
+fi
+
+for stem in "${selected_cases[@]}"; do
     run_case "$stem"
-done < <(find "$CASES_DIR" -maxdepth 1 \( -name '*.rb' -o -name '*.stdin' \) | sort)
+done
 
 echo
 echo "$passed passed, $failed failed, $total total"

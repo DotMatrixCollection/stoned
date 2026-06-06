@@ -1270,8 +1270,11 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     }
                     Value rescued_exc = ev->current_exception;
                     Value previous_rescue = ev->rescue_context;
+                    Value previous_dollar_bang = val_nil();
+                    global_get(&ev->globals, "!", &previous_dollar_bang);
                     eval_clear_exception(ev);
                     ev->rescue_context = rescued_exc;
+                    global_set(ev->arena, &ev->globals, "!", rescued_exc);
                     rescued = 1;
                     Env *rescue_env = env;
                     if (rescue_clause->rescue_clause.exception_var) {
@@ -1280,6 +1283,7 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
                     }
                     result = eval_node(ev, rescue_env, rescue_clause->rescue_clause.body);
                     ev->rescue_context = previous_rescue;
+                    global_set(ev->arena, &ev->globals, "!", previous_dollar_bang);
                     if (result.kind == VAL_RETRY) goto retry_begin;
                     break;
                 }
@@ -1290,9 +1294,31 @@ Value eval_node(Eval *ev, Env *env, Node *node) {
             }
 
             if (node->begin_stmt.ensure_body) {
+                /* Save exception state: ensure body must be able to raise new exceptions
+                   freely without hitting the "exception already in flight" guard. */
+                Value saved_exc = ev->current_exception;
+                const char *saved_eclass = ev->exception_class;
+                char saved_emsg[sizeof(ev->exception_msg)];
+                memcpy(saved_emsg, ev->exception_msg, sizeof(ev->exception_msg));
+                int saved_eline = ev->exception_line;
+                int saved_ecol  = ev->exception_col;
+                eval_clear_exception(ev);
+
                 Value ensure_result = eval_node(ev, env, node->begin_stmt.ensure_body);
-                if (val_is_signal(ensure_result))
+
+                if (val_is_signal(ensure_result)) {
+                    /* ensure raised/returned/broke — its signal replaces the original result */
                     return ensure_result;
+                }
+                /* ensure completed normally — restore the original exception if one was
+                   propagating so the caller sees the right exception */
+                if (result.kind == VAL_EXCEPTION) {
+                    ev->current_exception = saved_exc;
+                    ev->exception_class   = saved_eclass;
+                    memcpy(ev->exception_msg, saved_emsg, sizeof(ev->exception_msg));
+                    ev->exception_line = saved_eline;
+                    ev->exception_col  = saved_ecol;
+                }
             }
 
             return result;

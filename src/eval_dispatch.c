@@ -1930,6 +1930,31 @@ Value dispatch_method(Eval *ev, Env *env __attribute__((unused)), Value recv,
             return dispatch_method(ev, env, recv, alias_target, args, argc, blk, site, public_only, explicit_receiver);
     }
 
+    if (recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS &&
+        class_is_a_named_class(ev, recv.obj->klass.klass, "Enumerator") &&
+        (strcmp(name, "map") == 0 || strcmp(name, "collect") == 0)) {
+        Value arr = val_nil();
+        if (val_object_get_ivar(recv, "arr", &arr) && arr.kind == VAL_ARRAY) {
+            if (!blk) {
+                Value enum_class;
+                if (env_get(ev->top_env, "Enumerator", &enum_class) && enum_class.kind == VAL_CLASS) {
+                    Value eargs[1] = { arr };
+                    return dispatch_method(ev, env, enum_class, "new", eargs, 1, NULL, site, 0, 1);
+                }
+                return arr;
+            }
+            Value result = val_array_new();
+            for (size_t i = 0; i < arr.array->len; i++) {
+                Value elem = arr.array->elems[i];
+                Value r = call_block(ev, env, *blk, &elem, 1, site);
+                if (ev->errored) return val_nil();
+                if (flow_signal_out(r, &out)) return out;
+                val_array_push(&result, r);
+            }
+            return result;
+        }
+    }
+
     /* User-defined instance methods take priority over built-in Kernel handlers.
        Check the class hierarchy first for VAL_OBJECT before any built-in dispatch. */
     if (recv.kind == VAL_OBJECT && recv.obj->klass.kind == VAL_CLASS) {
