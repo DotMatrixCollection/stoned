@@ -1,0 +1,3 @@
+{apple: 150, banana: 75, cherry: 300}
+[:banana, :apple, :cherry]
+{apple: 3.0, cherry: 6.0}
